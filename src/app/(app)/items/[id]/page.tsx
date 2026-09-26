@@ -1,0 +1,335 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import clsx from "clsx";
+import { ArrowLeft, CalendarClock, CheckCircle2, ExternalLink, FolderOpen, Info, MessageSquare, Palette } from "lucide-react";
+import { FlowStepper, healthBadge } from "@/components/flow";
+import { Avatar, Badge, BrandDot, ExternalLink as ExtA, TypeTag, btn } from "@/components/ui";
+import { PLATFORM_STATUS_META, STAGE_META, finalLabel } from "@/domain/workflow";
+import { cairoDate, diffDays, formatDateTime, formatDay, formatRelative, monthLabel, plural, todayISO } from "@/lib/dates";
+import { requireUser } from "@/server/auth";
+import { getActivePeople } from "@/server/cached";
+import { getItemDetail, type StageView } from "@/server/queries";
+import { AssignSelect, CancelToggle, CommentBox, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, PlatformRow, SendBack, TakeIt } from "./parts";
+
+export async function generateMetadata({ params }: PageProps<"/items/[id]">) {
+  const d = await getItemDetail((await params).id);
+  return { title: d?.item.title ?? "Item" };
+}
+
+export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
+  const me = await requireUser();
+  const { id } = await params;
+  const [detail, people] = await Promise.all([getItemDetail(id), getActivePeople()]);
+  if (!detail) notFound();
+  const { item, history, allPlatforms, comments } = detail;
+  const today = todayISO();
+  const cur = item.current;
+  const curIdx = cur ? item.stages.findIndex((s) => s.id === cur.id) : -1;
+  const next = cur ? (item.stages[curIdx + 1] ?? null) : null;
+  const pickPeople = people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }));
+  const open = !item.cancelledAt;
+  const backTargets = open
+    ? item.stages
+        .filter((s) => (cur ? s.position < cur.position : item.completedAt ? s.status === "done" && s.kind !== "social" && s.kind !== "delivery" : false))
+        .map((s) => ({ kind: s.kind, owner: s.assignee?.name ?? s.completedBy?.name ?? null }))
+    : [];
+  const canChangeType = item.stages.every((s) => s.kind === "content" || s.status === "waiting");
+  const back = item.brand && item.plan ? { href: `/brands/${item.brand.slug}?m=${item.plan.year}-${String(item.plan.month).padStart(2, "0")}`, label: `${item.brand.name} · ${monthLabel(item.plan.year, item.plan.month)}` } : item.project ? { href: `/projects/${item.project.id}`, label: `${item.project.clientName} · ${item.project.name}` } : { href: "/", label: "Home" };
+  const social = item.stages.find((s) => s.kind === "social");
+  const canPublish = !!social && social.status !== "waiting";
+  const platformRows = allPlatforms.filter((p) => p.isActive || item.platforms.some((ip) => ip.platformId === p.id));
+  const targeted = item.platforms.filter((p) => PLATFORM_STATUS_META[p.status].targeted);
+
+  // Merge notes + activity into one timeline, newest first.
+  const timeline = [
+    ...comments.map((c) => ({ kind: "comment" as const, at: c.createdAt, key: `c${c.id}`, c })),
+    ...history.filter((h) => h.action !== "comment_added").map((h) => ({ kind: "log" as const, at: h.at, key: `h${h.id}`, h })),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime());
+
+  return (
+    <div className="mx-auto max-w-[1180px]">
+      <Link href={back.href} className="inline-flex items-center gap-1.5 text-[13px] text-muted hover:text-electric">
+        <ArrowLeft className="size-4" />
+        {item.brand && <BrandDot color={item.brand.color} />}
+        {back.label}
+      </Link>
+
+      {/* ---------------- Header ---------------- */}
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <TypeTag type={item.type} />
+            {item.postingDate && (
+              <span className="inline-flex items-center gap-1 text-[13px] text-muted">
+                <CalendarClock className="size-3.5" />
+                {item.context === "plan" ? "Posting" : "Due"} {formatDay(item.postingDate)}
+                {item.postingTime && ` · ${item.postingTime}`}
+              </span>
+            )}
+            {item.cancelledAt && <Badge tone="neutral">Cancelled</Badge>}
+            {item.completedAt && <Badge tone="ok" icon={CheckCircle2}>{finalLabel(item.context)}</Badge>}
+          </div>
+          <h1 className="mt-1.5 font-display text-[28px] font-bold leading-tight tracking-[-0.01em]">{item.title}</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {item.canvaUrl ? (
+            <ExtA href={item.canvaUrl} className={btn("secondary")}>
+              <Palette className="size-4 text-[#7d2ae8]" /> Open in Canva <ExternalLink className="size-3.5 text-faint" />
+            </ExtA>
+          ) : (
+            <span className="text-[12.5px] text-faint">No Canva link</span>
+          )}
+          {item.driveUrl && (
+            <ExtA href={item.driveUrl} className={btn("secondary")}>
+              <FolderOpen className="size-4 text-[#1a73e8]" /> Drive file <ExternalLink className="size-3.5 text-faint" />
+            </ExtA>
+          )}
+          <DetailsForm item={item} canChangeType={canChangeType} />
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-6">
+          {/* ---------------- The cycle ---------------- */}
+          <section className="card overflow-x-auto p-5">
+            <div className="min-w-[520px]">
+              <FlowStepper item={item} />
+            </div>
+          </section>
+
+          {/* ---------------- Now ---------------- */}
+          {open && cur && (
+            <section className={clsx("card overflow-hidden", cur.health === "overdue" ? "border-bad/40" : cur.round > 1 && cur.returnedAt ? "border-back/40" : "border-electric/40")}>
+              <div className={clsx("flex flex-wrap items-center gap-3 px-5 py-4", cur.health === "overdue" ? "bg-bad-soft/60" : cur.round > 1 && cur.returnedAt ? "bg-back-soft/60" : "bg-electric-soft/60")}>
+                <Avatar name={cur.assignee?.name} size={40} />
+                <div className="min-w-0 flex-1">
+                  <div className="eyebrow">Right now</div>
+                  <div className="font-display text-[18px] font-bold leading-tight">
+                    {cur.assignee ? `With ${cur.assignee.name}` : "Waiting for someone to pick it up"} <span className="font-normal text-muted">· {STAGE_META[cur.kind].label}</span>
+                  </div>
+                  {cur.activatedAt && <div className="mt-0.5 text-[12.5px] text-muted">Arrived {formatRelative(cur.activatedAt)}{prevHandoff(item.stages, cur)}</div>}
+                </div>
+                {(() => {
+                  const b = healthBadge(cur, today);
+                  return b ? <Badge tone={b.tone}>{b.label}</Badge> : null;
+                })()}
+                {cur.assignee?.id !== me.id && <TakeIt stageId={cur.id} userId={me.id} />}
+              </div>
+              {cur.round > 1 && cur.returnedAt && (
+                <div className="flex gap-2 border-b border-line bg-back-soft/30 px-5 py-3 text-[13.5px]">
+                  <Info className="mt-0.5 size-4 shrink-0 text-back" />
+                  <div>
+                    <b>{cur.returnedBy?.name ?? "Someone"}</b> sent this back {formatRelative(cur.returnedAt)}
+                    {cur.returnNote ? <>: &ldquo;{cur.returnNote}&rdquo;</> : "."}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-5 p-5">
+                {cur.kind === "social" ? (
+                  <div className="text-[14px] text-ink-2">
+                    {targeted.length ? (
+                      <>Update each platform below. When every planned platform is <b>Published</b>, this item finishes automatically.</>
+                    ) : (
+                      <>Pick the platforms this goes on below (set them to Pending, Scheduled or Published).</>
+                    )}
+                    {!targeted.length && (
+                      <div className="mt-3">
+                        <CompleteStage stageId={cur.id} kind={cur.kind} nextLabel={null} nextOwner={null} needsDrive={false} driveUrl={null} finalLabel={finalLabel(item.context)} />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <CompleteStage
+                    stageId={cur.id}
+                    kind={cur.kind}
+                    nextLabel={next ? STAGE_META[next.kind].label : null}
+                    nextOwner={next?.assignee?.name ?? null}
+                    needsDrive={STAGE_META[cur.kind].needsDriveLink}
+                    driveUrl={item.driveUrl}
+                    finalLabel={finalLabel(item.context)}
+                  />
+                )}
+                <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-line pt-4">
+                  <div className="w-[200px]">
+                    <div className="label">Owner</div>
+                    <AssignSelect stageId={cur.id} kind={cur.kind} value={cur.assignee?.id ?? null} people={pickPeople} />
+                  </div>
+                  <div>
+                    <div className="label">Deadline (optional)</div>
+                    <DeadlineInput stageId={cur.id} value={cur.deadline} />
+                  </div>
+                  {(cur.health === "overdue" || cur.health === "overdue_excused") && <ExceptionToggle stageId={cur.id} excused={!!cur.lateExcusedAt} />}
+                  <div className="ml-auto">
+                    <SendBack itemId={item.id} targets={backTargets} />
+                  </div>
+                </div>
+                {cur.shiftDays > 0 && cur.originalDeadline && <ShiftNote s={cur} />}
+              </div>
+            </section>
+          )}
+
+          {open && item.completedAt && (
+            <section className="card flex flex-wrap items-center gap-4 border-ok/30 bg-ok-soft/40 p-5">
+              <CheckCircle2 className="size-8 text-ok" />
+              <div className="flex-1">
+                <div className="font-display text-[17px] font-bold">{finalLabel(item.context)}</div>
+                <div className="text-[13px] text-muted">Finished {formatDateTime(item.completedAt)}</div>
+              </div>
+              {backTargets.length > 0 && <SendBack itemId={item.id} targets={backTargets} label={item.context === "project" ? "Client wants changes" : "Reopen / send back"} />}
+            </section>
+          )}
+
+          {/* ---------------- Platforms ---------------- */}
+          {item.context === "plan" && (
+            <section className="card overflow-hidden">
+              <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+                <div>
+                  <h2 className="font-display text-[15px] font-bold">Publishing</h2>
+                  <p className="text-[12.5px] text-muted">{canPublish ? "Each platform has its own status and date." : "Choose platforms now — scheduling opens once production delivers."}</p>
+                </div>
+                <span className="text-[12.5px] text-muted">
+                  {item.platforms.filter((p) => p.status === "published").length}/{targeted.length} live
+                </span>
+              </div>
+              <div className="divide-y divide-line">
+                {platformRows.map((p) => (
+                  <PlatformRow key={p.id} itemId={item.id} platform={p} row={item.platforms.find((ip) => ip.platformId === p.id) ?? null} canPublish={canPublish} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ---------------- All stages (plan ahead) ---------------- */}
+          <section className="card overflow-hidden">
+            <div className="border-b border-line px-5 py-3.5">
+              <h2 className="font-display text-[15px] font-bold">Stages</h2>
+              <p className="text-[12.5px] text-muted">Plan ahead: set owners and optional deadlines for the next steps. Late deliveries move later deadlines automatically.</p>
+            </div>
+            <div className="divide-y divide-line">
+              {item.stages.map((s) => (
+                <StageLine key={s.id} s={s} people={pickPeople} disabled={!open} today={today} />
+              ))}
+            </div>
+          </section>
+          {open ? (
+            <div className="flex justify-end">
+              <CancelToggle itemId={item.id} cancelled={false} />
+            </div>
+          ) : (
+            <div className="card flex items-center justify-between p-4 text-[14px]">
+              <span className="text-muted">This item was cancelled. Its history is kept.</span>
+              <CancelToggle itemId={item.id} cancelled />
+            </div>
+          )}
+        </div>
+
+        {/* ---------------- Notes & history ---------------- */}
+        <aside className="min-w-0 space-y-4">
+          <section className="card p-4">
+            <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
+              <MessageSquare className="size-4 text-electric" /> Notes & history
+            </h2>
+            <CommentBox itemId={item.id} />
+            <ol className="mt-5 space-y-4">
+              {timeline.map((t) =>
+                t.kind === "comment" ? (
+                  <li key={t.key} className="flex gap-2.5">
+                    <Avatar name={t.c.authorName} size={26} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2 text-[12.5px]">
+                        <span className="font-semibold text-ink">{t.c.authorName}</span>
+                        <span className="text-faint">{formatRelative(t.c.createdAt)}</span>
+                      </div>
+                      {t.c.tag && <div className="mt-1"><Badge tone="back">{t.c.tag}</Badge></div>}
+                      <div className="mt-1 whitespace-pre-wrap rounded-lg rounded-tl-sm bg-canvas px-3 py-2 text-[13.5px] text-ink">{t.c.body}</div>
+                    </div>
+                  </li>
+                ) : (
+                  <li key={t.key} className="flex gap-2.5 text-[12.5px]">
+                    <span className="mt-[5px] flex w-[26px] shrink-0 justify-center">
+                      <span className={clsx("size-2 rounded-full", t.h.action === "stage_completed" ? "bg-ok" : t.h.action === "stage_returned" ? "bg-back" : t.h.action.startsWith("deadline") ? "bg-warn" : "bg-line-strong")} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-ink-2">{t.h.summary}</div>
+                      <div className="mt-0.5 text-faint" title={formatDateTime(t.h.at)}>{formatDateTime(t.h.at)}</div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function prevHandoff(stages: StageView[], cur: StageView) {
+  const prev = stages.filter((s) => s.position < cur.position && s.status === "done").at(-1);
+  if (!prev) return "";
+  const by = prev.assignee?.name ?? prev.completedBy?.name;
+  return by ? ` from ${by} (${STAGE_META[prev.kind].label})` : "";
+}
+
+function ShiftNote({ s }: { s: StageView }) {
+  return (
+    <div className="flex gap-2 rounded-lg bg-warn-soft/60 px-3 py-2 text-[12.5px] text-ink-2">
+      <CalendarClock className="mt-0.5 size-3.5 shrink-0 text-warn" />
+      <span>
+        Deadline moved from <b>{formatDay(s.originalDeadline)}</b> to <b>{formatDay(s.deadline)}</b>. {s.shiftReason}
+      </span>
+    </div>
+  );
+}
+
+function StageLine({ s, people, disabled, today }: { s: StageView; people: { id: string; name: string; teams: string[] }[]; disabled: boolean; today: string }) {
+  const b = healthBadge(s, today);
+  const late = s.status === "done" && s.completedAt && s.deadline ? Math.max(0, diffDays(cairoDate(s.completedAt), s.deadline)) : 0;
+  return (
+    <div className="grid items-center gap-x-4 gap-y-2 px-5 py-3 md:grid-cols-[170px_190px_1fr]">
+      <div>
+        <div className="font-medium">{STAGE_META[s.kind].label}</div>
+        <div className="text-[12px] text-muted">
+          {s.status === "done" ? "Done" : s.status === "active" ? "Current" : "Not reached yet"}
+          {s.round > 1 && ` · round ${s.round}`}
+        </div>
+      </div>
+      <div>
+        {s.status === "done" ? (
+          <div className="flex items-center gap-2 text-[13px]">
+            <Avatar name={s.assignee?.name ?? s.completedBy?.name} size={22} />
+            <div className="leading-tight">
+              <div className="font-medium">{s.assignee?.name ?? s.completedBy?.name}</div>
+              {s.completedBy && s.assignee && s.completedBy.id !== s.assignee.id && <div className="text-[11.5px] text-muted">marked by {s.completedBy.name}</div>}
+            </div>
+          </div>
+        ) : disabled ? (
+          <span className="text-[13px] text-muted">{s.assignee?.name ?? "Unassigned"}</span>
+        ) : (
+          <AssignSelect stageId={s.id} kind={s.kind} value={s.assignee?.id ?? null} people={people} />
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-[13px]">
+        {s.status === "done" ? (
+          <>
+            <span className="text-muted">{formatDateTime(s.completedAt)}</span>
+            {s.deadline && <span className="text-muted">· deadline {formatDay(s.deadline, { weekday: false })}</span>}
+            {b && <Badge tone={b.tone}>{s.health === "done_late" ? `${plural(late, "day")} late` : b.label}</Badge>}
+            {(s.health === "done_late" || s.health === "done_excused") && !disabled && <ExceptionToggle stageId={s.id} excused={!!s.lateExcusedAt} />}
+          </>
+        ) : (
+          <>
+            <DeadlineInput stageId={s.id} value={s.deadline} disabled={disabled} />
+            {s.shiftDays > 0 && s.originalDeadline && (
+              <span className="text-[12px] text-warn" title={s.shiftReason ?? ""}>
+                was {formatDay(s.originalDeadline, { weekday: false })} (+{s.shiftDays}d)
+              </span>
+            )}
+            {s.status === "waiting" && s.health === "blocked" && <Badge tone="wait">Waiting on previous stage — not late</Badge>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
