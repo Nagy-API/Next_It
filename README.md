@@ -67,7 +67,8 @@ All use `SEED_DEFAULT_PASSWORD`. Everyone should change it under **Settings → 
 | `assem` | Assem | Account Management |
 | `ammar`, `king`, `kemo` | Content creators | Content Creation |
 | `ayman` | Ayman | Media Production |
-| `jana` | Jana | Media Production, Graphic Design |
+| `jana` | Jana | Media Production (with Ayman) |
+| `gannah` | Gannah | Graphic Design |
 | `esraa` | Esraa | Social Media |
 
 Only admins (Shahenda, or anyone she grants it to) can create, edit, deactivate accounts or reset passwords.

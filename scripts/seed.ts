@@ -8,7 +8,7 @@
  * Refuses to run on a database that already has users (use `npm run db:reset` to start over).
  */
 import "dotenv/config";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { closeDb, db } from "../src/db";
 import { brands, platforms, users, type Team } from "../src/db/schema";
 import { createItems, type NewItemRow } from "../src/server/items";
@@ -25,7 +25,8 @@ const TEAM: { username: string; name: string; title: string; teams: Team[]; isAd
   { username: "king", name: "King", title: "Content Creator", teams: ["content"] },
   { username: "kemo", name: "Kemo", title: "Content Creator", teams: ["content"] },
   { username: "ayman", name: "Ayman", title: "Media Production", teams: ["media"] },
-  { username: "jana", name: "Jana", title: "Media Production & Graphic Design", teams: ["media", "design"] },
+  { username: "jana", name: "Jana", title: "Media Production", teams: ["media"] },
+  { username: "gannah", name: "Gannah", title: "Graphic Designer", teams: ["design"] },
   { username: "esraa", name: "Esraa", title: "Social Media", teams: ["social"] },
 ];
 
@@ -70,10 +71,34 @@ const VANILLA_ROZA_OCTOBER: [string, string, string][] = [
   ["Post 05: The Step That Changes Everything", "https://canva.link/mybzw54ugg1iexs", "2026-10-30"],
 ];
 
+/**
+ * Early installs seeded Jana in both Media Production and Graphic Design. They are two people:
+ * Jana (Media Production, with Ayman) and Gannah (Graphic Design). Fixes that once, and logs it.
+ */
+async function fixDesignTeam() {
+  const [gannah] = await db.select({ id: users.id }).from(users).where(eq(users.username, "gannah"));
+  if (gannah) return;
+  const [jana] = await db.select().from(users).where(eq(users.username, "jana"));
+  const [created] = await db
+    .insert(users)
+    .values({ username: "gannah", name: "Gannah", title: "Graphic Designer", teams: ["design"], passwordHash: await hashPassword(PASSWORD) })
+    .returning();
+  await logActivity(db, null, { action: "user_created", subjectUserId: created.id, summary: "Account created for Gannah (Graphic Design)." });
+  if (jana?.teams.includes("design")) {
+    await db
+      .update(users)
+      .set({ teams: jana.teams.filter((t) => t !== "design"), title: "Media Production" })
+      .where(eq(users.id, jana.id));
+    await logActivity(db, null, { action: "user_updated", subjectUserId: jana.id, summary: "Jana's teams → Media Production (Graphic Design is Gannah)." });
+  }
+  console.log(`✓ Added Gannah (Graphic Design). Initial password: ${PASSWORD}`);
+}
+
 export async function seed() {
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(users);
   if (count > 0) {
     console.log("Database already has users — skipping the initial seed.");
+    await fixDesignTeam();
     return;
   }
   const passwordHash = await hashPassword(PASSWORD);
