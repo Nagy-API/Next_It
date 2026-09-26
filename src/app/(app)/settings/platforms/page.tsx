@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { asc } from "drizzle-orm";
 import { db } from "@/db";
 import { platforms } from "@/db/schema";
@@ -8,7 +9,8 @@ import { NewPlatformForm, PlatformControls } from "../forms";
 export const metadata = { title: "Platforms · Settings" };
 
 export default async function PlatformSettings() {
-  await requireUser();
+  const me = await requireUser();
+  if (!me.isAdmin) redirect("/settings/account");
   const rows = await db.select().from(platforms).orderBy(asc(platforms.sortOrder));
   return (
     <div className="max-w-2xl space-y-4">

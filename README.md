@@ -41,6 +41,17 @@ The database, tables and starting data are created automatically on first start;
 Stop with `docker compose down` (add `-v` only if you want to wipe all data).
 Other devices on the office network can use `http://<this-computer's-IP>:3000`.
 
+## How the team uses it
+
+- **Everyone lands on "My tasks"** — the work waiting for them or their team, from every brand and one-off project.
+  Each task has one field and one button: paste the link, press done.
+- **Content** pastes the Canva slide link → it goes to Media (Reels) or Graphic Design (Posts/Carousels), or to the
+  team they choose. Adding content with its Canva link sends it on automatically.
+- **Media / Design** paste the Google Drive link → it goes to Social. Time and name are saved automatically.
+- **Social** pastes each platform's live link → that platform is Published; when all planned platforms are live the item is done.
+- **Comments** can be written to a person; it shows in their tasks until they reply or mark it done.
+- **Permissions**: each team does its own step; deadlines lock once set (admins can change them); settings are admin-only.
+
 ## Stack
 
 - Next.js 16 (App Router, Server Actions) · React 19 · TypeScript · Tailwind CSS 4

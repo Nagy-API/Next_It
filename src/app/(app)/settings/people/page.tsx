@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -11,6 +12,7 @@ export const metadata = { title: "People · Settings" };
 
 export default async function PeopleSettings() {
   const me = await requireUser();
+  if (!me.isAdmin) redirect("/settings/account");
   const people = await getPeople({ includeInactive: true });
   const admins = new Set((await db.select({ id: users.id }).from(users).where(eq(users.isAdmin, true))).map((u) => u.id));
   const sorted = [...people].sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name));

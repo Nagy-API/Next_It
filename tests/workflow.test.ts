@@ -53,8 +53,8 @@ describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
     expect(byKind(all, "media").status).toBe("active");
     expect(byKind(all, "media").activatedAt?.toISOString()).toBe(t1.toISOString());
 
-    // Ayman is assigned; can't submit without a Drive link.
-    await assignStage(king, byKind(all, "media").id, ayman.id);
+    // Ayman takes it; can't submit without a Drive link.
+    await assignStage(ayman, byKind(all, "media").id, ayman.id);
     await expect(completeStage(ayman, byKind(all, "media").id)).rejects.toThrow(/Drive link/);
 
     const t2 = cairoNoon("2026-09-29");
@@ -106,10 +106,12 @@ describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
     const king = await makeUser("King", ["content"]);
     const brand = await makeBrand("VR", king.id);
     const ig = await makePlatform("Instagram");
+    const esraa = await makeUser("Esraa", ["social"]);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Early", type: "reel" }], {
       platformIds: [ig.id],
     });
-    await expect(setPlatformState(king, id, ig.id, { status: "published" })).rejects.toThrow(/isn't ready/);
+    await expect(setPlatformState(esraa, id, ig.id, { status: "published" })).rejects.toThrow(/isn't ready/);
+    await expect(setPlatformState(king, id, ig.id, { status: "pending" })).rejects.toThrow(/Social Media team/);
   });
 });
 
@@ -123,7 +125,7 @@ describe("Scenario 2 — delay dependency", () => {
     await setStageDeadline(king, byKind(all, "content").id, "2026-10-05");
     await setStageDeadline(king, byKind(all, "media").id, "2026-10-07");
     await setStageDeadline(king, byKind(all, "social").id, "2026-10-09");
-    await assignStage(king, byKind(all, "media").id, ayman.id);
+    await assignStage(ayman, byKind(all, "media").id, ayman.id);
     all = await stagesOf(id);
 
     // On Oct 8 Media's original deadline has passed, but Media never received the work: blocked, not late.
@@ -178,7 +180,7 @@ describe("Scenario 2 — delay dependency", () => {
 
   it("an exception removes the lateness from accountability but still protects downstream", async () => {
     const king = await makeUser("King", ["content"]);
-    const shahenda = await makeUser("Shahenda", ["leadership"]);
+    const shahenda = await makeUser("Shahenda", ["leadership"], true);
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Excused", type: "static" }]);
     let all = await stagesOf(id);
@@ -240,7 +242,8 @@ describe("Scenario 3 — return to an earlier stage", () => {
       contentReady: true,
     });
     let all = await stagesOf(id);
-    await completeStage(king, byKind(all, "design").id, { driveUrl: "drive.google.com/abc" });
+    const gannah = await makeUser("Gannah", ["design"]);
+    await completeStage(gannah, byKind(all, "design").id, { driveUrl: "drive.google.com/abc" });
     all = await stagesOf(id);
     expect(byKind(all, "social").status).toBe("active");
     await returnToStage(king, id, "content");
@@ -306,14 +309,15 @@ describe("Editing & bulk", () => {
 
   it("bulk-assigns a stage across a month", async () => {
     const king = await makeUser("King", ["content"]);
-    const jana = await makeUser("Jana", ["design"]);
+    const jana = await makeUser("Gannah", ["design"]);
+    const assem = await makeUser("Assem", ["account"]);
     const brand = await makeBrand("VR", king.id);
     const ids = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 11 }, [
       { title: "A", type: "static" },
       { title: "B", type: "carousel" },
       { title: "C", type: "reel" },
     ]);
-    const r = await bulkStageAction(king, ids, "design", { type: "assign", userId: jana.id });
+    const r = await bulkStageAction(assem, ids, "design", { type: "assign", userId: jana.id });
     expect(r.applied).toBe(2);
     expect(r.skipped).toEqual(["C"]);
   });

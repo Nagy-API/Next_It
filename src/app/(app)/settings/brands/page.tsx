@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Badge, BrandDot } from "@/components/ui";
 import { requireUser } from "@/server/auth";
@@ -7,7 +8,8 @@ import { BrandActiveToggle, BrandCreatorSelect, BrandEdit, NewBrandForm } from "
 export const metadata = { title: "Brands · Settings" };
 
 export default async function BrandSettings() {
-  await requireUser();
+  const me = await requireUser();
+  if (!me.isAdmin) redirect("/settings/account");
   const [brands, people] = await Promise.all([getAllBrands(), getActivePeople()]);
   const pickable = people.map((p) => ({ id: p.id, name: p.name }));
   const sorted = [...brands].sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name));

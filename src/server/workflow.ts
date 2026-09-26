@@ -4,7 +4,7 @@
  *  - derives timestamps / completing user / next stage automatically,
  *  - writes immutable activity records for everything it changes.
  */
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import {
   brands,
@@ -30,7 +30,9 @@ import {
   currentStage,
   downstreamShift,
   finalLabel,
+  handoffTargets,
   lateDaysFor,
+  routeAfter,
   shiftedDeadline,
   socialComplete,
   type WorkContext,
@@ -38,6 +40,7 @@ import {
 import { cairoDate, formatDay, isValidISODate, isValidTime, monthLabel, plural } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
+import { NOT_ALLOWED, can } from "@/domain/permissions";
 
 /* ------------------------------------------------------------------ */
 /* Loading helpers                                                      */
@@ -137,9 +140,11 @@ export async function completeStageTx(
   const completedDay = cairoDate(now);
   const lateDays = lateDaysFor(completedDay, stage.deadline);
 
+  // Whoever finishes an unassigned step gets it (and the credit) automatically.
+  if (!stage.assigneeId) stage = { ...stage, assigneeId: actor.id };
   await tx
     .update(stages)
-    .set({ status: "done", completedAt: now, completedById: actor.id })
+    .set({ status: "done", completedAt: now, completedById: actor.id, assigneeId: stage.assigneeId })
     .where(eq(stages.id, stage.id));
 
   await tx.insert(stageCompletions).values({
@@ -237,6 +242,22 @@ export async function setDriveUrlTx(tx: Tx, actor: Actor, ctx: ItemCtx, url: str
   ctx.item.driveUrl = clean;
 }
 
+export async function setCanvaUrlTx(tx: Tx, actor: Actor, ctx: ItemCtx, url: string | null, at: Date) {
+  const clean = normalizeUrl(url);
+  if ((ctx.item.canvaUrl ?? null) === clean) return;
+  await tx.update(contentItems).set({ canvaUrl: clean }).where(eq(contentItems.id, ctx.item.id));
+  await logActivity(tx, actor, {
+    ...refs(ctx),
+    action: "item_updated",
+    field: "canvaUrl",
+    oldValue: ctx.item.canvaUrl,
+    newValue: clean,
+    summary: `${actor.name} ${clean ? (ctx.item.canvaUrl ? "changed" : "added") : "removed"} the Canva link.`,
+    at,
+  });
+  ctx.item.canvaUrl = clean;
+}
+
 export async function completeStage(
   actor: Actor,
   stageId: string,
@@ -246,6 +267,7 @@ export async function completeStage(
     const now = opts.now ?? new Date();
     const { ctx, all, stage } = await stageWithItem(tx, stageId);
     ensureOpen(ctx);
+    assert(can.doStage(actor, stage), NOT_ALLOWED);
     if (opts.driveUrl !== undefined && opts.driveUrl !== null && opts.driveUrl.trim() !== "") {
       await setDriveUrlTx(tx, actor, ctx, opts.driveUrl, now);
     }
@@ -362,6 +384,9 @@ export async function assignStage(actor: Actor, stageId: string, assigneeId: str
   return db.transaction(async (tx) => {
     const { ctx, stage } = await stageWithItem(tx, stageId);
     ensureOpen(ctx);
+    // Anyone who can do a step may take it themselves; choosing someone else is for that team or managers.
+    const claiming = assigneeId === actor.id && can.doStage(actor, { kind: stage.kind });
+    assert(claiming || can.assign(actor, stage), NOT_ALLOWED);
     return assignStageTx(tx, actor, ctx, stage, assigneeId);
   });
 }
@@ -370,6 +395,11 @@ export async function setStageDeadlineTx(tx: Tx, actor: Actor, ctx: ItemCtx, sta
   if (deadline !== null) assert(isValidISODate(deadline), "Invalid date.");
   assert(stage.status !== "done", "This stage is already complete; its deadline is part of the record.");
   if ((stage.deadline ?? null) === deadline && stage.shiftDays === 0) return false;
+  // Once a deadline is set it is a commitment: only an admin can change or remove it.
+  // (Automatic shifts for late upstream work still happen — they don't go through here.)
+  if (stage.deadline && !actor.isAdmin) {
+    throw new UserError(`The ${STAGE_META[stage.kind].label} deadline is already set (${formatDay(stage.deadline)}). Only an admin can change it.`);
+  }
   await tx
     .update(stages)
     .set({ deadline, originalDeadline: deadline, shiftDays: 0, shiftReason: null })
@@ -393,6 +423,7 @@ export async function setStageDeadline(actor: Actor, stageId: string, deadline: 
   return db.transaction(async (tx) => {
     const { ctx, stage } = await stageWithItem(tx, stageId);
     ensureOpen(ctx);
+    assert(can.setDeadline(actor) || can.changeDeadline(actor), NOT_ALLOWED);
     return setStageDeadlineTx(tx, actor, ctx, stage, deadline);
   });
 }
@@ -405,6 +436,7 @@ export async function setLateException(actor: Actor, stageId: string, excused: b
   return db.transaction(async (tx) => {
     const now = opts.now ?? new Date();
     const { ctx, stage } = await stageWithItem(tx, stageId);
+    assert(can.excuseLateness(actor), "Only an admin can mark a missed deadline as an exception.");
     assert(stage.deadline, "This stage has no deadline.");
     if (!!stage.lateExcusedAt === excused) return false;
     await tx
@@ -464,6 +496,7 @@ export async function setPlatformState(
     const ctx = await loadItemCtx(tx, itemId);
     ensureOpen(ctx);
     assert(ctx.context === "plan", "Platform publishing only applies to monthly brand content.");
+    assert(can.publish(actor), "Only the Social Media team can change publishing.");
     const [platform] = await tx.select().from(platforms).where(eq(platforms.id, platformId));
     assert(platform, "Platform not found.");
     const all = await loadStages(tx, itemId);
@@ -475,8 +508,12 @@ export async function setPlatformState(
     const before = existing ?? { status: "not_planned" as PlatformStatus, date: null, time: null, liveUrl: null };
     if (!existing) assert(platform.isActive, `${platform.name} is no longer an active platform.`);
 
+    // Automatic statuses: pasting the live link means it's published; picking a date means it's scheduled.
+    let autoStatus: PlatformStatus | undefined;
+    if (!patch.status && patch.liveUrl?.trim() && before.status !== "published") autoStatus = "published";
+    else if (!patch.status && patch.date && (before.status === "pending" || before.status === "not_planned")) autoStatus = "scheduled";
     const next = {
-      status: patch.status ?? before.status,
+      status: patch.status ?? autoStatus ?? before.status,
       date: patch.date !== undefined ? patch.date || null : before.date,
       time: patch.time !== undefined ? patch.time || null : before.time,
       liveUrl: patch.liveUrl !== undefined ? normalizeUrl(patch.liveUrl) : before.liveUrl,
@@ -569,3 +606,79 @@ function joinWords(parts: string[]) {
   return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Hand-off: finish my part and choose where it goes next                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Make the stages after `from` follow the chosen team. Only possible while those stages
+ * haven't been worked on yet (otherwise the work should be sent back instead).
+ */
+async function rerouteTx(tx: Tx, ctx: ItemCtx, all: Stage[], from: Stage, target: StageKind): Promise<Stage[]> {
+  const later = all.filter((s) => s.position > from.position);
+  const wanted = routeAfter(target, ctx.context);
+  if (later.map((s) => s.kind).join() === wanted.join()) return all;
+  const removed = later.filter((s) => !wanted.includes(s.kind));
+  if (removed.length) {
+    const worked = await tx
+      .select({ id: stageCompletions.id })
+      .from(stageCompletions)
+      .where(inArray(stageCompletions.stageId, removed.map((s) => s.id)))
+      .limit(1);
+    assert(!worked.length && removed.every((s) => s.status === "waiting"), `This item already went through ${STAGE_META[removed[0].kind].label}. Send it back there instead.`);
+    for (const s of removed) await tx.delete(stages).where(eq(stages.id, s.id));
+  }
+  for (const [i, kind] of wanted.entries()) {
+    const position = from.position + 1 + i;
+    const existing = later.find((s) => s.kind === kind);
+    if (existing) await tx.update(stages).set({ position }).where(eq(stages.id, existing.id));
+    else await tx.insert(stages).values({ itemId: ctx.item.id, kind, position, status: "waiting" });
+  }
+  return loadStages(tx, ctx.item.id);
+}
+
+export type HandOffInput = {
+  /** Where the work goes next (defaults to the current route). */
+  target?: StageKind;
+  /** A specific person in the next team — otherwise the whole team sees it and someone picks it up. */
+  assigneeId?: string | null;
+  /** Deadline for the next team (only if it doesn't have one yet). */
+  deadline?: string | null;
+  driveUrl?: string | null;
+  canvaUrl?: string | null;
+  now?: Date;
+};
+
+export async function handOff(actor: Actor, stageId: string, input: HandOffInput = {}): Promise<CompleteResult> {
+  return db.transaction(async (tx) => {
+    const now = input.now ?? new Date();
+    const loaded = await stageWithItem(tx, stageId);
+    const { ctx, stage } = loaded;
+    let all = loaded.all;
+    ensureOpen(ctx);
+    assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current step.`);
+    assert(can.doStage(actor, stage), NOT_ALLOWED);
+    if (input.canvaUrl?.trim() && stage.kind === "content") await setCanvaUrlTx(tx, actor, ctx, input.canvaUrl, now);
+    if (stage.kind === "content" && !ctx.item.canvaUrl) {
+      throw new UserError("Paste the Canva link to this content's slide first — that's what the next team works from.");
+    }
+    if (input.driveUrl?.trim()) await setDriveUrlTx(tx, actor, ctx, input.driveUrl, now);
+    if (STAGE_META[stage.kind].needsDriveLink && !ctx.item.driveUrl) {
+      throw new UserError("Add the Google Drive link to the final file before sending it on.");
+    }
+    if (input.target) {
+      assert(handoffTargets(stage.kind, ctx.context).includes(input.target), "That team can't receive this work from here.");
+      all = await rerouteTx(tx, ctx, all, stage, input.target);
+    }
+    const result = await completeStageTx(tx, actor, ctx, all, all.find((s) => s.id === stage.id)!, now);
+    // Owner and deadline for the next team are applied after the hand-off, so an upstream delay
+    // never shifts a deadline that was just chosen with today's date in mind.
+    if (result.next) {
+      const next = (await loadStages(tx, ctx.item.id)).find((s) => s.kind === result.next)!;
+      if (input.assigneeId) await assignStageTx(tx, actor, ctx, next, input.assigneeId);
+      if (input.deadline && !next.deadline) await setStageDeadlineTx(tx, actor, ctx, next, input.deadline);
+    }
+    return result;
+  });
+}

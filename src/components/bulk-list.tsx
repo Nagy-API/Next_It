@@ -13,7 +13,7 @@ import { ItemRow } from "./item-row";
 type P = { id: string; name: string; teams: string[] };
 
 /** A list of items with checkboxes and a bulk bar (assign / deadline / complete) for a whole month at once. */
-export function BulkList({ items, people, showContext = false }: { items: WorkItem[]; people: P[]; showContext?: boolean }) {
+export function BulkList({ items, people, showContext = false, selectable = true }: { items: WorkItem[]; people: P[]; showContext?: boolean; selectable?: boolean }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const kinds = useMemo(() => {
     const ks = new Set<StageKind>();
@@ -35,6 +35,14 @@ export function BulkList({ items, people, showContext = false }: { items: WorkIt
   const team = STAGE_META[effectiveKind].team;
   const sortedPeople = [...people].sort((a, b) => Number(!!team && b.teams.includes(team)) - Number(!!team && a.teams.includes(team)));
 
+  if (!selectable)
+    return (
+      <div className="card divide-y divide-line overflow-hidden">
+        {items.map((i) => (
+          <ItemRow key={i.id} item={i} showContext={showContext} />
+        ))}
+      </div>
+    );
   return (
     <div>
       <div className="card divide-y divide-line overflow-hidden">

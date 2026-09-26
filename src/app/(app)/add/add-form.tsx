@@ -46,7 +46,7 @@ export function AddForm({
   const [ownerTouched, setOwnerTouched] = useState(false);
   const [owner, setOwner] = useState<string>(brand?.defaultCreatorId ?? "");
   const effectiveOwner = ownerTouched ? owner : mode === "plan" ? (brand?.defaultCreatorId ?? "") : owner;
-  const [contentReady, setContentReady] = useState(false);
+  const [sendWithCanva, setSendWithCanva] = useState(true);
   const [platformIds, setPlatformIds] = useState<string[]>(platforms.filter((p) => ["instagram", "tiktok"].includes(p.name.toLowerCase())).map((p) => p.id));
 
   const [year, month] = ym.split("-").map(Number);
@@ -95,7 +95,7 @@ export function AddForm({
       <input type="hidden" name="rows" value={JSON.stringify(filled.map((r) => ({ title: r.title, type: r.type, postingDate: r.postingDate, postingTime: r.postingTime, canvaUrl: r.canvaUrl })))} />
       <input type="hidden" name="platformIds" value={JSON.stringify(mode === "plan" ? platformIds : [])} />
       <input type="hidden" name="contentAssigneeId" value={effectiveOwner} />
-      <input type="hidden" name="contentReady" value={contentReady ? "1" : "0"} />
+      <input type="hidden" name="sendWithCanva" value={sendWithCanva ? "1" : "0"} />
       <input type="hidden" name="returnTo" value={returnTo} />
 
       {/* 1. Where */}
@@ -275,10 +275,10 @@ export function AddForm({
             {mode === "plan" && brand && !ownerTouched && <p className="mt-1 text-[12px] text-muted">{brand.name}&rsquo;s default creator</p>}
           </div>
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line p-3 hover:border-line-strong">
-            <input type="checkbox" checked={contentReady} onChange={(e) => setContentReady(e.target.checked)} className="mt-0.5 size-4 accent-[var(--color-electric)]" />
+            <input type="checkbox" checked={sendWithCanva} onChange={(e) => setSendWithCanva(e.target.checked)} className="mt-0.5 size-4 accent-[var(--color-electric)]" />
             <span>
-              <span className="block text-[14px] font-medium">Content is already done</span>
-              <span className="block text-[12.5px] text-muted">Scripts/designs are ready in Canva — send everything straight to Media / Design now.</span>
+              <span className="block text-[14px] font-medium">Rows with a Canva link are ready</span>
+              <span className="block text-[12.5px] text-muted">They go straight to their team (Reels → Media, Posts & Carousels → Design) and the delivery time is saved. Rows without a link wait with you.</span>
             </span>
           </label>
           {mode === "plan" && (

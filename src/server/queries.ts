@@ -241,7 +241,17 @@ export async function getItemDetail(id: string) {
       .orderBy(desc(activityLog.id)),
     db.select().from(platforms).orderBy(asc(platforms.sortOrder)),
     db
-      .select({ id: comments.id, body: comments.body, tag: comments.tag, createdAt: comments.createdAt, authorName: users.name, authorId: users.id })
+      .select({
+        id: comments.id,
+        body: comments.body,
+        tag: comments.tag,
+        createdAt: comments.createdAt,
+        authorName: users.name,
+        authorId: users.id,
+        parentId: comments.parentId,
+        mentionUserId: comments.mentionUserId,
+        resolvedAt: comments.resolvedAt,
+      })
       .from(comments)
       .innerJoin(users, eq(users.id, comments.authorId))
       .where(eq(comments.itemId, id))
@@ -553,3 +563,41 @@ export async function search(q: string) {
   return { items, brands: brandRows, clients: clientRows, projects: projectRows, people: peopleRows };
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Comments addressed to a person                                         */
+/* ------------------------------------------------------------------ */
+
+export async function getMyMessages(userId: string) {
+  return db
+    .select({
+      id: comments.id,
+      body: comments.body,
+      createdAt: comments.createdAt,
+      authorName: users.name,
+      itemId: contentItems.id,
+      itemTitle: contentItems.title,
+      brandName: brands.name,
+      brandColor: brands.color,
+    })
+    .from(comments)
+    .innerJoin(users, eq(users.id, comments.authorId))
+    .innerJoin(contentItems, eq(contentItems.id, comments.itemId))
+    .leftJoin(contentPlans, eq(contentPlans.id, contentItems.planId))
+    .leftJoin(brands, eq(brands.id, contentPlans.brandId))
+    .where(and(eq(comments.mentionUserId, userId), isNull(comments.resolvedAt), isNull(comments.parentId)))
+    .orderBy(desc(comments.createdAt));
+}
+
+/** Everything a person should act on: assigned to them, or sent to their team with no owner yet. */
+export function tasksFor(open: WorkItem[], user: { id: string; teams: readonly string[] }) {
+  return open.filter((i) => {
+    const c = i.current;
+    if (!c) return false;
+    if (c.assignee) return c.assignee.id === user.id;
+    const team = STAGE_TEAM[c.kind];
+    return !!team && user.teams.includes(team);
+  });
+}
+/** Whose task list a step shows up in. Handing one-off work to the client is Account Management's. */
+const STAGE_TEAM: Record<string, string> = { content: "content", media: "media", design: "design", social: "social", delivery: "account" };

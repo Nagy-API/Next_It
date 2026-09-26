@@ -21,9 +21,9 @@ import {
 } from "@/server/admin";
 import { endSession, requireActor, requireAdmin, startSession } from "@/server/auth";
 import { UserError } from "@/server/errors";
-import { addComment, bulkStageAction, createItems, setItemCancelled, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
+import { addComment, bulkStageAction, createItems, resolveComment, setItemCancelled, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
 import { checkCredentials } from "@/server/sessions";
-import { assignStage, completeStage, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
+import { assignStage, completeStage, handOff, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
 
 export type ActionResult = { ok: true; message?: string; at: number } | { ok: false; error: string; at: number } | null;
 
@@ -88,6 +88,22 @@ export async function completeStageAction(_: ActionResult, fd: FormData): Promis
   return run(async (actor) => {
     const r = await completeStage(actor, str(fd, "stageId"), { driveUrl: opt(fd, "driveUrl") ?? undefined });
     return r.next ? `Sent to ${STAGE_META[r.next].label}.` : "Done — nice work.";
+  });
+}
+
+export async function handOffAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const target = (str(fd, "target") || undefined) as StageKind | undefined;
+    if (target && !STAGE_KINDS.includes(target)) throw new UserError("Choose where to send it.");
+    const r = await handOff(actor, str(fd, "stageId"), {
+      target,
+      assigneeId: str(fd, "assigneeId") || null,
+      deadline: str(fd, "deadline") || null,
+      driveUrl: opt(fd, "driveUrl") ?? undefined,
+      canvaUrl: opt(fd, "canvaUrl") ?? undefined,
+    });
+    if (!r.next) return "Done — nice work.";
+    return str(fd, "assigneeName") ? `Sent to ${str(fd, "assigneeName")} (${STAGE_META[r.next].label}).` : `Sent to the ${STAGE_META[r.next].label} team.`;
   });
 }
 
@@ -164,7 +180,18 @@ export async function cancelItemAction(_: ActionResult, fd: FormData): Promise<A
 
 export async function commentAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
-    await addComment(actor, str(fd, "itemId"), str(fd, "body"));
+    await addComment(actor, str(fd, "itemId"), str(fd, "body"), {
+      parentId: str(fd, "parentId") || null,
+      mentionUserId: str(fd, "mentionUserId") || null,
+    });
+  });
+}
+
+export async function resolveCommentAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const resolved = str(fd, "resolved") !== "0";
+    await resolveComment(actor, str(fd, "commentId"), resolved);
+    return resolved ? "Marked as done." : "Reopened.";
   });
 }
 
@@ -178,6 +205,7 @@ export async function createItemsAction(_: ActionResult, fd: FormData): Promise<
       contentAssigneeId: fd.has("contentAssigneeId") ? str(fd, "contentAssigneeId") || null : undefined,
       platformIds,
       contentReady: str(fd, "contentReady") === "1",
+      sendWithCanva: str(fd, "sendWithCanva") === "1",
     });
     dest = str(fd, "returnTo");
     return `${ids.length} item${ids.length === 1 ? "" : "s"} added.`;

@@ -10,6 +10,7 @@ import type { ContentType } from "@/db/schema";
 import { monthKey, monthLabel, monthName, parseMonthKey, shiftMonth, todayISO } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
 import { getActivePeople } from "@/server/cached";
+import { can } from "@/domain/permissions";
 import { getBrandBySlug, getBrandMonths, getPlan, getWorkItems } from "@/server/queries";
 
 export async function generateMetadata({ params }: PageProps<"/brands/[slug]">) {
@@ -18,7 +19,8 @@ export async function generateMetadata({ params }: PageProps<"/brands/[slug]">) 
 }
 
 export default async function BrandPage({ params, searchParams }: PageProps<"/brands/[slug]">) {
-  await requireUser();
+  const me = await requireUser();
+  const canAdd = can.editContent(me);
   const { slug } = await params;
   const sp = await searchParams;
   const brand = await getBrandBySlug(slug);
@@ -43,7 +45,15 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
     plan ? getWorkItems({ planIds: [plan.id], includeDone: true, includeCancelled: showCancelled }) : Promise.resolve([]),
     getActivePeople(),
   ]);
-  const live = items.filter((i) => !i.cancelledAt);
+  // Team filter: Media Production = Reels, Graphic Design = Posts & Carousels.
+  const TEAM_TYPES: Record<string, ContentType[]> = { media: ["reel"], design: ["static", "carousel"], story: ["story"] };
+  const team = typeof sp.team === "string" && TEAM_TYPES[sp.team] ? sp.team : "";
+  const stateF = sp.state === "open" || sp.state === "done" ? sp.state : "";
+  const allLive = items.filter((i) => !i.cancelledAt);
+  const shown = items.filter(
+    (i) => (!team || TEAM_TYPES[team].includes(i.type)) && (!stateF || (stateF === "done" ? !!i.completedAt : !i.completedAt)),
+  );
+  const live = shown.filter((i) => !i.cancelledAt);
   const prev = shiftMonth(sel.year, sel.month, -1);
   const next = shiftMonth(sel.year, sel.month, 1);
   const base = `/brands/${brand.slug}`;
@@ -52,6 +62,10 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
     p.set("m", o.m ?? monthKey(sel.year, sel.month));
     if ((o.view ?? view) === "calendar") p.set("view", "calendar");
     if (o.cancelled ?? (showCancelled ? "1" : undefined)) p.set("cancelled", "1");
+    const t = o.team ?? team;
+    if (t) p.set("team", t);
+    const st = o.state ?? stateF;
+    if (st) p.set("state", st);
     return `${base}?${p}`;
   };
   const done = live.filter((i) => i.completedAt).length;
@@ -86,10 +100,12 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
           </div>
         </div>
         <div className="flex gap-2">
-          <ButtonLink href={`/settings/brands#${brand.slug}`} variant="ghost" size="md">
-            <Settings2 className="size-4" /> Brand settings
-          </ButtonLink>
-          {brand.isActive && (
+          {me.isAdmin && (
+            <ButtonLink href={`/settings/brands#${brand.slug}`} variant="ghost" size="md">
+              <Settings2 className="size-4" /> Brand settings
+            </ButtonLink>
+          )}
+          {brand.isActive && canAdd && (
             <ButtonLink href={addHref} variant="primary">
               <Plus className="size-4" strokeWidth={2.5} /> Add content
             </ButtonLink>
@@ -144,9 +160,9 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
         )}
       </div>
 
-      {live.length === 0 ? (
+      {allLive.length === 0 ? (
         <div className="mt-6">
-          <Empty icon={CalendarDays} title={`No content planned for ${monthLabel(sel.year, sel.month)}`} action={brand.isActive ? <ButtonLink href={addHref} variant="primary"><Plus className="size-4" /> Add the {monthName(sel.month)} plan</ButtonLink> : undefined}>
+          <Empty icon={CalendarDays} title={`No content planned for ${monthLabel(sel.year, sel.month)}`} action={brand.isActive && canAdd ? <ButtonLink href={addHref} variant="primary"><Plus className="size-4" /> Add the {monthName(sel.month)} plan</ButtonLink> : undefined}>
             {brand.isActive ? "Paste the month's list from Canva or add items one by one — it takes a minute." : "This brand is archived. Its past months are still here."}
           </Empty>
         </div>
@@ -179,7 +195,48 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
           </div>
 
           <div className="mt-6">
-            {view === "calendar" ? <MonthCalendar year={sel.year} month={sel.month} items={items} /> : <BulkList items={items} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} />}
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              {[
+                { key: "", label: "Everything", n: allLive.length },
+                { key: "media", label: "Media Production · Reels", n: allLive.filter((i) => i.type === "reel").length },
+                { key: "design", label: "Graphic Design · Posts & Carousels", n: allLive.filter((i) => i.type === "static" || i.type === "carousel").length },
+                { key: "story", label: "Stories", n: allLive.filter((i) => i.type === "story").length },
+              ]
+                .filter((c) => c.key === "" || c.n > 0)
+                .map((c) => (
+                  <Link
+                    key={c.key || "all"}
+                    href={q({ team: c.key })}
+                    className={clsx(
+                      "rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition-colors",
+                      team === c.key ? "border-navy-900 bg-navy-900 text-white" : "border-line bg-white text-ink-2 hover:border-line-strong",
+                    )}
+                  >
+                    {c.label} <span className={team === c.key ? "text-white/60" : "text-faint"}>{c.n}</span>
+                  </Link>
+                ))}
+              <span className="mx-1 h-5 w-px bg-line-strong" />
+              {[
+                { key: "", label: "All" },
+                { key: "open", label: "Not finished" },
+                { key: "done", label: "Published" },
+              ].map((c) => (
+                <Link
+                  key={c.key || "any"}
+                  href={q({ state: c.key })}
+                  className={clsx("rounded-full px-3 py-1.5 text-[13px] font-medium", stateF === c.key ? "bg-electric-soft text-[#1d5fd1]" : "text-muted hover:text-ink")}
+                >
+                  {c.label}
+                </Link>
+              ))}
+            </div>
+            {shown.length === 0 ? (
+              <Empty title="Nothing here with these filters" />
+            ) : view === "calendar" ? (
+              <MonthCalendar year={sel.year} month={sel.month} items={shown} />
+            ) : (
+              <BulkList items={shown} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={canAdd} />
+            )}
           </div>
           <div className="mt-3 text-right">
             <Link href={q({ cancelled: showCancelled ? "" : "1" })} className="text-[12.5px] text-muted hover:text-electric">
