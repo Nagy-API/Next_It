@@ -1,0 +1,33 @@
+# One command to run everything:  docker compose up -d   →  http://localhost:3000
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexora
+      POSTGRES_PASSWORD: nexora
+      POSTGRES_DB: nexora
+    volumes:
+      - nexora-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexora -d nexora"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://nexora:nexora@db:5432/nexora
+      SEED_DEFAULT_PASSWORD: Nexora@2026
+      # Lets people sign in over plain http (localhost or the office network). Remove once served over https.
+      INSECURE_COOKIES: "1"
+
+volumes:
+  nexora-data:

@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+/*
+ * NEXORA — internal operations UI.
+ * Brand: deep navy + electric blue (nexoraaagency.com), Montserrat for display, Inter for UI text.
+ */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-montserrat), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-navy-950: #030a1e;
+  --color-navy-900: #0b1639;
+  --color-navy-850: #0d1b4b;
+  --color-navy-800: #13245e;
+  --color-navy-700: #1e3278;
+
+  --color-electric: #3b82f6;
+  --color-electric-bright: #60a5fa;
+  --color-electric-soft: #eaf2ff;
+
+  --color-canvas: #f4f6fb;
+  --color-surface: #ffffff;
+  --color-line: #e3e8f1;
+  --color-line-strong: #cfd6e4;
+  --color-ink: #0b1639;
+  --color-ink-2: #3b4661;
+  --color-muted: #6b7690;
+  --color-faint: #9aa3b8;
+
+  --color-ok: #0f9d6b;
+  --color-ok-soft: #e6f6ef;
+  --color-warn: #c77700;
+  --color-warn-soft: #fff4de;
+  --color-bad: #d63a3a;
+  --color-bad-soft: #fdecec;
+  --color-back: #e0620f;
+  --color-back-soft: #fff0e5;
+  --color-wait: #64748b;
+  --color-wait-soft: #eef1f6;
+
+  --shadow-card: 0 1px 2px rgb(11 22 57 / 0.04), 0 1px 1px rgb(11 22 57 / 0.03);
+  --shadow-pop: 0 12px 32px -8px rgb(11 22 57 / 0.22), 0 2px 6px rgb(11 22 57 / 0.08);
+
+  --animate-in: fade-in 140ms ease-out;
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(59 130 246 / 0.45);
+    }
+    50% {
+      box-shadow: 0 0 0 6px rgb(59 130 246 / 0);
+    }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans text-[14px] leading-normal;
+  }
+  ::selection {
+    background: rgb(59 130 246 / 0.2);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-electric);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+  [type="date"]::-webkit-calendar-picker-indicator,
+  [type="time"]::-webkit-calendar-picker-indicator {
+    opacity: 0.55;
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-[14px] text-ink placeholder:text-faint transition-colors;
+    @apply hover:border-line-strong focus:border-electric focus:outline-none focus:ring-3 focus:ring-electric/15;
+  }
+  .field-sm {
+    @apply rounded-md px-2 py-1 text-[13px];
+  }
+  .label {
+    @apply mb-1.5 block text-[12px] font-medium text-ink-2;
+  }
+  .card {
+    @apply rounded-xl border border-line bg-surface shadow-card;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-muted;
+  }
+  .link {
+    @apply text-electric hover:underline underline-offset-2;
+  }
+}

@@ -1,0 +1,308 @@
+/** Brands, clients, projects, platforms and people. All changes are logged. */
+import { and, eq, ilike, ne, sql } from "drizzle-orm";
+import { hash } from "@node-rs/argon2";
+import { db } from "@/db";
+import { brands, clients, platforms, projects, sessions, users, type Team, TEAMS } from "@/db/schema";
+import { TEAM_META } from "@/domain/workflow";
+import { logActivity, type Actor } from "./activity";
+import { UserError, assert } from "./errors";
+
+export function slugify(s: string) {
+  return (
+    s
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "item"
+  );
+}
+
+async function uniqueSlug(table: typeof brands | typeof clients | typeof platforms, base: string, exceptId?: string) {
+  let slug = slugify(base);
+  for (let i = 2; ; i++) {
+    const rows = await db
+      .select({ id: table.id })
+      .from(table)
+      .where(exceptId ? and(eq(table.slug, slug), ne(table.id, exceptId)) : eq(table.slug, slug));
+    if (!rows.length) return slug;
+    slug = `${slugify(base)}-${i}`;
+  }
+}
+
+const BRAND_COLORS = ["#3B82F6", "#E0569B", "#10B981", "#F59E0B", "#8B5CF6", "#06B6D4", "#EF4444", "#84CC16", "#F97316", "#14B8A6"];
+
+/* ------------------------------ Brands ------------------------------ */
+
+export async function createBrand(actor: Actor, input: { name: string; defaultCreatorId?: string | null; color?: string | null }) {
+  const name = input.name.trim();
+  assert(name, "Brand name is required.");
+  const [dupe] = await db.select({ id: brands.id }).from(brands).where(ilike(brands.name, name));
+  assert(!dupe, `A brand called “${name}” already exists.`);
+  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(brands);
+  const slug = await uniqueSlug(brands, name);
+  return db.transaction(async (tx) => {
+    const [b] = await tx
+      .insert(brands)
+      .values({ name, slug, defaultCreatorId: input.defaultCreatorId || null, color: input.color || BRAND_COLORS[count % BRAND_COLORS.length] })
+      .returning();
+    await logActivity(tx, actor, { action: "brand_created", brandId: b.id, summary: `${actor.name} created the brand ${name}.` });
+    return b;
+  });
+}
+
+export async function updateBrand(
+  actor: Actor,
+  brandId: string,
+  input: { name?: string; defaultCreatorId?: string | null; color?: string; logoUrl?: string | null },
+) {
+  return db.transaction(async (tx) => {
+    const [b] = await tx.select().from(brands).where(eq(brands.id, brandId)).for("update");
+    assert(b, "Brand not found.");
+    if (input.name !== undefined && input.name.trim() !== b.name) {
+      const name = input.name.trim();
+      assert(name, "Brand name is required.");
+      const [dupe] = await tx.select({ id: brands.id }).from(brands).where(and(ilike(brands.name, name), ne(brands.id, brandId)));
+      assert(!dupe, `A brand called “${name}” already exists.`);
+      await tx.update(brands).set({ name }).where(eq(brands.id, brandId));
+      await logActivity(tx, actor, { action: "brand_updated", brandId, field: "name", oldValue: b.name, newValue: name, summary: `${actor.name} renamed the brand ${b.name} to ${name}.` });
+    }
+    if (input.defaultCreatorId !== undefined && (input.defaultCreatorId || null) !== b.defaultCreatorId) {
+      const newId = input.defaultCreatorId || null;
+      const names = await tx.select({ id: users.id, name: users.name }).from(users);
+      const nm = (id: string | null) => names.find((u) => u.id === id)?.name ?? null;
+      await tx.update(brands).set({ defaultCreatorId: newId }).where(eq(brands.id, brandId));
+      await logActivity(tx, actor, {
+        action: "brand_updated",
+        brandId,
+        subjectUserId: newId,
+        field: "defaultCreator",
+        oldValue: nm(b.defaultCreatorId),
+        newValue: nm(newId),
+        summary: `${actor.name} set the default content creator for ${b.name} to ${nm(newId) ?? "nobody"}${b.defaultCreatorId ? ` (was ${nm(b.defaultCreatorId)})` : ""}.`,
+      });
+    }
+    if (input.color !== undefined && input.color !== b.color) {
+      assert(/^#[0-9a-fA-F]{6}$/.test(input.color), "Color must be a hex value like #3B82F6.");
+      await tx.update(brands).set({ color: input.color }).where(eq(brands.id, brandId));
+    }
+    if (input.logoUrl !== undefined && (input.logoUrl || null) !== b.logoUrl) {
+      await tx.update(brands).set({ logoUrl: input.logoUrl || null }).where(eq(brands.id, brandId));
+      await logActivity(tx, actor, { action: "brand_updated", brandId, field: "logo", summary: `${actor.name} updated the ${b.name} logo.` });
+    }
+  });
+}
+
+export async function setBrandActive(actor: Actor, brandId: string, active: boolean) {
+  return db.transaction(async (tx) => {
+    const [b] = await tx.select().from(brands).where(eq(brands.id, brandId)).for("update");
+    assert(b, "Brand not found.");
+    if (b.isActive === active) return;
+    await tx.update(brands).set({ isActive: active, archivedAt: active ? null : new Date() }).where(eq(brands.id, brandId));
+    await logActivity(tx, actor, {
+      action: active ? "brand_reactivated" : "brand_archived",
+      brandId,
+      summary: active ? `${actor.name} reactivated ${b.name}.` : `${actor.name} made ${b.name} inactive. Its history stays in the archive.`,
+    });
+  });
+}
+
+/* ------------------------- Clients & projects ------------------------ */
+
+/** Returns the existing client when the name matches (case-insensitive) — no duplicate SINAIs. */
+export async function findOrCreateClient(actor: Actor, name: string) {
+  const n = name.trim();
+  assert(n, "Client name is required.");
+  const [existing] = await db.select().from(clients).where(ilike(clients.name, n));
+  if (existing) return { client: existing, created: false };
+  const slug = await uniqueSlug(clients, n);
+  return db.transaction(async (tx) => {
+    const [c] = await tx.insert(clients).values({ name: n, slug }).returning();
+    await logActivity(tx, actor, { action: "client_created", clientId: c.id, summary: `${actor.name} added the one-off client ${n}.` });
+    return { client: c, created: true };
+  });
+}
+
+export async function createProject(actor: Actor, input: { clientId: string; name: string; notes?: string | null }) {
+  const name = input.name.trim();
+  assert(name, "Project name is required.");
+  return db.transaction(async (tx) => {
+    const [c] = await tx.select().from(clients).where(eq(clients.id, input.clientId));
+    assert(c, "Client not found.");
+    const [p] = await tx.insert(projects).values({ clientId: c.id, name, notes: input.notes?.trim() || null, createdById: actor.id }).returning();
+    await logActivity(tx, actor, { action: "project_created", clientId: c.id, projectId: p.id, summary: `${actor.name} created the project “${name}” for ${c.name}.` });
+    return p;
+  });
+}
+
+export async function updateProject(actor: Actor, projectId: string, input: { name?: string; notes?: string | null }) {
+  return db.transaction(async (tx) => {
+    const [p] = await tx.select().from(projects).where(eq(projects.id, projectId));
+    assert(p, "Project not found.");
+    if (input.name !== undefined && input.name.trim() && input.name.trim() !== p.name) {
+      await tx.update(projects).set({ name: input.name.trim() }).where(eq(projects.id, projectId));
+      await logActivity(tx, actor, { action: "project_updated", clientId: p.clientId, projectId, field: "name", oldValue: p.name, newValue: input.name.trim(), summary: `${actor.name} renamed the project “${p.name}” to “${input.name.trim()}”.` });
+    }
+    if (input.notes !== undefined && (input.notes?.trim() || null) !== p.notes) {
+      await tx.update(projects).set({ notes: input.notes?.trim() || null }).where(eq(projects.id, projectId));
+      await logActivity(tx, actor, { action: "project_updated", clientId: p.clientId, projectId, field: "notes", summary: `${actor.name} updated the notes on “${p.name}”.` });
+    }
+  });
+}
+
+/* ------------------------------ Platforms ---------------------------- */
+
+export async function createPlatform(actor: Actor, name: string) {
+  const n = name.trim();
+  assert(n, "Platform name is required.");
+  const [dupe] = await db.select({ id: platforms.id }).from(platforms).where(ilike(platforms.name, n));
+  assert(!dupe, `${n} already exists.`);
+  const [{ max }] = await db.select({ max: sql<number>`coalesce(max(${platforms.sortOrder}), 0)::int` }).from(platforms);
+  const slug = await uniqueSlug(platforms, n);
+  return db.transaction(async (tx) => {
+    const [p] = await tx.insert(platforms).values({ name: n, slug, sortOrder: max + 1 }).returning();
+    await logActivity(tx, actor, { action: "platform_created", summary: `${actor.name} added the platform ${n}.` });
+    return p;
+  });
+}
+
+export async function updatePlatform(actor: Actor, platformId: string, input: { name?: string; isActive?: boolean }) {
+  return db.transaction(async (tx) => {
+    const [p] = await tx.select().from(platforms).where(eq(platforms.id, platformId));
+    assert(p, "Platform not found.");
+    if (input.name !== undefined && input.name.trim() && input.name.trim() !== p.name) {
+      await tx.update(platforms).set({ name: input.name.trim() }).where(eq(platforms.id, platformId));
+      await logActivity(tx, actor, { action: "platform_updated", field: "name", oldValue: p.name, newValue: input.name.trim(), summary: `${actor.name} renamed the platform ${p.name} to ${input.name.trim()}.` });
+    }
+    if (input.isActive !== undefined && input.isActive !== p.isActive) {
+      await tx.update(platforms).set({ isActive: input.isActive }).where(eq(platforms.id, platformId));
+      await logActivity(tx, actor, {
+        action: input.isActive ? "platform_enabled" : "platform_disabled",
+        summary: `${actor.name} ${input.isActive ? "enabled" : "disabled"} ${p.name}${input.isActive ? "" : " for new content (history is kept)"}.`,
+      });
+    }
+  });
+}
+
+/* ------------------------------- People ------------------------------ */
+
+const USERNAME_RE = /^[a-z0-9._-]{2,32}$/;
+
+export function validatePassword(pw: string) {
+  assert(pw.length >= 8, "Passwords need at least 8 characters.");
+  assert(pw.length <= 200, "That password is too long.");
+}
+
+export async function hashPassword(pw: string) {
+  return hash(pw, { memoryCost: 19456, timeCost: 2, outputLen: 32, parallelism: 1 });
+}
+
+function cleanTeams(teams: string[] | undefined): Team[] {
+  return (teams ?? []).filter((t): t is Team => (TEAMS as readonly string[]).includes(t));
+}
+
+export async function createUser(
+  actor: Actor,
+  input: { username: string; name: string; title?: string | null; teams?: string[]; isAdmin?: boolean; password: string },
+) {
+  const username = input.username.trim().toLowerCase();
+  assert(USERNAME_RE.test(username), "Usernames use 2–32 lowercase letters, numbers, dots, dashes or underscores.");
+  const name = input.name.trim();
+  assert(name, "Name is required.");
+  validatePassword(input.password);
+  const [dupe] = await db.select({ id: users.id }).from(users).where(eq(users.username, username));
+  assert(!dupe, `The username “${username}” is taken.`);
+  const passwordHash = await hashPassword(input.password);
+  const teams = cleanTeams(input.teams);
+  return db.transaction(async (tx) => {
+    const [u] = await tx
+      .insert(users)
+      .values({ username, name, title: input.title?.trim() || null, teams, isAdmin: !!input.isAdmin, passwordHash })
+      .returning();
+    await logActivity(tx, actor, {
+      action: "user_created",
+      subjectUserId: u.id,
+      summary: `${actor.name} created an account for ${name} (${teams.map((t) => TEAM_META[t].label).join(", ") || "no team"}).`,
+    });
+    return u;
+  });
+}
+
+export async function updateUser(
+  actor: Actor,
+  userId: string,
+  input: { name?: string; title?: string | null; teams?: string[]; isAdmin?: boolean },
+) {
+  return db.transaction(async (tx) => {
+    const [u] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
+    assert(u, "User not found.");
+    const set: Partial<typeof users.$inferInsert> = {};
+    const changes: string[] = [];
+    if (input.name !== undefined && input.name.trim() && input.name.trim() !== u.name) {
+      set.name = input.name.trim();
+      changes.push(`name → ${set.name}`);
+    }
+    if (input.title !== undefined && (input.title?.trim() || null) !== u.title) {
+      set.title = input.title?.trim() || null;
+      changes.push(`title → ${set.title ?? "none"}`);
+    }
+    if (input.teams !== undefined) {
+      const teams = cleanTeams(input.teams);
+      if ([...teams].sort().join() !== [...u.teams].sort().join()) {
+        set.teams = teams;
+        changes.push(`teams → ${teams.map((t) => TEAM_META[t].label).join(", ") || "none"}`);
+      }
+    }
+    if (input.isAdmin !== undefined && input.isAdmin !== u.isAdmin) {
+      if (!input.isAdmin) await assertAnotherAdmin(userId);
+      set.isAdmin = input.isAdmin;
+      changes.push(input.isAdmin ? "granted account administration" : "removed account administration");
+    }
+    if (!changes.length) return;
+    await tx.update(users).set(set).where(eq(users.id, userId));
+    await logActivity(tx, actor, { action: "user_updated", subjectUserId: userId, summary: `${actor.name} updated ${u.name}: ${changes.join("; ")}.` });
+  });
+}
+
+async function assertAnotherAdmin(userId: string) {
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(users)
+    .where(and(eq(users.isAdmin, true), eq(users.isActive, true), ne(users.id, userId)));
+  if (count === 0) throw new UserError("Keep at least one active administrator.");
+}
+
+export async function setUserActive(actor: Actor, userId: string, active: boolean) {
+  assert(!(userId === actor.id && !active), "You can't deactivate your own account.");
+  return db.transaction(async (tx) => {
+    const [u] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
+    assert(u, "User not found.");
+    if (u.isActive === active) return;
+    if (!active && u.isAdmin) await assertAnotherAdmin(userId);
+    await tx.update(users).set({ isActive: active, deactivatedAt: active ? null : new Date() }).where(eq(users.id, userId));
+    if (!active) await tx.delete(sessions).where(eq(sessions.userId, userId));
+    await logActivity(tx, actor, {
+      action: active ? "user_reactivated" : "user_deactivated",
+      subjectUserId: userId,
+      summary: active ? `${actor.name} reactivated ${u.name}'s account.` : `${actor.name} deactivated ${u.name}'s account. Their work history is kept.`,
+    });
+  });
+}
+
+export async function setUserPassword(actor: Actor, userId: string, password: string) {
+  validatePassword(password);
+  const passwordHash = await hashPassword(password);
+  return db.transaction(async (tx) => {
+    const [u] = await tx.select().from(users).where(eq(users.id, userId));
+    assert(u, "User not found.");
+    await tx.update(users).set({ passwordHash }).where(eq(users.id, userId));
+    // Sign the person out everywhere else.
+    await tx.delete(sessions).where(eq(sessions.userId, userId));
+    await logActivity(tx, actor, {
+      action: "password_changed",
+      subjectUserId: userId,
+      summary: actor.id === userId ? `${actor.name} changed their password.` : `${actor.name} reset ${u.name}'s password.`,
+    });
+  });
+}
