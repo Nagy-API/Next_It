@@ -52,7 +52,7 @@ export async function requireUser(): Promise<SessionUser> {
 
 export async function requireActor(): Promise<Actor & { user: SessionUser }> {
   const user = await requireUser();
-  return { id: user.id, name: user.name, user };
+  return { id: user.id, name: user.name, isAdmin: user.isAdmin, teams: user.teams, user };
 }
 
 export async function requireAdmin(): Promise<Actor & { user: SessionUser }> {

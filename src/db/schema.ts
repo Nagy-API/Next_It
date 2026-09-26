@@ -279,9 +279,19 @@ export const comments = pgTable(
     body: text("body").notNull(),
     /** Optional context label, e.g. "Returned to Content". */
     tag: text("tag"),
+    /** Replies point at the comment they answer (one level of threading). */
+    parentId: uuid("parent_id"),
+    /** The person this comment is addressed to — it shows up in their tasks until resolved. */
+    mentionUserId: uuid("mention_user_id").references(() => users.id),
+    resolvedAt: ts("resolved_at"),
+    resolvedById: uuid("resolved_by_id").references(() => users.id),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
-  (t) => [index("comments_item_idx").on(t.itemId, t.createdAt)],
+  (t) => [
+    index("comments_item_idx").on(t.itemId, t.createdAt),
+    index("comments_parent_idx").on(t.parentId),
+    index("comments_mention_idx").on(t.mentionUserId, t.resolvedAt),
+  ],
 );
 
 /**

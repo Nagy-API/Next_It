@@ -42,15 +42,22 @@ export function ItemRow({ item, showContext = true, compact, leading }: { item: 
         )}
       </div>
       <FlowMini item={item} className="hidden md:flex" />
-      <div className="hidden w-[170px] shrink-0 items-center gap-2 text-[13px] sm:flex">
+      <div className="hidden w-[190px] shrink-0 items-center gap-2 text-[13px] sm:flex">
         {c ? (
-          <>
-            <Avatar name={holder} size={24} />
+          holder ? (
+            <>
+              <Avatar name={holder} size={24} />
+              <div className="min-w-0 leading-tight">
+                <div className="truncate font-medium">{holder}</div>
+                <div className="truncate text-[12px] text-muted">{STAGE_META[c.kind].label}</div>
+              </div>
+            </>
+          ) : (
             <div className="min-w-0 leading-tight">
-              <div className={clsx("truncate font-medium", !holder && "text-muted")}>{holder ?? "Unassigned"}</div>
-              <div className="truncate text-[12px] text-muted">{STAGE_META[c.kind].label}</div>
+              <div className="truncate font-medium text-warn">Waiting for {STAGE_META[c.kind].short} team</div>
+              <div className="truncate text-[12px] text-muted">nobody picked it up yet</div>
             </div>
-          </>
+          )
         ) : null}
       </div>
       <div className="hidden w-[150px] shrink-0 justify-end sm:flex">

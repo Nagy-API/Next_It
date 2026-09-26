@@ -11,6 +11,7 @@ import {
   clients,
   stageCompletions,
   stages,
+  users,
   type ContentType,
   type StageKind,
 } from "@/db/schema";
@@ -18,6 +19,7 @@ import { STAGE_META, TYPE_META, routeFor } from "@/domain/workflow";
 import { formatDay, isValidISODate, isValidTime, monthLabel, plural } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
+import { NOT_ALLOWED, can } from "@/domain/permissions";
 import {
   assignStageTx,
   completeStageTx,
@@ -66,8 +68,17 @@ export async function createItems(
   actor: Actor,
   target: ItemTarget,
   rows: NewItemRow[],
-  options: { contentAssigneeId?: string | null; platformIds?: string[]; contentReady?: boolean; now?: Date } = {},
+  options: {
+    contentAssigneeId?: string | null;
+    platformIds?: string[];
+    /** Mark every row's Content as delivered now. */
+    contentReady?: boolean;
+    /** Rows that already have their Canva slide link are delivered automatically. */
+    sendWithCanva?: boolean;
+    now?: Date;
+  } = {},
 ): Promise<string[]> {
+  assert(target.kind === "plan" ? can.editContent(actor) : can.manageProjects(actor), "Only the Content team can add content.");
   const clean = rows
     .map((r) => ({ ...r, title: r.title.trim() }))
     .filter((r) => r.title.length > 0);
@@ -155,7 +166,7 @@ export async function createItems(
         summary: `${actor.name} added ${TYPE_META[r.type].label} “${r.title}” to ${where}.`,
         at: now,
       });
-      if (options.contentReady) {
+      if (options.contentReady || (options.sendWithCanva && item.canvaUrl)) {
         const ctx = await loadItemCtx(tx, item.id);
         const all = await loadStages(tx, item.id);
         await completeStageTx(tx, actor, ctx, all, all[0], now);
@@ -184,6 +195,15 @@ export async function updateItem(actor: Actor, itemId: string, patch: ItemPatch)
     const item = ctx.item;
     const base = { itemId, brandId: ctx.brandId, projectId: ctx.projectId, clientId: ctx.clientId };
     let changed = 0;
+    const differs = (a: unknown, b: unknown) => a !== undefined && (a || null) !== (b || null);
+    if (differs(patch.title?.trim(), item.title) || differs(patch.type, item.type) || differs(patch.canvaUrl && normalizeUrl(patch.canvaUrl), item.canvaUrl))
+      assert(can.editContent(actor), "Only the Content team can change the content details.");
+    if (differs(patch.postingDate, item.postingDate) || differs(patch.postingTime, item.postingTime)) assert(can.editPostingDate(actor), NOT_ALLOWED);
+    if (differs(patch.driveUrl && normalizeUrl(patch.driveUrl), item.driveUrl)) {
+      const all = await loadStages(tx, itemId);
+      const production = all.find((s) => STAGE_META[s.kind].needsDriveLink);
+      assert(!!actor.isAdmin || (production && can.doStage(actor, production)), "Only the team that made the file can change its Drive link.");
+    }
 
     if (patch.title !== undefined) {
       const t = patch.title.trim();
@@ -200,6 +220,12 @@ export async function updateItem(actor: Actor, itemId: string, patch: ItemPatch)
         await tx.update(contentItems).set({ canvaUrl: v }).where(eq(contentItems.id, itemId));
         await logActivity(tx, actor, { ...base, action: "item_updated", field: "canvaUrl", oldValue: item.canvaUrl, newValue: v, summary: `${actor.name} ${v ? (item.canvaUrl ? "changed" : "added") : "removed"} the Canva link.` });
         changed++;
+        // Adding the Canva slide is the moment content is delivered: record it and pass the work on.
+        if (v && !item.canvaUrl && !item.cancelledAt) {
+          const all = await loadStages(tx, itemId);
+          const content = all.find((s) => s.kind === "content" && s.status === "active");
+          if (content) await completeStageTx(tx, actor, { ...ctx, item: { ...item, canvaUrl: v } }, all, content, new Date());
+        }
       }
     }
     if (patch.driveUrl !== undefined) {
@@ -270,6 +296,7 @@ async function changeTypeTx(tx: Tx, actor: Actor, ctx: Awaited<ReturnType<typeof
 
 export async function setItemCancelled(actor: Actor, itemId: string, cancelled: boolean) {
   return db.transaction(async (tx) => {
+    assert(can.editContent(actor), NOT_ALLOWED);
     const ctx = await loadItemCtx(tx, itemId);
     if (!!ctx.item.cancelledAt === cancelled) return false;
     await tx
@@ -288,20 +315,62 @@ export async function setItemCancelled(actor: Actor, itemId: string, cancelled: 
   });
 }
 
-export async function addComment(actor: Actor, itemId: string, body: string) {
+export async function addComment(
+  actor: Actor,
+  itemId: string,
+  body: string,
+  opts: { parentId?: string | null; mentionUserId?: string | null } = {},
+) {
   const text = body.trim();
   assert(text, "Write something first.");
   assert(text.length <= 4000, "Keep comments under 4000 characters.");
   return db.transaction(async (tx) => {
     const ctx = await loadItemCtx(tx, itemId, false);
-    await tx.insert(comments).values({ itemId, authorId: actor.id, body: text });
+    let parent: typeof comments.$inferSelect | undefined;
+    if (opts.parentId) {
+      [parent] = await tx.select().from(comments).where(eq(comments.id, opts.parentId));
+      assert(parent && parent.itemId === itemId, "That comment no longer exists.");
+      if (parent.parentId) [parent] = await tx.select().from(comments).where(eq(comments.id, parent.parentId)); // keep one level
+    }
+    let to: { id: string; name: string } | undefined;
+    if (opts.mentionUserId && !parent) {
+      [to] = await tx.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, opts.mentionUserId));
+      assert(to, "That person doesn't exist.");
+    }
+    await tx.insert(comments).values({ itemId, authorId: actor.id, body: text, parentId: parent?.id ?? null, mentionUserId: to?.id ?? null });
+    // Replying to a comment addressed to you counts as answering it.
+    if (parent && parent.mentionUserId === actor.id && !parent.resolvedAt) {
+      await tx.update(comments).set({ resolvedAt: new Date(), resolvedById: actor.id }).where(eq(comments.id, parent.id));
+    }
     await logActivity(tx, actor, {
       itemId,
       brandId: ctx.brandId,
       projectId: ctx.projectId,
       clientId: ctx.clientId,
-      action: "comment_added",
-      summary: `${actor.name} commented: “${truncate(text, 140)}”`,
+      subjectUserId: to?.id ?? null,
+      action: parent ? "comment_replied" : "comment_added",
+      summary: parent
+        ? `${actor.name} replied: “${truncate(text, 140)}”`
+        : `${actor.name} ${to ? `wrote to ${to.name}` : "commented"}: “${truncate(text, 140)}”`,
+    });
+  });
+}
+
+/** Mark a comment thread as handled (the person it was for, its author, or an admin). */
+export async function resolveComment(actor: Actor, commentId: string, resolved = true) {
+  return db.transaction(async (tx) => {
+    const [c] = await tx.select().from(comments).where(eq(comments.id, commentId));
+    assert(c && !c.parentId, "Comment not found.");
+    assert(c.authorId === actor.id || c.mentionUserId === actor.id || !!actor.isAdmin, NOT_ALLOWED);
+    await tx.update(comments).set(resolved ? { resolvedAt: new Date(), resolvedById: actor.id } : { resolvedAt: null, resolvedById: null }).where(eq(comments.id, commentId));
+    const ctx = await loadItemCtx(tx, c.itemId, false);
+    await logActivity(tx, actor, {
+      itemId: c.itemId,
+      brandId: ctx.brandId,
+      projectId: ctx.projectId,
+      clientId: ctx.clientId,
+      action: resolved ? "comment_resolved" : "comment_reopened",
+      summary: `${actor.name} ${resolved ? "marked a comment as done" : "reopened a comment"}: “${truncate(c.body, 80)}”`,
     });
   });
 }
@@ -330,6 +399,11 @@ export async function bulkStageAction(actor: Actor, itemIds: string[], kind: Sta
         skipped.push(ctx.item.title);
         continue;
       }
+      const allowed = action.type === "assign" ? can.assign(actor, stage) : action.type === "deadline" ? can.setDeadline(actor) : can.doStage(actor, stage);
+      if (!allowed) {
+        skipped.push(ctx.item.title);
+        continue;
+      }
       try {
         if (action.type === "assign") {
           if (await assignStageTx(tx, actor, ctx, stage, action.userId)) applied++;
@@ -340,7 +414,7 @@ export async function bulkStageAction(actor: Actor, itemIds: string[], kind: Sta
           }
           if (await setStageDeadlineTx(tx, actor, ctx, stage, action.date)) applied++;
         } else {
-          if (stage.status !== "active" || (STAGE_META[kind].needsDriveLink && !ctx.item.driveUrl) || kind === "social") {
+          if (stage.status !== "active" || (STAGE_META[kind].needsDriveLink && !ctx.item.driveUrl) || kind === "social" || (kind === "content" && !ctx.item.canvaUrl)) {
             skipped.push(ctx.item.title);
             continue;
           }

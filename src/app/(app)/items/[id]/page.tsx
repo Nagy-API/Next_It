@@ -9,7 +9,10 @@ import { cairoDate, diffDays, formatDateTime, formatDay, formatRelative, monthLa
 import { requireUser } from "@/server/auth";
 import { getActivePeople } from "@/server/cached";
 import { getItemDetail, type StageView } from "@/server/queries";
-import { AssignSelect, CancelToggle, CommentBox, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, PlatformRow, SendBack, TakeIt } from "./parts";
+import { Comments } from "@/components/comments";
+import { can } from "@/domain/permissions";
+import { AssignSelect, CancelToggle, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, PlatformRow, SendBack } from "./parts";
+import { DeliverButton, HandOffPanel, TakeButton } from "@/components/handoff";
 
 export async function generateMetadata({ params }: PageProps<"/items/[id]">) {
   const d = await getItemDetail((await params).id);
@@ -24,8 +27,6 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
   const { item, history, allPlatforms, comments } = detail;
   const today = todayISO();
   const cur = item.current;
-  const curIdx = cur ? item.stages.findIndex((s) => s.id === cur.id) : -1;
-  const next = cur ? (item.stages[curIdx + 1] ?? null) : null;
   const pickPeople = people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }));
   const open = !item.cancelledAt;
   const backTargets = open
@@ -40,11 +41,17 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
   const platformRows = allPlatforms.filter((p) => p.isActive || item.platforms.some((ip) => ip.platformId === p.id));
   const targeted = item.platforms.filter((p) => PLATFORM_STATUS_META[p.status].targeted);
 
-  // Merge notes + activity into one timeline, newest first.
-  const timeline = [
-    ...comments.map((c) => ({ kind: "comment" as const, at: c.createdAt, key: `c${c.id}`, c })),
-    ...history.filter((h) => h.action !== "comment_added").map((h) => ({ kind: "log" as const, at: h.at, key: `h${h.id}`, h })),
-  ].sort((a, b) => b.at.getTime() - a.at.getTime());
+  // What this person is allowed to do here.
+  const may = {
+    doCurrent: !!cur && can.doStage(me, { kind: cur.kind, assigneeId: cur.assignee?.id }),
+    assign: !!cur && can.assign(me, cur),
+    deadline: can.setDeadline(me),
+    changeDeadline: can.changeDeadline(me),
+    excuse: can.excuseLateness(me),
+    editContent: can.editContent(me),
+    editDate: can.editPostingDate(me),
+    publish: can.publish(me),
+  };
 
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -84,7 +91,7 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
               <FolderOpen className="size-4 text-[#1a73e8]" /> Drive file <ExternalLink className="size-3.5 text-faint" />
             </ExtA>
           )}
-          <DetailsForm item={item} canChangeType={canChangeType} />
+          {(may.editContent || may.editDate) && <DetailsForm item={item} canChangeType={canChangeType && may.editContent} canEditContent={may.editContent} />}
         </div>
       </div>
 
@@ -113,7 +120,7 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
                   const b = healthBadge(cur, today);
                   return b ? <Badge tone={b.tone}>{b.label}</Badge> : null;
                 })()}
-                {cur.assignee?.id !== me.id && <TakeIt stageId={cur.id} userId={me.id} />}
+                {!cur.assignee && may.doCurrent && <TakeButton stageId={cur.id} userId={me.id} size="sm" />}
               </div>
               {cur.round > 1 && cur.returnedAt && (
                 <div className="flex gap-2 border-b border-line bg-back-soft/30 px-5 py-3 text-[13.5px]">
@@ -125,12 +132,16 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
                 </div>
               )}
               <div className="space-y-5 p-5">
-                {cur.kind === "social" ? (
+                {!may.doCurrent ? (
+                  <p className="text-[14px] text-ink-2">
+                    This step belongs to the <b>{STAGE_META[cur.kind].label}</b> team. You&rsquo;ll see it move here as soon as they finish. Need something from them? Write them a comment.
+                  </p>
+                ) : cur.kind === "social" ? (
                   <div className="text-[14px] text-ink-2">
                     {targeted.length ? (
-                      <>Update each platform below. When every planned platform is <b>Published</b>, this item finishes automatically.</>
+                      <>Update each platform in <b>Publishing</b> below. When every planned platform is <b>Published</b>, this item finishes by itself.</>
                     ) : (
-                      <>Pick the platforms this goes on below (set them to Pending, Scheduled or Published).</>
+                      <>Choose the platforms in <b>Publishing</b> below and mark them Published — or finish it here if it isn&rsquo;t going on any tracked platform.</>
                     )}
                     {!targeted.length && (
                       <div className="mt-3">
@@ -138,27 +149,32 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
                       </div>
                     )}
                   </div>
+                ) : cur.kind === "delivery" ? (
+                  <div className="flex flex-wrap items-center gap-3 text-[14px] text-ink-2">
+                    <DeliverButton stageId={cur.id} />
+                    <span>Once the files are with the client. Time and name are saved automatically.</span>
+                  </div>
                 ) : (
-                  <CompleteStage
-                    stageId={cur.id}
-                    kind={cur.kind}
-                    nextLabel={next ? STAGE_META[next.kind].label : null}
-                    nextOwner={next?.assignee?.name ?? null}
-                    needsDrive={STAGE_META[cur.kind].needsDriveLink}
-                    driveUrl={item.driveUrl}
-                    finalLabel={finalLabel(item.context)}
-                  />
+                  <HandOffPanel item={item} stageId={cur.id} from={cur.kind} people={pickPeople} />
                 )}
                 <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-line pt-4">
                   <div className="w-[200px]">
-                    <div className="label">Owner</div>
-                    <AssignSelect stageId={cur.id} kind={cur.kind} value={cur.assignee?.id ?? null} people={pickPeople} />
+                    <div className="label">Who&rsquo;s working on it</div>
+                    {may.assign ? (
+                      <AssignSelect stageId={cur.id} kind={cur.kind} value={cur.assignee?.id ?? null} people={pickPeople} />
+                    ) : (
+                      <div className="h-[30px] text-[14px] font-medium leading-[30px]">{cur.assignee?.name ?? `Anyone in ${STAGE_META[cur.kind].label}`}</div>
+                    )}
                   </div>
                   <div>
-                    <div className="label">Deadline (optional)</div>
-                    <DeadlineInput stageId={cur.id} value={cur.deadline} />
+                    <div className="label">Deadline</div>
+                    {may.changeDeadline || (may.deadline && !cur.deadline) ? (
+                      <DeadlineInput stageId={cur.id} value={cur.deadline} />
+                    ) : (
+                      <DeadlineInput stageId={cur.id} value={cur.deadline} locked disabled={!cur.deadline} />
+                    )}
                   </div>
-                  {(cur.health === "overdue" || cur.health === "overdue_excused") && <ExceptionToggle stageId={cur.id} excused={!!cur.lateExcusedAt} />}
+                  {may.excuse && (cur.health === "overdue" || cur.health === "overdue_excused") && <ExceptionToggle stageId={cur.id} excused={!!cur.lateExcusedAt} />}
                   <div className="ml-auto">
                     <SendBack itemId={item.id} targets={backTargets} />
                   </div>
@@ -193,25 +209,29 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
               </div>
               <div className="divide-y divide-line">
                 {platformRows.map((p) => (
-                  <PlatformRow key={p.id} itemId={item.id} platform={p} row={item.platforms.find((ip) => ip.platformId === p.id) ?? null} canPublish={canPublish} />
+                  <PlatformRow key={p.id} itemId={item.id} platform={p} row={item.platforms.find((ip) => ip.platformId === p.id) ?? null} canPublish={canPublish} readOnly={!may.publish} />
                 ))}
               </div>
             </section>
           )}
 
-          {/* ---------------- All stages (plan ahead) ---------------- */}
-          <section className="card overflow-hidden">
-            <div className="border-b border-line px-5 py-3.5">
-              <h2 className="font-display text-[15px] font-bold">Stages</h2>
-              <p className="text-[12.5px] text-muted">Plan ahead: set owners and optional deadlines for the next steps. Late deliveries move later deadlines automatically.</p>
-            </div>
-            <div className="divide-y divide-line">
+          {/* ---------------- All steps (plan ahead) — tucked away ---------------- */}
+          <details className="card group overflow-hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 hover:bg-[#fafbfd]">
+              <span>
+                <span className="font-display text-[15px] font-bold">More details</span>
+                <span className="ml-2 text-[12.5px] text-muted">Every step, who did it, when, and deadlines</span>
+              </span>
+              <span className="text-[13px] font-medium text-electric group-open:hidden">Show</span>
+              <span className="hidden text-[13px] font-medium text-electric group-open:inline">Hide</span>
+            </summary>
+            <div className="divide-y divide-line border-t border-line">
               {item.stages.map((s) => (
-                <StageLine key={s.id} s={s} people={pickPeople} disabled={!open} today={today} />
+                <StageLine key={s.id} s={s} people={pickPeople} disabled={!open} today={today} isAdmin={me.isAdmin} canAssign={can.assign(me, s)} canDeadline={may.deadline} canExcuse={may.excuse} />
               ))}
             </div>
-          </section>
-          {open ? (
+          </details>
+          {!may.editContent ? null : open ? (
             <div className="flex justify-end">
               <CancelToggle itemId={item.id} cancelled={false} />
             </div>
@@ -223,41 +243,36 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
           )}
         </div>
 
-        {/* ---------------- Notes & history ---------------- */}
+        {/* ---------------- Comments & history ---------------- */}
         <aside className="min-w-0 space-y-4">
-          <section className="card p-4">
+          <section id="comments" className="card scroll-mt-24 p-4">
             <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
-              <MessageSquare className="size-4 text-electric" /> Notes & history
+              <MessageSquare className="size-4 text-electric" /> Comments
             </h2>
-            <CommentBox itemId={item.id} />
-            <ol className="mt-5 space-y-4">
-              {timeline.map((t) =>
-                t.kind === "comment" ? (
-                  <li key={t.key} className="flex gap-2.5">
-                    <Avatar name={t.c.authorName} size={26} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline gap-2 text-[12.5px]">
-                        <span className="font-semibold text-ink">{t.c.authorName}</span>
-                        <span className="text-faint">{formatRelative(t.c.createdAt)}</span>
-                      </div>
-                      {t.c.tag && <div className="mt-1"><Badge tone="back">{t.c.tag}</Badge></div>}
-                      <div className="mt-1 whitespace-pre-wrap rounded-lg rounded-tl-sm bg-canvas px-3 py-2 text-[13.5px] text-ink">{t.c.body}</div>
-                    </div>
-                  </li>
-                ) : (
-                  <li key={t.key} className="flex gap-2.5 text-[12.5px]">
-                    <span className="mt-[5px] flex w-[26px] shrink-0 justify-center">
-                      <span className={clsx("size-2 rounded-full", t.h.action === "stage_completed" ? "bg-ok" : t.h.action === "stage_returned" ? "bg-back" : t.h.action.startsWith("deadline") ? "bg-warn" : "bg-line-strong")} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-ink-2">{t.h.summary}</div>
-                      <div className="mt-0.5 text-faint" title={formatDateTime(t.h.at)}>{formatDateTime(t.h.at)}</div>
-                    </div>
-                  </li>
-                ),
-              )}
-            </ol>
+            <Comments itemId={item.id} comments={comments} people={people.map((p) => ({ id: p.id, name: p.name }))} meId={me.id} isAdmin={me.isAdmin} />
           </section>
+          <details className="card group p-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between">
+              <span className="font-display text-[15px] font-bold">History</span>
+              <span className="text-[12.5px] text-muted">
+                {history.length} changes · <span className="text-electric group-open:hidden">show</span>
+                <span className="hidden text-electric group-open:inline">hide</span>
+              </span>
+            </summary>
+            <ol className="mt-4 space-y-3.5">
+              {history.map((h) => (
+                <li key={h.id} className="flex gap-2.5 text-[12.5px]">
+                  <span className="mt-[5px] flex w-3 shrink-0 justify-center">
+                    <span className={clsx("size-2 rounded-full", h.action === "stage_completed" ? "bg-ok" : h.action === "stage_returned" ? "bg-back" : h.action.startsWith("deadline") ? "bg-warn" : "bg-line-strong")} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-ink-2">{h.summary}</div>
+                    <div className="mt-0.5 text-faint">{formatDateTime(h.at)}</div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </details>
         </aside>
       </div>
     </div>
@@ -282,7 +297,25 @@ function ShiftNote({ s }: { s: StageView }) {
   );
 }
 
-function StageLine({ s, people, disabled, today }: { s: StageView; people: { id: string; name: string; teams: string[] }[]; disabled: boolean; today: string }) {
+function StageLine({
+  s,
+  people,
+  disabled,
+  today,
+  isAdmin,
+  canAssign,
+  canDeadline,
+  canExcuse,
+}: {
+  s: StageView;
+  people: { id: string; name: string; teams: string[] }[];
+  disabled: boolean;
+  today: string;
+  isAdmin: boolean;
+  canAssign: boolean;
+  canDeadline: boolean;
+  canExcuse: boolean;
+}) {
   const b = healthBadge(s, today);
   const late = s.status === "done" && s.completedAt && s.deadline ? Math.max(0, diffDays(cairoDate(s.completedAt), s.deadline)) : 0;
   return (
@@ -303,8 +336,8 @@ function StageLine({ s, people, disabled, today }: { s: StageView; people: { id:
               {s.completedBy && s.assignee && s.completedBy.id !== s.assignee.id && <div className="text-[11.5px] text-muted">marked by {s.completedBy.name}</div>}
             </div>
           </div>
-        ) : disabled ? (
-          <span className="text-[13px] text-muted">{s.assignee?.name ?? "Unassigned"}</span>
+        ) : disabled || !canAssign ? (
+          <span className="text-[13px] text-muted">{s.assignee?.name ?? `Anyone in ${STAGE_META[s.kind].label}`}</span>
         ) : (
           <AssignSelect stageId={s.id} kind={s.kind} value={s.assignee?.id ?? null} people={people} />
         )}
@@ -315,11 +348,11 @@ function StageLine({ s, people, disabled, today }: { s: StageView; people: { id:
             <span className="text-muted">{formatDateTime(s.completedAt)}</span>
             {s.deadline && <span className="text-muted">· deadline {formatDay(s.deadline, { weekday: false })}</span>}
             {b && <Badge tone={b.tone}>{s.health === "done_late" ? `${plural(late, "day")} late` : b.label}</Badge>}
-            {(s.health === "done_late" || s.health === "done_excused") && !disabled && <ExceptionToggle stageId={s.id} excused={!!s.lateExcusedAt} />}
+            {(s.health === "done_late" || s.health === "done_excused") && !disabled && canExcuse && <ExceptionToggle stageId={s.id} excused={!!s.lateExcusedAt} />}
           </>
         ) : (
           <>
-            <DeadlineInput stageId={s.id} value={s.deadline} disabled={disabled} />
+            <DeadlineInput stageId={s.id} value={s.deadline} disabled={disabled || (!canDeadline && !isAdmin)} locked={(!!s.deadline && !isAdmin) || (!canDeadline && !isAdmin)} />
             {s.shiftDays > 0 && s.originalDeadline && (
               <span className="text-[12px] text-warn" title={s.shiftReason ?? ""}>
                 was {formatDay(s.originalDeadline, { weekday: false })} (+{s.shiftDays}d)

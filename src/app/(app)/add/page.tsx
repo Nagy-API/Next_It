@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { can } from "@/domain/permissions";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, platforms, projects } from "@/db/schema";
@@ -10,7 +12,8 @@ import { AddForm } from "./add-form";
 export const metadata = { title: "Add content" };
 
 export default async function AddPage({ searchParams }: PageProps<"/add">) {
-  await requireUser();
+  const me = await requireUser();
+  if (!can.editContent(me)) redirect("/my-work");
   const sp = await searchParams;
   const [brands, people, platformRows, projectRows] = await Promise.all([
     getAllBrands(),

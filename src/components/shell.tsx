@@ -15,11 +15,13 @@ export function Shell({
   user,
   brands,
   myCount,
+  canAdd,
   children,
 }: {
   user: { name: string; title: string | null; isAdmin: boolean; username: string };
   brands: NavBrand[];
   myCount: number;
+  canAdd: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -38,7 +40,7 @@ export function Shell({
         )}
       >
         <div className="relative flex h-16 items-center px-5">
-          <Link href="/" className="block" aria-label="NEXORA home">
+          <Link href="/" className="block" aria-label="NEXORA">
             <Image src="/brand/nexora-wordmark-white.png" alt="NEXORA" width={777} height={153} priority className="h-[22px] w-auto" />
           </Link>
           <span className="ml-2 mt-0.5 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-electric-bright">Ops</span>
@@ -48,8 +50,8 @@ export function Shell({
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 pb-4 pt-2">
-          <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} />
-          <NavItem href="/my-work" icon={UserRound} label="My work" active={pathname.startsWith("/my-work")} count={myCount} />
+          <NavItem href="/my-work" icon={UserRound} label="My tasks" active={pathname.startsWith("/my-work")} count={myCount} />
+          <NavItem href="/overview" icon={Home} label="Overview" active={pathname.startsWith("/overview") || pathname.startsWith("/work")} />
 
           <div className="mt-5 mb-1.5 flex items-center justify-between px-3">
             <Link href="/brands" className={clsx("text-[11px] font-semibold uppercase tracking-[0.12em] hover:text-white", pathname === "/brands" ? "text-white" : "text-white/45")}>
@@ -90,7 +92,7 @@ export function Shell({
         </nav>
 
         <div className="border-t border-white/10 p-3">
-          <NavItem href="/settings" icon={Settings} label="Settings" active={pathname.startsWith("/settings")} />
+          {user.isAdmin && <NavItem href="/settings" icon={Settings} label="Settings" active={pathname.startsWith("/settings")} />}
           <UserMenu user={user} />
         </div>
       </aside>
@@ -103,10 +105,12 @@ export function Shell({
             <Menu className="size-5" />
           </button>
           <SearchBox />
-          <Link href="/add" className={btn("primary", "md", "ml-auto")}>
-            <Plus className="size-4" strokeWidth={2.5} />
-            <span className="hidden sm:inline">Add content</span>
-          </Link>
+          {canAdd && (
+            <Link href="/add" className={btn("primary", "md", "ml-auto")}>
+              <Plus className="size-4" strokeWidth={2.5} />
+              <span className="hidden sm:inline">Add content</span>
+            </Link>
+          )}
         </div>
       </div>
 

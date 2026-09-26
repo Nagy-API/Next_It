@@ -130,7 +130,7 @@ export async function seed() {
     postingDate,
   }));
   await createItems(
-    { id: king.id, name: king.name },
+    { id: king.id, name: king.name, teams: king.teams },
     { kind: "plan", brandId: vr.id, year: 2026, month: 10 },
     rows,
     { contentReady: true, now: new Date("2026-09-22T15:00:00Z") },

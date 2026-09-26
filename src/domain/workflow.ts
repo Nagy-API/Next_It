@@ -52,6 +52,23 @@ export function routeFor(type: ContentType, context: WorkContext): StageKind[] {
   return ["content", ...production, finish];
 }
 
+/**
+ * Where work can be sent when a stage is finished. Content chooses the team
+ * (Media, Graphic Design, or straight to Social/Delivery); later stages have one next step.
+ */
+export function handoffTargets(from: StageKind, context: WorkContext): StageKind[] {
+  const final: StageKind = context === "plan" ? "social" : "delivery";
+  if (from === "content") return ["media", "design", final];
+  if (from === "media" || from === "design") return [final];
+  return [];
+}
+
+/** The route after `from` when work is sent to `target`. */
+export function routeAfter(target: StageKind, context: WorkContext): StageKind[] {
+  const final: StageKind = context === "plan" ? "social" : "delivery";
+  return target === final ? [final] : [target, final];
+}
+
 export function finalLabel(context: WorkContext): string {
   return context === "plan" ? "Published" : "Delivered";
 }

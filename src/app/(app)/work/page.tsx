@@ -1,3 +1,4 @@
+import { can } from "@/domain/permissions";
 import { Inbox } from "lucide-react";
 import { BulkList } from "@/components/bulk-list";
 import { FilterBar } from "@/components/filter-bar";
@@ -21,7 +22,7 @@ const STATUS: Record<string, { label: string; test: (i: WorkItem) => boolean }> 
 const ORDER = { overdue: 0, returned: 1, at_risk: 2, unassigned: 3, due_soon: 4 } as const;
 
 export default async function WorkPage({ searchParams }: PageProps<"/work">) {
-  await requireUser();
+  const me = await requireUser();
   const sp = await searchParams;
   const get = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
   const [open, people, brands] = await Promise.all([getOpenItems(), getActivePeople(), getAllBrands()]);
@@ -53,7 +54,7 @@ export default async function WorkPage({ searchParams }: PageProps<"/work">) {
         />
       </div>
       {items.length ? (
-        <BulkList items={items} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} showContext />
+        <BulkList items={items} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={can.editContent(me)} showContext />
       ) : (
         <Empty icon={Inbox} title="Nothing matches">Try clearing a filter.</Empty>
       )}

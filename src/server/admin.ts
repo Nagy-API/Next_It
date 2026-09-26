@@ -6,6 +6,9 @@ import { brands, clients, platforms, projects, sessions, users, type Team, TEAMS
 import { TEAM_META } from "@/domain/workflow";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
+import { can } from "@/domain/permissions";
+
+const ADMIN_ONLY = "Only an admin (Shahenda or IT) can change settings.";
 
 export function slugify(s: string) {
   return (
@@ -36,6 +39,7 @@ const BRAND_COLORS = ["#3B82F6", "#E0569B", "#10B981", "#F59E0B", "#8B5CF6", "#0
 /* ------------------------------ Brands ------------------------------ */
 
 export async function createBrand(actor: Actor, input: { name: string; defaultCreatorId?: string | null; color?: string | null }) {
+  assert(can.manageBrands(actor), ADMIN_ONLY);
   const name = input.name.trim();
   assert(name, "Brand name is required.");
   const [dupe] = await db.select({ id: brands.id }).from(brands).where(ilike(brands.name, name));
@@ -57,6 +61,7 @@ export async function updateBrand(
   brandId: string,
   input: { name?: string; defaultCreatorId?: string | null; color?: string; logoUrl?: string | null },
 ) {
+  assert(can.manageBrands(actor), ADMIN_ONLY);
   return db.transaction(async (tx) => {
     const [b] = await tx.select().from(brands).where(eq(brands.id, brandId)).for("update");
     assert(b, "Brand not found.");
@@ -95,6 +100,7 @@ export async function updateBrand(
 }
 
 export async function setBrandActive(actor: Actor, brandId: string, active: boolean) {
+  assert(can.manageBrands(actor), ADMIN_ONLY);
   return db.transaction(async (tx) => {
     const [b] = await tx.select().from(brands).where(eq(brands.id, brandId)).for("update");
     assert(b, "Brand not found.");
@@ -112,6 +118,7 @@ export async function setBrandActive(actor: Actor, brandId: string, active: bool
 
 /** Returns the existing client when the name matches (case-insensitive) — no duplicate SINAIs. */
 export async function findOrCreateClient(actor: Actor, name: string) {
+  assert(can.manageProjects(actor), "Only the Content team or managers can create projects.");
   const n = name.trim();
   assert(n, "Client name is required.");
   const [existing] = await db.select().from(clients).where(ilike(clients.name, n));
@@ -125,6 +132,7 @@ export async function findOrCreateClient(actor: Actor, name: string) {
 }
 
 export async function createProject(actor: Actor, input: { clientId: string; name: string; notes?: string | null }) {
+  assert(can.manageProjects(actor), "Only the Content team or managers can create projects.");
   const name = input.name.trim();
   assert(name, "Project name is required.");
   return db.transaction(async (tx) => {
@@ -137,6 +145,7 @@ export async function createProject(actor: Actor, input: { clientId: string; nam
 }
 
 export async function updateProject(actor: Actor, projectId: string, input: { name?: string; notes?: string | null }) {
+  assert(can.manageProjects(actor), "Only the Content team or managers can edit projects.");
   return db.transaction(async (tx) => {
     const [p] = await tx.select().from(projects).where(eq(projects.id, projectId));
     assert(p, "Project not found.");
@@ -154,6 +163,7 @@ export async function updateProject(actor: Actor, projectId: string, input: { na
 /* ------------------------------ Platforms ---------------------------- */
 
 export async function createPlatform(actor: Actor, name: string) {
+  assert(!!actor.isAdmin, ADMIN_ONLY);
   const n = name.trim();
   assert(n, "Platform name is required.");
   const [dupe] = await db.select({ id: platforms.id }).from(platforms).where(ilike(platforms.name, n));
@@ -168,6 +178,7 @@ export async function createPlatform(actor: Actor, name: string) {
 }
 
 export async function updatePlatform(actor: Actor, platformId: string, input: { name?: string; isActive?: boolean }) {
+  assert(!!actor.isAdmin, ADMIN_ONLY);
   return db.transaction(async (tx) => {
     const [p] = await tx.select().from(platforms).where(eq(platforms.id, platformId));
     assert(p, "Platform not found.");

@@ -1,3 +1,4 @@
+import { can } from "@/domain/permissions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, PackageCheck, Plus } from "lucide-react";
@@ -14,7 +15,7 @@ export async function generateMetadata({ params }: PageProps<"/projects/[id]">) 
 }
 
 export default async function ProjectPage({ params }: PageProps<"/projects/[id]">) {
-  await requireUser();
+  const me = await requireUser();
   const { id } = await params;
   const project = await getProject(id);
   if (!project) notFound();
@@ -32,10 +33,14 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
           <p className="mt-1 max-w-2xl text-[14px] text-muted">{project.notes ?? "One-off project — delivered to the client, no publishing stage."}</p>
         </div>
         <div className="flex gap-2">
-          <ProjectEdit id={project.id} name={project.name} notes={project.notes} />
-          <ButtonLink href={`/add?project=${project.id}`} variant="primary">
-            <Plus className="size-4" /> Add deliverables
-          </ButtonLink>
+          {can.manageProjects(me) && (
+            <>
+              <ProjectEdit id={project.id} name={project.name} notes={project.notes} />
+              <ButtonLink href={`/add?project=${project.id}`} variant="primary">
+                <Plus className="size-4" /> Add deliverables
+              </ButtonLink>
+            </>
+          )}
         </div>
       </div>
       {items.length === 0 ? (
@@ -59,7 +64,7 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
             <Stat label="Late" value={late} tone={late ? "bad" : undefined} />
           </div>
           <div className="mt-6">
-            <BulkList items={items} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} />
+            <BulkList items={items} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={can.editContent(me)} />
           </div>
         </>
       )}

@@ -6,12 +6,12 @@ import { brands, platforms, users, type Team } from "@/db/schema";
 /** Tests never delete data (the activity log is append-only), so every fixture gets a unique suffix. */
 export const uid = () => randomBytes(4).toString("hex");
 
-export async function makeUser(name: string, teams: Team[] = []) {
+export async function makeUser(name: string, teams: Team[] = [], isAdmin = false) {
   const [u] = await db
     .insert(users)
-    .values({ username: `${name.toLowerCase()}-${uid()}`, name, teams, passwordHash: "x" })
+    .values({ username: `${name.toLowerCase()}-${uid()}`, name, teams, isAdmin, passwordHash: "x" })
     .returning();
-  return { id: u.id, name: u.name };
+  return { id: u.id, name: u.name, teams: u.teams, isAdmin: u.isAdmin };
 }
 
 export async function makeBrand(name: string, defaultCreatorId: string) {

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { ArrowRight, CornerUpLeft, ExternalLink, Pencil, RotateCcw, ShieldCheck, Undo2 } from "lucide-react";
+import { ArrowRight, CornerUpLeft, ExternalLink, Lock, Pencil, RotateCcw, ShieldCheck, Undo2 } from "lucide-react";
+import { formatDay } from "@/lib/dates";
 import {
   assignAction,
   cancelItemAction,
@@ -62,7 +63,14 @@ export function AssignSelect({ stageId, kind, value, people, className }: { stag
   );
 }
 
-export function DeadlineInput({ stageId, value, disabled }: { stageId: string; value: string | null; disabled?: boolean }) {
+export function DeadlineInput({ stageId, value, disabled, locked }: { stageId: string; value: string | null; disabled?: boolean; locked?: boolean }) {
+  if (locked && !value) return <span className="inline-flex h-[30px] items-center text-[13px] text-muted">No deadline</span>;
+  if (locked && value)
+    return (
+      <span className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-canvas px-2.5 text-[13px] font-medium" title="Deadlines can't be changed once set (admins can)">
+        <Lock className="size-3.5 text-muted" /> {formatDay(value)}
+      </span>
+    );
   return (
     <ActionForm action={deadlineAction} inlineError={false} className="flex items-center gap-1">
       <input type="hidden" name="stageId" value={stageId} />
@@ -218,15 +226,32 @@ export function PlatformRow({
   platform,
   row,
   canPublish,
+  readOnly,
 }: {
   itemId: string;
   platform: { id: string; name: string; isActive: boolean };
   row: { status: PlatformStatus; date: string | null; time: string | null; liveUrl: string | null } | null;
   canPublish: boolean;
+  readOnly?: boolean;
 }) {
   const status = row?.status ?? "not_planned";
   const [editingLink, setEditingLink] = useState(false);
   const planned = status !== "not_planned";
+  if (readOnly)
+    return (
+      <div className="grid grid-cols-[110px_150px_1fr] items-center gap-3 px-4 py-2.5 text-[13.5px]">
+        <div className={clsx("font-medium", !planned && "text-muted")}>{platform.name}</div>
+        <div className={clsx("font-medium", STATUS_STYLE[status])}>{PLATFORM_STATUS_META[status].label}</div>
+        <div className="flex items-center gap-3 text-muted">
+          {row?.date && <span>{formatDay(row.date)}{row.time ? ` · ${row.time}` : ""}</span>}
+          {row?.liveUrl && (
+            <a href={row.liveUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-ok hover:underline">
+              <ExternalLink className="size-3.5" /> Live post
+            </a>
+          )}
+        </div>
+      </div>
+    );
   return (
     <div className={clsx("grid grid-cols-[110px_150px_1fr] items-center gap-3 px-4 py-2.5 max-md:grid-cols-[1fr_150px]", !planned && "bg-[#fbfcfe]")}>
       <div className={clsx("font-medium", !planned && "text-muted")}>
@@ -286,9 +311,11 @@ export function PlatformRow({
 export function DetailsForm({
   item,
   canChangeType,
+  canEditContent = true,
 }: {
   item: { id: string; title: string; type: ContentType; postingDate: string | null; postingTime: string | null; canvaUrl: string | null; driveUrl: string | null; context: "plan" | "project" };
   canChangeType: boolean;
+  canEditContent?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   if (!editing)
@@ -305,7 +332,7 @@ export function DetailsForm({
           <input type="hidden" name="itemId" value={item.id} />
           <div>
             <label className="label">Title</label>
-            <input name="title" defaultValue={item.title} className="field" required />
+            <input name="title" defaultValue={item.title} className="field" required disabled={!canEditContent} />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -329,11 +356,7 @@ export function DetailsForm({
           </div>
           <div>
             <label className="label">Canva link (to this exact page)</label>
-            <input name="canvaUrl" defaultValue={item.canvaUrl ?? ""} placeholder="https://canva.link/…" className="field" />
-          </div>
-          <div>
-            <label className="label">Google Drive link (latest file)</label>
-            <input name="driveUrl" defaultValue={item.driveUrl ?? ""} placeholder="https://drive.google.com/…" className="field" />
+            <input name="canvaUrl" defaultValue={item.canvaUrl ?? ""} placeholder="https://canva.link/…" className="field" disabled={!canEditContent} />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className={btn("ghost")} onClick={() => setEditing(false)}>

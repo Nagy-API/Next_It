@@ -1,3 +1,4 @@
+import { can } from "@/domain/permissions";
 import Link from "next/link";
 import { Briefcase } from "lucide-react";
 import { Empty, PageHeader, ProgressBar } from "@/components/ui";
@@ -9,14 +10,15 @@ import { NewProject } from "./new-project";
 export const metadata = { title: "One-off projects" };
 
 export default async function ProjectsPage() {
-  await requireUser();
+  const me = await requireUser();
   const clients = await getClientsWithProjects();
+  const canCreate = can.manageProjects(me);
   return (
     <div>
       <PageHeader
         title="One-off projects"
         subtitle="Clients who hire NEXORA for a specific job. We produce and deliver the files — no publishing stage."
-        actions={<NewProject clients={clients.map((c) => c.name)} />}
+        actions={canCreate ? <NewProject clients={clients.map((c) => c.name)} /> : undefined}
       />
       {clients.length === 0 ? (
         <Empty icon={Briefcase} title="No one-off clients yet">
@@ -33,7 +35,7 @@ export default async function ProjectsPage() {
                     {c.projects.length} project{c.projects.length === 1 ? "" : "s"}
                   </div>
                 </div>
-                <NewProject clients={[c.name]} defaultClient={c.name} />
+                {canCreate && <NewProject clients={[c.name]} defaultClient={c.name} />}
               </div>
               <div className="divide-y divide-line">
                 {c.projects.map((p) => (
