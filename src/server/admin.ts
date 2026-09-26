@@ -59,7 +59,15 @@ export async function createBrand(actor: Actor, input: { name: string; defaultCr
 export async function updateBrand(
   actor: Actor,
   brandId: string,
-  input: { name?: string; defaultCreatorId?: string | null; color?: string; logoUrl?: string | null },
+  input: {
+    name?: string;
+    defaultCreatorId?: string | null;
+    defaultMediaId?: string | null;
+    defaultDesignId?: string | null;
+    defaultSocialId?: string | null;
+    color?: string;
+    logoUrl?: string | null;
+  },
 ) {
   assert(can.manageBrands(actor), ADMIN_ONLY);
   return db.transaction(async (tx) => {
@@ -73,19 +81,28 @@ export async function updateBrand(
       await tx.update(brands).set({ name }).where(eq(brands.id, brandId));
       await logActivity(tx, actor, { action: "brand_updated", brandId, field: "name", oldValue: b.name, newValue: name, summary: `${actor.name} renamed the brand ${b.name} to ${name}.` });
     }
-    if (input.defaultCreatorId !== undefined && (input.defaultCreatorId || null) !== b.defaultCreatorId) {
-      const newId = input.defaultCreatorId || null;
-      const names = await tx.select({ id: users.id, name: users.name }).from(users);
-      const nm = (id: string | null) => names.find((u) => u.id === id)?.name ?? null;
-      await tx.update(brands).set({ defaultCreatorId: newId }).where(eq(brands.id, brandId));
+    // Default people per team for this brand.
+    const names = await tx.select({ id: users.id, name: users.name }).from(users);
+    const nm = (id: string | null) => names.find((u) => u.id === id)?.name ?? null;
+    const DEFAULT_FIELDS = [
+      ["defaultCreatorId", "content creator"],
+      ["defaultMediaId", "media person"],
+      ["defaultDesignId", "graphic designer"],
+      ["defaultSocialId", "social media person"],
+    ] as const;
+    for (const [field, label] of DEFAULT_FIELDS) {
+      const next = input[field];
+      if (next === undefined || (next || null) === b[field]) continue;
+      const newId = next || null;
+      await tx.update(brands).set({ [field]: newId }).where(eq(brands.id, brandId));
       await logActivity(tx, actor, {
         action: "brand_updated",
         brandId,
         subjectUserId: newId,
-        field: "defaultCreator",
-        oldValue: nm(b.defaultCreatorId),
+        field,
+        oldValue: nm(b[field]),
         newValue: nm(newId),
-        summary: `${actor.name} set the default content creator for ${b.name} to ${nm(newId) ?? "nobody"}${b.defaultCreatorId ? ` (was ${nm(b.defaultCreatorId)})` : ""}.`,
+        summary: `${actor.name} set the default ${label} for ${b.name} to ${nm(newId) ?? "the whole team"}${b[field] ? ` (was ${nm(b[field])})` : ""}.`,
       });
     }
     if (input.color !== undefined && input.color !== b.color) {

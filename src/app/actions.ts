@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { CONTENT_TYPES, PLATFORM_STATUSES, STAGE_KINDS, type ContentType, type PlatformStatus, type StageKind } from "@/db/schema";
+import { CONTENT_TYPES, PLATFORM_STATUSES, STAGE_KINDS, STAGE_PROGRESS, type StageProgress, type ContentType, type PlatformStatus, type StageKind } from "@/db/schema";
 import { STAGE_META } from "@/domain/workflow";
 import type { Actor } from "@/server/activity";
 import {
@@ -21,9 +21,10 @@ import {
 } from "@/server/admin";
 import { endSession, requireActor, requireAdmin, startSession } from "@/server/auth";
 import { UserError } from "@/server/errors";
-import { addComment, bulkStageAction, createItems, resolveComment, setItemCancelled, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
+import { addComment, bulkStageAction, createItems, resolveComment, setItemCancelled, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
 import { checkCredentials } from "@/server/sessions";
-import { assignStage, completeStage, handOff, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
+import { markNotificationsRead } from "@/server/stats";
+import { assignStage, completeStage, handOff, setStageProgress, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
 
 export type ActionResult = { ok: true; message?: string; at: number } | { ok: false; error: string; at: number } | null;
 
@@ -103,8 +104,35 @@ export async function handOffAction(_: ActionResult, fd: FormData): Promise<Acti
       canvaUrl: opt(fd, "canvaUrl") ?? undefined,
     });
     if (!r.next) return "Done — nice work.";
-    return str(fd, "assigneeName") ? `Sent to ${str(fd, "assigneeName")} (${STAGE_META[r.next].label}).` : `Sent to the ${STAGE_META[r.next].label} team.`;
+    const who = r.nextAssignee ?? (str(fd, "assigneeName") || null);
+    return who ? `Sent to ${who} (${STAGE_META[r.next].label}).` : `Sent to the ${STAGE_META[r.next].label} team.`;
   });
+}
+
+export async function progressAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const p = str(fd, "progress") as StageProgress;
+    if (!STAGE_PROGRESS.includes(p)) throw new UserError("Unknown status.");
+    await setStageProgress(actor, str(fd, "stageId"), p);
+  });
+}
+
+export async function planLinksAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const changed = await setPlanLinks(
+      actor,
+      { brandId: str(fd, "brandId"), year: Number(str(fd, "year")), month: Number(str(fd, "month")) },
+      { canvaUrl: opt(fd, "canvaUrl"), driveFolderUrl: opt(fd, "driveFolderUrl") },
+    );
+    return changed ? "Month links saved." : "Nothing changed.";
+  });
+}
+
+export async function markReadAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  const actor = await requireActor();
+  const ids = fd.getAll("id").map(String).filter(Boolean);
+  await markNotificationsRead(actor.id, ids.length ? ids : undefined);
+  return { ok: true, at: Date.now() };
 }
 
 export async function returnAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
@@ -165,6 +193,7 @@ export async function updateItemAction(_: ActionResult, fd: FormData): Promise<A
       driveUrl: opt(fd, "driveUrl"),
       postingDate: opt(fd, "postingDate"),
       postingTime: opt(fd, "postingTime"),
+      slideNumber: fd.has("slideNumber") ? (str(fd, "slideNumber") ? Number(str(fd, "slideNumber")) : null) : undefined,
     });
     return n ? "Saved." : "Nothing changed.";
   });
@@ -174,7 +203,7 @@ export async function cancelItemAction(_: ActionResult, fd: FormData): Promise<A
   return run(async (actor) => {
     const cancelled = str(fd, "cancelled") === "1";
     await setItemCancelled(actor, str(fd, "itemId"), cancelled);
-    return cancelled ? "Item cancelled. You can restore it any time." : "Item restored.";
+    return cancelled ? "Deleted. You can restore it any time from “Show deleted items”." : "Item restored.";
   });
 }
 
@@ -241,6 +270,9 @@ export async function updateBrandAction(_: ActionResult, fd: FormData): Promise<
     await updateBrand(actor, str(fd, "brandId"), {
       name: fd.has("name") ? str(fd, "name") : undefined,
       defaultCreatorId: fd.has("defaultCreatorId") ? str(fd, "defaultCreatorId") || null : undefined,
+      defaultMediaId: fd.has("defaultMediaId") ? str(fd, "defaultMediaId") || null : undefined,
+      defaultDesignId: fd.has("defaultDesignId") ? str(fd, "defaultDesignId") || null : undefined,
+      defaultSocialId: fd.has("defaultSocialId") ? str(fd, "defaultSocialId") || null : undefined,
       color: opt(fd, "color") ?? undefined,
       logoUrl: opt(fd, "logoUrl"),
     });

@@ -49,11 +49,16 @@ export function NewBrandForm({ people }: { people: P[] }) {
 }
 
 export function BrandCreatorSelect({ brandId, value, people }: { brandId: string; value: string | null; people: P[] }) {
+  return <BrandDefaultSelect brandId={brandId} field="defaultCreatorId" value={value} people={people} label="Default content creator" />;
+}
+
+/** Auto-saving "default person" picker for one team on one brand. */
+export function BrandDefaultSelect({ brandId, field, value, people, label, empty = "Nobody" }: { brandId: string; field: "defaultCreatorId" | "defaultMediaId" | "defaultDesignId" | "defaultSocialId"; value: string | null; people: P[]; label: string; empty?: string }) {
   return (
     <ActionForm action={updateBrandAction} inlineError={false}>
       <input type="hidden" name="brandId" value={brandId} />
-      <AutoSelect name="defaultCreatorId" defaultValue={value ?? ""} key={value ?? ""} className="w-full" aria-label="Default content creator">
-        <option value="">Nobody</option>
+      <AutoSelect name={field} defaultValue={value ?? ""} key={value ?? ""} className="w-full" aria-label={label}>
+        <option value="">{empty}</option>
         {people.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name}

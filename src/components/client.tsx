@@ -216,3 +216,31 @@ export function Popover({
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Modal (centered, never clipped by its parent)                         */
+/* ------------------------------------------------------------------ */
+
+export function Modal({ open, onClose, title, children, width = 440 }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; width?: number }) {
+  useEffect(() => {
+    if (!open) return;
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", k);
+    return () => document.removeEventListener("keydown", k);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-start justify-center bg-navy-950/40 p-4 pt-[12vh]"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      <div className="card w-full animate-in p-5 shadow-pop" style={{ maxWidth: width }}>
+        <div className="mb-4 font-display text-[17px] font-bold">{title}</div>
+        {children}
+      </div>
+    </div>
+  );
+}

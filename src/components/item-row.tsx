@@ -1,7 +1,8 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { STAGE_META } from "@/domain/workflow";
-import { formatDay, monthName } from "@/lib/dates";
+import { formatDateTime, formatDay, monthName } from "@/lib/dates";
+import { Check } from "lucide-react";
 import type { WorkItem } from "@/server/queries";
 import { FlowMini, ItemStatus } from "./flow";
 import { Avatar, BrandDot, TypeIcon } from "./ui";
@@ -13,9 +14,10 @@ export function itemContextLabel(item: WorkItem) {
 }
 
 /** The standard one-line item used in every list. Shows: what, whose, where in the cycle, and status. */
-export function ItemRow({ item, showContext = true, compact, leading }: { item: WorkItem; showContext?: boolean; compact?: boolean; leading?: React.ReactNode }) {
+export function ItemRow({ item, showContext = true, compact, leading, actions }: { item: WorkItem; showContext?: boolean; compact?: boolean; leading?: React.ReactNode; actions?: React.ReactNode }) {
   const c = item.current;
   const holder = c?.assignee?.name ?? null;
+  const last = item.stages.filter((s) => s.status === "done" && s.completedAt).at(-1);
   return (
     <div className={clsx("group relative flex items-center gap-3 px-4 transition-colors hover:bg-[#f8faff]", compact ? "py-2.5" : "py-3", item.cancelledAt && "opacity-60")}>
       {leading}
@@ -30,14 +32,26 @@ export function ItemRow({ item, showContext = true, compact, leading }: { item: 
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <Link href={`/items/${item.id}`} className="flex items-center gap-1.5 font-medium text-ink after:absolute after:inset-0 group-hover:text-electric">
-          <TypeIcon type={item.type} />
-          <span className="truncate">{item.title}</span>
-        </Link>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Link href={`/items/${item.id}`} className="flex min-w-0 items-center gap-1.5 font-medium text-ink after:absolute after:inset-0 group-hover:text-electric">
+            <TypeIcon type={item.type} />
+            <span className="truncate">{item.title}</span>
+          </Link>
+          {item.slideNumber ? (
+            <span className="shrink-0 rounded bg-[#f1e8fd] px-1 text-[11px] font-bold text-[#6d28d9]" title={`Slide ${item.slideNumber} in the month's Canva`}>
+              #{item.slideNumber}
+            </span>
+          ) : null}
+        </div>
         {showContext && (
           <div className="mt-0.5 flex items-center gap-1.5 truncate text-[12.5px] text-muted">
             {item.brand && <BrandDot color={item.brand.color} />}
             <span className="truncate">{itemContextLabel(item)}</span>
+          </div>
+        )}
+        {last && !compact && (
+          <div className="mt-0.5 flex items-center gap-1 truncate text-[12px] text-muted">
+            <Check className="size-3 shrink-0 text-ok" strokeWidth={3} /> {STAGE_META[last.kind].short} delivered {formatDateTime(last.completedAt)} · {last.assignee?.name ?? last.completedBy?.name}
           </div>
         )}
       </div>
@@ -63,6 +77,7 @@ export function ItemRow({ item, showContext = true, compact, leading }: { item: 
       <div className="hidden w-[150px] shrink-0 justify-end sm:flex">
         <ItemStatus item={item} />
       </div>
+      {actions && <div className="relative z-10 flex shrink-0 items-center gap-1">{actions}</div>}
     </div>
   );
 }

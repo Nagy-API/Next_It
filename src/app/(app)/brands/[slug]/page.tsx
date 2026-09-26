@@ -11,6 +11,7 @@ import { monthKey, monthLabel, monthName, parseMonthKey, shiftMonth, todayISO } 
 import { requireUser } from "@/server/auth";
 import { getActivePeople } from "@/server/cached";
 import { can } from "@/domain/permissions";
+import { MonthLinks } from "./month-links";
 import { getBrandBySlug, getBrandMonths, getPlan, getWorkItems } from "@/server/queries";
 
 export async function generateMetadata({ params }: PageProps<"/brands/[slug]">) {
@@ -160,6 +161,18 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
         )}
       </div>
 
+      <div className="mt-4">
+        <MonthLinks
+          brandId={brand.id}
+          year={sel.year}
+          month={sel.month}
+          canvaUrl={plan?.canvaUrl ?? null}
+          driveFolderUrl={plan?.driveFolderUrl ?? null}
+          canEdit={canAdd && brand.isActive}
+          monthLabel={monthName(sel.month)}
+        />
+      </div>
+
       {allLive.length === 0 ? (
         <div className="mt-6">
           <Empty icon={CalendarDays} title={`No content planned for ${monthLabel(sel.year, sel.month)}`} action={brand.isActive && canAdd ? <ButtonLink href={addHref} variant="primary"><Plus className="size-4" /> Add the {monthName(sel.month)} plan</ButtonLink> : undefined}>
@@ -235,12 +248,12 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
             ) : view === "calendar" ? (
               <MonthCalendar year={sel.year} month={sel.month} items={shown} />
             ) : (
-              <BulkList items={shown} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={canAdd} />
+              <BulkList items={shown} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={canAdd} canDeadline={can.setDeadline(me)} />
             )}
           </div>
           <div className="mt-3 text-right">
             <Link href={q({ cancelled: showCancelled ? "" : "1" })} className="text-[12.5px] text-muted hover:text-electric">
-              {showCancelled ? "Hide cancelled items" : "Show cancelled items"}
+              {showCancelled ? "Hide deleted items" : "Show deleted items"}
             </Link>
           </div>
         </>
