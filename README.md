@@ -16,7 +16,19 @@ stages' deadlines by the same delay so nobody is blamed for waiting. Anyone can 
 with an optional note. Social publishing is tracked per platform; the item is Published once every planned platform is live.
 Every change is written to an append-only history that the database refuses to edit or delete.
 
-## Start it (one line)
+## Easiest: run it on one computer (no Docker, no database install)
+
+1. Install **Node.js LTS** from https://nodejs.org (next, next, finish).
+2. Download this repository as a ZIP (GitHub → **Code → Download ZIP**) and extract it.
+3. Windows: double-click **`start-nexora.bat`**. Mac/Linux: run `npm install && npm run local` in the folder.
+
+The first start installs and builds (a few minutes), then opens **http://localhost:3000** — sign in as
+`shahenda` / `Nexora@2026`. Keep the window open while using it; close it (or Ctrl+C) to stop.
+Data is saved in the `local-data` folder next to the app, using a built-in PostgreSQL engine (PGlite).
+Other devices on the office network can use `http://<this-computer's-IP>:3000`.
+For a shared server, use Docker or a real PostgreSQL server (below).
+
+## Start it with Docker (one line)
 
 Needs [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker + Compose) installed and running.
 
@@ -52,7 +64,7 @@ Production: `npm run build && npm start`.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | yes | PostgreSQL connection string |
+| `DATABASE_URL` | no | PostgreSQL connection string. Unset (or `file:<folder>`) = built-in local database in `./local-data` |
 | `SEED_DEFAULT_PASSWORD` | no | Initial password for every seeded account (default `Nexora@2026`) |
 | `INSECURE_COOKIES` | no | Set to `1` only if production runs over plain HTTP (e.g. office LAN without TLS) |
 | `TEST_DATABASE_URL` | tests | Database used by `npm test` (never your real one) |
