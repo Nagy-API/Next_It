@@ -12,9 +12,11 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "local": "node scripts/local.mjs"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@node-rs/argon2": "^2.2.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.3",
