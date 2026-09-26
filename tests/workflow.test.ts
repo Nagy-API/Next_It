@@ -120,11 +120,13 @@ describe("Scenario 2 — delay dependency", () => {
     const king = await makeUser("King", ["content"]);
     const ayman = await makeUser("Ayman", ["media"]);
     const brand = await makeBrand("VR", king.id);
+    const assem = await makeUser("Assem", ["account"]); // account manager sets deadlines
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Late Reel", type: "reel" }]);
     let all = await stagesOf(id);
-    await setStageDeadline(king, byKind(all, "content").id, "2026-10-05");
-    await setStageDeadline(king, byKind(all, "media").id, "2026-10-07");
-    await setStageDeadline(king, byKind(all, "social").id, "2026-10-09");
+    await expect(setStageDeadline(king, byKind(all, "content").id, "2026-10-05")).rejects.toThrow(/permission/);
+    await setStageDeadline(assem, byKind(all, "content").id, "2026-10-05");
+    await setStageDeadline(assem, byKind(all, "media").id, "2026-10-07");
+    await setStageDeadline(assem, byKind(all, "social").id, "2026-10-09");
     await assignStage(ayman, byKind(all, "media").id, ayman.id);
     all = await stagesOf(id);
 
@@ -184,8 +186,8 @@ describe("Scenario 2 — delay dependency", () => {
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Excused", type: "static" }]);
     let all = await stagesOf(id);
-    await setStageDeadline(king, byKind(all, "content").id, "2026-10-05");
-    await setStageDeadline(king, byKind(all, "design").id, "2026-10-07");
+    await setStageDeadline(shahenda, byKind(all, "content").id, "2026-10-05");
+    await setStageDeadline(shahenda, byKind(all, "design").id, "2026-10-07");
     all = await stagesOf(id);
     await completeStage(king, byKind(all, "content").id, { now: cairoNoon("2026-10-07") });
     await setLateException(shahenda, byKind(all, "content").id, true);

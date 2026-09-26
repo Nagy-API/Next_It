@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import {
   brands,
@@ -20,7 +20,9 @@ import { formatDay, isValidISODate, isValidTime, monthLabel, plural } from "@/li
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
 import { NOT_ALLOWED, can } from "@/domain/permissions";
+import { notify, stageAudience } from "./notify";
 import {
+  defaultAssigneeTx,
   assignStageTx,
   completeStageTx,
   loadItemCtx,
@@ -37,6 +39,7 @@ export type NewItemRow = {
   postingDate?: string | null;
   postingTime?: string | null;
   canvaUrl?: string | null;
+  slideNumber?: number | null;
 };
 
 export type ItemTarget = { kind: "plan"; brandId: string; year: number; month: number } | { kind: "project"; projectId: string };
@@ -119,6 +122,16 @@ export async function createItems(
       where = `${p.clientName} · ${p.name}`;
     }
     const contentAssignee = options.contentAssigneeId !== undefined ? options.contentAssigneeId : defaultCreator;
+    // Default people per team for this brand (or the team's only member) — work goes straight to them.
+    const defaults: Partial<Record<StageKind, string | null>> = { content: contentAssignee };
+    for (const k of ["media", "design", "social", "delivery"] as StageKind[]) defaults[k] = await defaultAssigneeTx(tx, brandId, k);
+    // Slide numbers continue after the last one already in this month's Canva presentation.
+    let nextSlide = 1;
+    if (planId) {
+      const [{ max }] = await tx.select({ max: sql<number>`coalesce(max(${contentItems.slideNumber}), 0)::int` }).from(contentItems).where(eq(contentItems.planId, planId));
+      nextSlide = max + 1;
+    }
+    const readyForTeam = new Map<string, number>();
 
     let platformIds: string[] = [];
     if (target.kind === "plan" && options.platformIds?.length) {
@@ -138,6 +151,7 @@ export async function createItems(
           canvaUrl: normalizeUrl(r.canvaUrl),
           postingDate: r.postingDate || null,
           postingTime: r.postingTime || null,
+          slideNumber: planId ? (r.slideNumber ?? nextSlide++) : (r.slideNumber ?? null),
           createdAt: now,
           createdById: actor.id,
         })
@@ -151,7 +165,7 @@ export async function createItems(
           position: i,
           status: i === 0 ? ("active" as const) : ("waiting" as const),
           activatedAt: i === 0 ? now : null,
-          assigneeId: kind === "content" ? contentAssignee : null,
+          assigneeId: defaults[kind] ?? null,
         })),
       );
       if (platformIds.length) {
@@ -169,8 +183,24 @@ export async function createItems(
       if (options.contentReady || (options.sendWithCanva && item.canvaUrl)) {
         const ctx = await loadItemCtx(tx, item.id);
         const all = await loadStages(tx, item.id);
-        await completeStageTx(tx, actor, ctx, all, all[0], now);
+        const r2 = await completeStageTx(tx, actor, ctx, all, all[0], now, { quiet: true });
+        const next = all.find((s) => s.kind === r2.next);
+        if (next) {
+          for (const u of await stageAudience(tx, next.kind, next.assigneeId)) readyForTeam.set(u, (readyForTeam.get(u) ?? 0) + 1);
+        }
+      } else if (contentAssignee) {
+        readyForTeam.set(contentAssignee, (readyForTeam.get(contentAssignee) ?? 0) + 1);
       }
+    }
+    // One notification per person for the whole batch, not one per item.
+    for (const [userId, n] of readyForTeam) {
+      await notify(tx, actor, [userId], {
+        kind: "new_task",
+        title: n === 1 ? `New task in ${where}` : `${n} new tasks in ${where}`,
+        body: `Added by ${actor.name}`,
+        itemId: n === 1 ? ids[ids.length - 1] : null,
+        at: now,
+      });
     }
     return ids;
   });
@@ -187,6 +217,7 @@ export type ItemPatch = {
   driveUrl?: string | null;
   postingDate?: string | null;
   postingTime?: string | null;
+  slideNumber?: number | null;
 };
 
 export async function updateItem(actor: Actor, itemId: string, patch: ItemPatch) {
@@ -251,6 +282,13 @@ export async function updateItem(actor: Actor, itemId: string, patch: ItemPatch)
         changed++;
       }
     }
+    if (patch.slideNumber !== undefined && (patch.slideNumber ?? null) !== item.slideNumber) {
+      assert(can.editContent(actor), "Only the Content team can change the content details.");
+      assert(patch.slideNumber === null || (Number.isInteger(patch.slideNumber) && patch.slideNumber > 0 && patch.slideNumber < 1000), "Slide number must be 1 or more.");
+      await tx.update(contentItems).set({ slideNumber: patch.slideNumber }).where(eq(contentItems.id, itemId));
+      await logActivity(tx, actor, { ...base, action: "item_updated", field: "slideNumber", oldValue: String(item.slideNumber ?? ""), newValue: String(patch.slideNumber ?? ""), summary: `${actor.name} set the Canva slide to ${patch.slideNumber ?? "none"}.` });
+      changed++;
+    }
     if (patch.type !== undefined && patch.type !== item.type) {
       await changeTypeTx(tx, actor, ctx, patch.type);
       changed++;
@@ -308,8 +346,8 @@ export async function setItemCancelled(actor: Actor, itemId: string, cancelled: 
       brandId: ctx.brandId,
       projectId: ctx.projectId,
       clientId: ctx.clientId,
-      action: cancelled ? "item_cancelled" : "item_restored",
-      summary: `${actor.name} ${cancelled ? "cancelled" : "restored"} “${ctx.item.title}”.`,
+      action: cancelled ? "item_deleted" : "item_restored",
+      summary: `${actor.name} ${cancelled ? "deleted" : "restored"} “${ctx.item.title}”.`,
     });
     return true;
   });
@@ -338,6 +376,16 @@ export async function addComment(
       assert(to, "That person doesn't exist.");
     }
     await tx.insert(comments).values({ itemId, authorId: actor.id, body: text, parentId: parent?.id ?? null, mentionUserId: to?.id ?? null });
+    if (parent) {
+      await notify(tx, actor, [parent.authorId, parent.mentionUserId], {
+        kind: "reply",
+        title: `${actor.name} replied on ${ctx.item.title}`,
+        body: truncate(text, 140),
+        itemId,
+      });
+    } else if (to) {
+      await notify(tx, actor, [to.id], { kind: "comment", title: `${actor.name} wrote to you on ${ctx.item.title}`, body: truncate(text, 140), itemId });
+    }
     // Replying to a comment addressed to you counts as answering it.
     if (parent && parent.mentionUserId === actor.id && !parent.resolvedAt) {
       await tx.update(comments).set({ resolvedAt: new Date(), resolvedById: actor.id }).where(eq(comments.id, parent.id));
@@ -427,5 +475,40 @@ export async function bulkStageAction(actor: Actor, itemIds: string[], kind: Sta
       }
     }
     return { applied, skipped, message: `${plural(applied, "item")} updated${skipped.length ? `, ${skipped.length} skipped` : ""}.` };
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Month links: one Canva presentation + one Drive folder per brand-month */
+/* ------------------------------------------------------------------ */
+
+export async function setPlanLinks(
+  actor: Actor,
+  target: { brandId: string; year: number; month: number },
+  links: { canvaUrl?: string | null; driveFolderUrl?: string | null },
+) {
+  assert(can.editContent(actor), "Only the Content team can change the month's links.");
+  return db.transaction(async (tx) => {
+    const planId = await ensurePlanTx(tx, actor, target.brandId, target.year, target.month);
+    const [plan] = await tx.select().from(contentPlans).where(eq(contentPlans.id, planId));
+    const set: Partial<typeof contentPlans.$inferInsert> = {};
+    const changes: string[] = [];
+    if (links.canvaUrl !== undefined && normalizeUrl(links.canvaUrl) !== plan.canvaUrl) {
+      set.canvaUrl = normalizeUrl(links.canvaUrl);
+      changes.push(set.canvaUrl ? "the month's Canva link" : "removed the month's Canva link");
+    }
+    if (links.driveFolderUrl !== undefined && normalizeUrl(links.driveFolderUrl) !== plan.driveFolderUrl) {
+      set.driveFolderUrl = normalizeUrl(links.driveFolderUrl);
+      changes.push(set.driveFolderUrl ? "the month's Drive folder" : "removed the month's Drive folder");
+    }
+    if (!changes.length) return false;
+    await tx.update(contentPlans).set(set).where(eq(contentPlans.id, planId));
+    const [b] = await tx.select({ name: brands.name }).from(brands).where(eq(brands.id, target.brandId));
+    await logActivity(tx, actor, {
+      action: "plan_updated",
+      brandId: target.brandId,
+      summary: `${actor.name} updated ${changes.join(" and ")} for ${b.name} · ${monthLabel(target.year, target.month)}.`,
+    });
+    return true;
   });
 }

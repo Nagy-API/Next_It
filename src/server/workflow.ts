@@ -21,6 +21,7 @@ import {
   type ContentItem,
   type PlatformStatus,
   type Stage,
+  type StageProgress,
   type StageKind,
 } from "@/db/schema";
 import {
@@ -41,6 +42,7 @@ import { cairoDate, formatDay, isValidISODate, isValidTime, monthLabel, plural }
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
 import { NOT_ALLOWED, can } from "@/domain/permissions";
+import { notify, soleTeamMember, stageAudience } from "./notify";
 
 /* ------------------------------------------------------------------ */
 /* Loading helpers                                                      */
@@ -54,6 +56,8 @@ export type ItemCtx = {
   clientId: string | null;
   /** "Vanilla Roza · October 2026" or "SINAI · Summer Campaign" */
   where: string;
+  /** The month's Canva presentation, if the content team added one. */
+  planCanvaUrl: string | null;
 };
 
 export async function loadItemCtx(tx: Tx, itemId: string, lock = true): Promise<ItemCtx> {
@@ -62,7 +66,7 @@ export async function loadItemCtx(tx: Tx, itemId: string, lock = true): Promise<
   if (!item) throw new UserError("Content item not found.");
   if (item.planId) {
     const [p] = await tx
-      .select({ brandId: brands.id, brandName: brands.name, year: contentPlans.year, month: contentPlans.month })
+      .select({ brandId: brands.id, brandName: brands.name, year: contentPlans.year, month: contentPlans.month, canvaUrl: contentPlans.canvaUrl })
       .from(contentPlans)
       .innerJoin(brands, eq(brands.id, contentPlans.brandId))
       .where(eq(contentPlans.id, item.planId));
@@ -73,6 +77,7 @@ export async function loadItemCtx(tx: Tx, itemId: string, lock = true): Promise<
       projectId: null,
       clientId: null,
       where: `${p.brandName} · ${monthLabel(p.year, p.month)}`,
+      planCanvaUrl: p.canvaUrl,
     };
   }
   const [p] = await tx
@@ -87,6 +92,7 @@ export async function loadItemCtx(tx: Tx, itemId: string, lock = true): Promise<
     projectId: p.projectId,
     clientId: p.clientId,
     where: `${p.clientName} · ${p.projectName}`,
+    planCanvaUrl: null,
   };
 }
 
@@ -121,7 +127,7 @@ async function stageWithItem(tx: Tx, stageId: string) {
 /* Completing a stage (automatic hand-off + deadline propagation)       */
 /* ------------------------------------------------------------------ */
 
-export type CompleteResult = { next: StageKind | null; lateDays: number; shifted: number; itemDone: boolean };
+export type CompleteResult = { next: StageKind | null; nextAssignee?: string | null; lateDays: number; shifted: number; itemDone: boolean };
 
 /**
  * Core hand-off. Assumes the item row is locked and `stage` is active.
@@ -134,6 +140,7 @@ export async function completeStageTx(
   all: Stage[],
   stage: Stage,
   now: Date,
+  opts: { quiet?: boolean } = {},
 ): Promise<CompleteResult> {
   assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current stage.`);
   const label = STAGE_META[stage.kind].label;
@@ -200,7 +207,14 @@ export async function completeStageTx(
   const onBehalf = credited ? ` for ${credited}` : "";
 
   if (next) {
-    await tx.update(stages).set({ status: "active", activatedAt: now }).where(eq(stages.id, next.id));
+    await tx.update(stages).set({ status: "active", activatedAt: now, progress: "not_started", progressAt: null }).where(eq(stages.id, next.id));
+    if (!opts.quiet) await notify(tx, actor, await stageAudience(tx, next.kind, next.assigneeId), {
+      kind: "new_task",
+      title: `New task: ${ctx.item.title}`,
+      body: `${STAGE_META[next.kind].label} · ${ctx.where} · from ${actor.name}`,
+      itemId: ctx.item.id,
+      at: now,
+    });
     await logActivity(tx, actor, {
       ...refs(ctx),
       action: "stage_completed",
@@ -209,10 +223,17 @@ export async function completeStageTx(
       meta: { lateDays, round: stage.round, next: next.kind },
       at: now,
     });
-    return { next: next.kind, lateDays, shifted, itemDone: false };
+    return { next: next.kind, nextAssignee: next.assigneeId ? await userName(tx, next.assigneeId) : null, lateDays, shifted, itemDone: false };
   }
 
   await tx.update(contentItems).set({ completedAt: now }).where(eq(contentItems.id, ctx.item.id));
+  // Let the people who worked on it know it's out.
+  await notify(
+    tx,
+    actor,
+    all.filter((s) => s.id !== stage.id).map((s) => s.assigneeId ?? s.completedById),
+    { kind: "finished", title: `${finalLabel(ctx.context)}: ${ctx.item.title}`, body: ctx.where, itemId: ctx.item.id, at: now },
+  );
   await logActivity(tx, actor, {
     ...refs(ctx),
     action: "stage_completed",
@@ -319,6 +340,8 @@ export async function returnToStage(
             returnedAt: now,
             returnedById: actor.id,
             returnNote: cleanNote,
+            progress: "adjusting",
+            progressAt: now,
             lateExcusedAt: null,
             lateExcusedById: null,
           })
@@ -326,10 +349,17 @@ export async function returnToStage(
       } else if (s.status !== "waiting") {
         await tx
           .update(stages)
-          .set({ status: "waiting", activatedAt: null, completedAt: null, completedById: null })
+          .set({ status: "waiting", activatedAt: null, completedAt: null, completedById: null, progress: "not_started", progressAt: null })
           .where(eq(stages.id, s.id));
       }
     }
+    await notify(tx, actor, await stageAudience(tx, t.kind, t.assigneeId), {
+      kind: "sent_back",
+      title: `Sent back to you: ${ctx.item.title}`,
+      body: `${actor.name}${cleanNote ? `: “${truncate(cleanNote, 120)}”` : " asked for changes"}`,
+      itemId,
+      at: now,
+    });
     if (ctx.item.completedAt) {
       await tx.update(contentItems).set({ completedAt: null }).where(eq(contentItems.id, itemId));
     }
@@ -356,13 +386,21 @@ export async function returnToStage(
 /* Assignment, deadlines, exceptions                                    */
 /* ------------------------------------------------------------------ */
 
-export async function assignStageTx(tx: Tx, actor: Actor, ctx: ItemCtx, stage: Stage, assigneeId: string | null) {
+export async function assignStageTx(tx: Tx, actor: Actor, ctx: ItemCtx, stage: Stage, assigneeId: string | null, opts: { quiet?: boolean } = {}) {
   if ((stage.assigneeId ?? null) === (assigneeId ?? null)) return false;
   if (assigneeId) {
     const [u] = await tx.select({ isActive: users.isActive }).from(users).where(eq(users.id, assigneeId));
     assert(u?.isActive, "That person is not an active team member.");
   }
   await tx.update(stages).set({ assigneeId }).where(eq(stages.id, stage.id));
+  if (!opts.quiet && stage.status !== "done") {
+    await notify(tx, actor, [assigneeId], {
+      kind: "assigned",
+      title: stage.status === "active" ? `New task: ${ctx.item.title}` : `Coming up for you: ${ctx.item.title}`,
+      body: `${STAGE_META[stage.kind].label} · ${ctx.where} · assigned by ${actor.name}`,
+      itemId: ctx.item.id,
+    });
+  }
   const [oldName, newName] = [await userName(tx, stage.assigneeId), await userName(tx, assigneeId)];
   const label = STAGE_META[stage.kind].label;
   await logActivity(tx, actor, {
@@ -404,6 +442,14 @@ export async function setStageDeadlineTx(tx: Tx, actor: Actor, ctx: ItemCtx, sta
     .update(stages)
     .set({ deadline, originalDeadline: deadline, shiftDays: 0, shiftReason: null })
     .where(eq(stages.id, stage.id));
+  if (deadline) {
+    await notify(tx, actor, await stageAudience(tx, stage.kind, stage.assigneeId), {
+      kind: "deadline",
+      title: `Deadline ${formatDay(deadline)}: ${ctx.item.title}`,
+      body: `${STAGE_META[stage.kind].label} · set by ${actor.name}`,
+      itemId: ctx.item.id,
+    });
+  }
   const label = STAGE_META[stage.kind].label;
   await logActivity(tx, actor, {
     ...refs(ctx),
@@ -633,9 +679,23 @@ async function rerouteTx(tx: Tx, ctx: ItemCtx, all: Stage[], from: Stage, target
     const position = from.position + 1 + i;
     const existing = later.find((s) => s.kind === kind);
     if (existing) await tx.update(stages).set({ position }).where(eq(stages.id, existing.id));
-    else await tx.insert(stages).values({ itemId: ctx.item.id, kind, position, status: "waiting" });
+    else await tx.insert(stages).values({ itemId: ctx.item.id, kind, position, status: "waiting", assigneeId: await defaultAssigneeTx(tx, ctx.brandId, kind) });
   }
   return loadStages(tx, ctx.item.id);
+}
+
+/** Brand default for this team (Settings → Brands), else the team's only member, else nobody (whole team sees it). */
+export async function defaultAssigneeTx(tx: Tx, brandId: string | null, kind: StageKind): Promise<string | null> {
+  if (brandId) {
+    const [b] = await tx.select().from(brands).where(eq(brands.id, brandId));
+    const byKind: Partial<Record<StageKind, string | null>> = { content: b?.defaultCreatorId, media: b?.defaultMediaId, design: b?.defaultDesignId, social: b?.defaultSocialId };
+    const id = byKind[kind];
+    if (id) {
+      const [u] = await tx.select({ isActive: users.isActive }).from(users).where(eq(users.id, id));
+      if (u?.isActive) return id;
+    }
+  }
+  return soleTeamMember(tx, kind);
 }
 
 export type HandOffInput = {
@@ -660,8 +720,8 @@ export async function handOff(actor: Actor, stageId: string, input: HandOffInput
     assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current step.`);
     assert(can.doStage(actor, stage), NOT_ALLOWED);
     if (input.canvaUrl?.trim() && stage.kind === "content") await setCanvaUrlTx(tx, actor, ctx, input.canvaUrl, now);
-    if (stage.kind === "content" && !ctx.item.canvaUrl) {
-      throw new UserError("Paste the Canva link to this content's slide first — that's what the next team works from.");
+    if (stage.kind === "content" && !ctx.item.canvaUrl && !ctx.planCanvaUrl) {
+      throw new UserError("Add the Canva link first (this slide's link, or the month's Canva link on the brand page) — that's what the next team works from.");
     }
     if (input.driveUrl?.trim()) await setDriveUrlTx(tx, actor, ctx, input.driveUrl, now);
     if (STAGE_META[stage.kind].needsDriveLink && !ctx.item.driveUrl) {
@@ -671,14 +731,58 @@ export async function handOff(actor: Actor, stageId: string, input: HandOffInput
       assert(handoffTargets(stage.kind, ctx.context).includes(input.target), "That team can't receive this work from here.");
       all = await rerouteTx(tx, ctx, all, stage, input.target);
     }
+    // The person chosen for the next step is set first so the "new task" notification goes to them.
+    const me = all.find((s) => s.id === stage.id)!;
+    const upcoming = all.find((s) => s.position > me.position);
+    if (upcoming && input.assigneeId) {
+      await assignStageTx(tx, actor, ctx, upcoming, input.assigneeId, { quiet: true });
+      all = await loadStages(tx, ctx.item.id);
+    }
     const result = await completeStageTx(tx, actor, ctx, all, all.find((s) => s.id === stage.id)!, now);
-    // Owner and deadline for the next team are applied after the hand-off, so an upstream delay
+    // The deadline for the next team is applied after the hand-off, so an upstream delay
     // never shifts a deadline that was just chosen with today's date in mind.
-    if (result.next) {
+    if (result.next && input.deadline) {
+      assert(can.setDeadline(actor), "Only managers can set deadlines.");
       const next = (await loadStages(tx, ctx.item.id)).find((s) => s.kind === result.next)!;
-      if (input.assigneeId) await assignStageTx(tx, actor, ctx, next, input.assigneeId);
-      if (input.deadline && !next.deadline) await setStageDeadlineTx(tx, actor, ctx, next, input.deadline);
+      if (!next.deadline) await setStageDeadlineTx(tx, actor, ctx, next, input.deadline);
     }
     return result;
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Progress of the current step (same statuses as the old tracker)       */
+/* ------------------------------------------------------------------ */
+
+export const PROGRESS_LABEL: Record<StageProgress, string> = {
+  not_started: "Not started",
+  processing: "Processing",
+  adjusting: "Adjusting",
+  waiting_approval: "Waiting approval",
+};
+
+export async function setStageProgress(actor: Actor, stageId: string, progress: StageProgress, opts: { now?: Date } = {}) {
+  return db.transaction(async (tx) => {
+    const now = opts.now ?? new Date();
+    const { ctx, stage } = await stageWithItem(tx, stageId);
+    ensureOpen(ctx);
+    assert(stage.status === "active", "You can only update the step that's in progress.");
+    assert(can.doStage(actor, stage), NOT_ALLOWED);
+    assert(PROGRESS_LABEL[progress], "Unknown status.");
+    if (stage.progress === progress) return false;
+    // Starting work on an unclaimed step claims it.
+    const assigneeId = stage.assigneeId ?? (progress !== "not_started" ? actor.id : null);
+    await tx.update(stages).set({ progress, progressAt: now, assigneeId }).where(eq(stages.id, stage.id));
+    await logActivity(tx, actor, {
+      ...refs(ctx),
+      action: "stage_progress",
+      stageKind: stage.kind,
+      field: "progress",
+      oldValue: stage.progress,
+      newValue: progress,
+      summary: `${actor.name} set ${STAGE_META[stage.kind].label} to “${PROGRESS_LABEL[progress]}”.`,
+      at: now,
+    });
+    return true;
   });
 }

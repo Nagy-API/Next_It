@@ -64,7 +64,7 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
             <Stat label="Late" value={late} tone={late ? "bad" : undefined} />
           </div>
           <div className="mt-6">
-            <BulkList items={items} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={can.editContent(me)} />
+            <BulkList items={items} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={can.editContent(me)} canDeadline={can.setDeadline(me)} />
           </div>
         </>
       )}

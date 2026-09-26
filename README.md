@@ -43,14 +43,27 @@ Other devices on the office network can use `http://<this-computer's-IP>:3000`.
 
 ## How the team uses it
 
-- **Everyone lands on "My tasks"** — the work waiting for them or their team, from every brand and one-off project.
+- **Everyone lands on "My tasks"** — the work waiting for them or their team, from every brand and one-off project,
+  with counts (on you now, late, due soon, done this month vs last month). Finished work leaves the list but is counted.
   Each task has one field and one button: paste the link, press done.
-- **Content** pastes the Canva slide link → it goes to Media (Reels) or Graphic Design (Posts/Carousels), or to the
-  team they choose. Adding content with its Canva link sends it on automatically.
-- **Media / Design** paste the Google Drive link → it goes to Social. Time and name are saved automatically.
+- **Status like the old sheet** — Not started → Processing → Adjusting → Waiting approval; *Done* happens by itself when
+  the Drive link is pasted. Sending work back sets the step to *Adjusting*.
+- **Content** writes on the month's Canva (one link per brand-month, each item has a slide number and a
+  "Open Canva · slide N" button), or pastes a slide's own link. It goes to Media (Reels) or Graphic Design
+  (Posts/Carousels), or to the team they choose.
+- **Media / Design** paste the Google Drive link → it goes to Social. Time and name are saved automatically and shown on
+  the task ("Content ✓ 22 Sep 18:00 · King").
 - **Social** pastes each platform's live link → that platform is Published; when all planned platforms are live the item is done.
+- **Default people per brand and team** (Settings → Brands): e.g. Blissify content → Kemo, design → Gannah, social → Esraa.
+  "Whole team" means everyone in that team sees it and whoever starts it takes it.
+- **Notifications** (the bell, plus optional desktop pop-ups): new task, sent back, comments/replies, deadline set,
+  finished; and live reminders for late work, due today/tomorrow, and posting soon.
 - **Comments** can be written to a person; it shows in their tasks until they reply or mark it done.
-- **Permissions**: each team does its own step; deadlines lock once set (admins can change them); settings are admin-only.
+- **Dashboard** — every brand, team and person for any month, with month-over-month comparison.
+- **Activity log** — every change with who and when, filterable by type, person and brand. It can't be edited or deleted.
+- **Permissions**: each team does its own step; only managers (CEO, leadership, account manager) set deadlines, and once
+  set only the admin can change them (automatic shifts for upstream delays still apply); settings are admin-only.
+  Deleting an item hides it with its history kept, and it can be restored.
 
 ## Stack
 

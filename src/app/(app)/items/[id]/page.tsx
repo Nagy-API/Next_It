@@ -12,16 +12,17 @@ import { getItemDetail, type StageView } from "@/server/queries";
 import { Comments } from "@/components/comments";
 import { can } from "@/domain/permissions";
 import { AssignSelect, CancelToggle, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, PlatformRow, SendBack } from "./parts";
-import { DeliverButton, HandOffPanel, TakeButton } from "@/components/handoff";
+import { DeliverButton, DeliveryTimes, HandOffPanel, ProgressPicker, TakeButton } from "@/components/handoff";
 
 export async function generateMetadata({ params }: PageProps<"/items/[id]">) {
   const d = await getItemDetail((await params).id);
   return { title: d?.item.title ?? "Item" };
 }
 
-export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
+export default async function ItemPage({ params, searchParams }: PageProps<"/items/[id]">) {
   const me = await requireUser();
   const { id } = await params;
+  const wantsEdit = (await searchParams).edit === "1";
   const [detail, people] = await Promise.all([getItemDetail(id), getActivePeople()]);
   if (!detail) notFound();
   const { item, history, allPlatforms, comments } = detail;
@@ -73,25 +74,26 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
                 {item.postingTime && ` · ${item.postingTime}`}
               </span>
             )}
-            {item.cancelledAt && <Badge tone="neutral">Cancelled</Badge>}
+            {item.slideNumber && <span className="rounded-md bg-[#f1e8fd] px-1.5 py-0.5 text-[12px] font-bold text-[#6d28d9]">Slide {item.slideNumber}</span>}
+            {item.cancelledAt && <Badge tone="bad">Deleted</Badge>}
             {item.completedAt && <Badge tone="ok" icon={CheckCircle2}>{finalLabel(item.context)}</Badge>}
           </div>
           <h1 className="mt-1.5 font-display text-[28px] font-bold leading-tight tracking-[-0.01em]">{item.title}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {item.canvaUrl ? (
-            <ExtA href={item.canvaUrl} className={btn("secondary")}>
-              <Palette className="size-4 text-[#7d2ae8]" /> Open in Canva <ExternalLink className="size-3.5 text-faint" />
+          {item.canvaLink ? (
+            <ExtA href={item.canvaLink} className={btn("secondary")}>
+              <Palette className="size-4 text-[#7d2ae8]" /> Open in Canva{item.slideNumber && !item.canvaUrl ? ` · slide ${item.slideNumber}` : ""} <ExternalLink className="size-3.5 text-faint" />
             </ExtA>
           ) : (
-            <span className="text-[12.5px] text-faint">No Canva link</span>
+            <span className="text-[12.5px] text-faint">No Canva link yet</span>
           )}
           {item.driveUrl && (
             <ExtA href={item.driveUrl} className={btn("secondary")}>
               <FolderOpen className="size-4 text-[#1a73e8]" /> Drive file <ExternalLink className="size-3.5 text-faint" />
             </ExtA>
           )}
-          {(may.editContent || may.editDate) && <DetailsForm item={item} canChangeType={canChangeType && may.editContent} canEditContent={may.editContent} />}
+          {(may.editContent || may.editDate) && <DetailsForm item={item} canChangeType={canChangeType && may.editContent} canEditContent={may.editContent} defaultOpen={wantsEdit && open} />}
         </div>
       </div>
 
@@ -102,6 +104,7 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
             <div className="min-w-[520px]">
               <FlowStepper item={item} />
             </div>
+            <DeliveryTimes item={item} className="mt-4 border-t border-line pt-3" />
           </section>
 
           {/* ---------------- Now ---------------- */}
@@ -155,7 +158,13 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
                     <span>Once the files are with the client. Time and name are saved automatically.</span>
                   </div>
                 ) : (
-                  <HandOffPanel item={item} stageId={cur.id} from={cur.kind} people={pickPeople} />
+                  <div className="space-y-5">
+                    <div>
+                      <div className="label">Where are you with it?</div>
+                      <ProgressPicker stage={cur} />
+                    </div>
+                    <HandOffPanel item={item} stageId={cur.id} from={cur.kind} people={pickPeople} canDeadline={may.deadline} />
+                  </div>
                 )}
                 <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-line pt-4">
                   <div className="w-[200px]">
@@ -237,7 +246,7 @@ export default async function ItemPage({ params }: PageProps<"/items/[id]">) {
             </div>
           ) : (
             <div className="card flex items-center justify-between p-4 text-[14px]">
-              <span className="text-muted">This item was cancelled. Its history is kept.</span>
+              <span className="text-muted">This item was deleted. Its history is kept.</span>
               <CancelToggle itemId={item.id} cancelled />
             </div>
           )}

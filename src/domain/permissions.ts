@@ -5,7 +5,8 @@
  *  - Content team: plans the month, edits content details, sends work to production.
  *  - Media / Design: do and submit their step (for any brand or one-off project).
  *  - Social: publishes and edits platform details.
- *  - Account management: sees everything, sets deadlines, requests changes, delivers one-off work.
+ *  - Managers (CEO, account management): set deadlines (locked once set — only the admin can change one),
+ *    request changes, deliver one-off work.
  *  - Everyone: can comment, and can send work back with a note when something is wrong.
  */
 import type { StageKind, Team } from "@/db/schema";
@@ -32,8 +33,9 @@ export const can = {
   },
   /** Put an empty deadline on a step. Changing an existing one is admin-only (see workflow). */
   setDeadline(w: Who) {
-    return manager(w) || has(w, "content");
+    return manager(w);
   },
+  /** Deadlines lock once set; only the CEO/admin can correct one. */
   changeDeadline(w: Who) {
     return !!w.isAdmin;
   },

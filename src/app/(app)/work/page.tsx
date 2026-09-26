@@ -54,7 +54,7 @@ export default async function WorkPage({ searchParams }: PageProps<"/work">) {
         />
       </div>
       {items.length ? (
-        <BulkList items={items} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={can.editContent(me)} showContext />
+        <BulkList items={items} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={can.editContent(me)} canDeadline={can.setDeadline(me)} showContext />
       ) : (
         <Empty icon={Inbox} title="Nothing matches">Try clearing a filter.</Empty>
       )}

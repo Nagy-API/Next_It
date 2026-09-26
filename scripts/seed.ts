@@ -8,9 +8,9 @@
  * Refuses to run on a database that already has users (use `npm run db:reset` to start over).
  */
 import "dotenv/config";
-import { eq, sql } from "drizzle-orm";
+import { eq, isNull, sql } from "drizzle-orm";
 import { closeDb, db } from "../src/db";
-import { brands, platforms, users, type Team } from "../src/db/schema";
+import { activityLog, brands, platforms, users, type Team } from "../src/db/schema";
 import { createItems, type NewItemRow } from "../src/server/items";
 import { hashPassword, slugify } from "../src/server/admin";
 import { logActivity } from "../src/server/activity";
@@ -94,11 +94,28 @@ async function fixDesignTeam() {
   console.log(`✓ Added Gannah (Graphic Design). Initial password: ${PASSWORD}`);
 }
 
+/**
+ * Installs from before per-team brand defaults: give every brand Gannah for design and Esraa for social,
+ * once. Runs only if it never ran before, so a later "Whole team" choice in Settings is never overwritten.
+ */
+async function fillTeamDefaults() {
+  const [done] = await db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.action, "brand_team_defaults")).limit(1);
+  if (done) return;
+  const [gannah] = await db.select({ id: users.id }).from(users).where(eq(users.username, "gannah"));
+  const [esraa] = await db.select({ id: users.id }).from(users).where(eq(users.username, "esraa"));
+  if (!gannah && !esraa) return;
+  if (gannah) await db.update(brands).set({ defaultDesignId: gannah.id }).where(isNull(brands.defaultDesignId));
+  if (esraa) await db.update(brands).set({ defaultSocialId: esraa.id }).where(isNull(brands.defaultSocialId));
+  await logActivity(db, null, { action: "brand_team_defaults", summary: "Brand defaults set: Graphic Design → Gannah, Social → Esraa (change them in Settings → Brands)." });
+  console.log("✓ Brand defaults set: Graphic Design → Gannah, Social → Esraa");
+}
+
 export async function seed() {
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(users);
   if (count > 0) {
     console.log("Database already has users — skipping the initial seed.");
     await fixDesignTeam();
+    await fillTeamDefaults();
     return;
   }
   const passwordHash = await hashPassword(PASSWORD);
@@ -114,7 +131,18 @@ export async function seed() {
 
   const brandRows = await db
     .insert(brands)
-    .values(BRANDS.map((b) => ({ name: b.name, slug: slugify(b.name), color: b.color, defaultCreatorId: byUsername.get(b.creator)!.id, createdAt: new Date("2026-09-01T07:00:00Z") })))
+    .values(
+      BRANDS.map((b) => ({
+        name: b.name,
+        slug: slugify(b.name),
+        color: b.color,
+        defaultCreatorId: byUsername.get(b.creator)!.id,
+        // Gannah is the graphic designer and Esraa runs social for every brand; Media stays with the whole team (Ayman & Jana).
+        defaultDesignId: byUsername.get("gannah")!.id,
+        defaultSocialId: byUsername.get("esraa")!.id,
+        createdAt: new Date("2026-09-01T07:00:00Z"),
+      })),
+    )
     .returning();
   for (const b of brandRows) {
     await logActivity(db, { id: ceo.id, name: ceo.name }, { action: "brand_created", brandId: b.id, summary: `${ceo.name} created the brand ${b.name}.`, at: new Date("2026-09-01T07:00:00Z") });
@@ -138,6 +166,7 @@ export async function seed() {
 
   console.log(`✓ Seeded ${created.length} users, ${brandRows.length} brands, ${PLATFORMS.length} platforms, ${rows.length} Vanilla Roza October items.`);
   console.log(`  Every account's initial password: ${PASSWORD}`);
+  await logActivity(db, null, { action: "brand_team_defaults", summary: "Brand defaults set: Graphic Design → Gannah, Social → Esraa." });
 }
 
 if (process.argv[1]?.endsWith("seed.ts")) {

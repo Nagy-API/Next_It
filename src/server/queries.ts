@@ -1,5 +1,5 @@
 /** Read models for the UI. Every screen gets items in the same enriched shape. */
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, isNotNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, like, isNull, isNotNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
   activityLog,
@@ -17,6 +17,7 @@ import {
   type ContentType,
   type PlatformStatus,
   type StageKind,
+  type StageProgress,
   type StageStatus,
   type Team,
 } from "@/db/schema";
@@ -53,6 +54,8 @@ export type StageView = {
   returnNote: string | null;
   lateExcusedAt: Date | null;
   lateExcusedBy: { id: string; name: string } | null;
+  progress: StageProgress;
+  progressAt: Date | null;
   health: StageHealth;
 };
 
@@ -64,12 +67,17 @@ export type WorkItem = {
   postingDate: string | null;
   postingTime: string | null;
   canvaUrl: string | null;
+  /** The link to open: this slide's own link, else the month's Canva presentation at this slide. */
+  canvaLink: string | null;
+  slideNumber: number | null;
   driveUrl: string | null;
+  /** The month's Drive folder (where final files go). */
+  driveFolderUrl: string | null;
   completedAt: Date | null;
   cancelledAt: Date | null;
   createdAt: Date;
   brand: { id: string; name: string; slug: string; color: string; isActive: boolean } | null;
-  plan: { id: string; year: number; month: number } | null;
+  plan: { id: string; year: number; month: number; canvaUrl: string | null; driveFolderUrl: string | null } | null;
   project: { id: string; name: string; clientId: string; clientName: string; clientSlug: string } | null;
   stages: StageView[];
   current: StageView | null;
@@ -113,7 +121,7 @@ export async function getWorkItems(f: ItemFilter = {}, today = todayISO()): Prom
     .select({
       item: contentItems,
       brand: brandCols,
-      plan: { id: contentPlans.id, year: contentPlans.year, month: contentPlans.month },
+      plan: { id: contentPlans.id, year: contentPlans.year, month: contentPlans.month, canvaUrl: contentPlans.canvaUrl, driveFolderUrl: contentPlans.driveFolderUrl },
       project: { id: projects.id, name: projects.name, clientId: clients.id, clientName: clients.name, clientSlug: clients.slug },
     })
     .from(contentItems)
@@ -171,6 +179,8 @@ async function enrich(
       returnNote: s.returnNote,
       lateExcusedAt: s.lateExcusedAt,
       lateExcusedBy: person(s.lateExcusedById),
+      progress: s.progress,
+      progressAt: s.progressAt,
       health: stageHealth(s, today),
     };
     const list = stagesByItem.get(s.itemId) ?? [];
@@ -196,7 +206,10 @@ async function enrich(
       postingDate: item.postingDate,
       postingTime: item.postingTime,
       canvaUrl: item.canvaUrl,
+      canvaLink: item.canvaUrl ?? (plan?.canvaUrl ? slideLink(plan.canvaUrl, item.slideNumber) : null),
+      slideNumber: item.slideNumber,
       driveUrl: item.driveUrl,
+      driveFolderUrl: plan?.driveFolderUrl ?? null,
       completedAt: item.completedAt,
       cancelledAt: item.cancelledAt,
       createdAt: item.createdAt,
@@ -209,6 +222,12 @@ async function enrich(
       platforms: platsByItem.get(item.id) ?? [],
     };
   });
+}
+
+/** Month presentation link, pointed at the item's slide where the browser/Canva supports it. */
+export function slideLink(url: string, slide: number | null) {
+  if (!slide) return url;
+  return `${url.split("#")[0]}#${slide}`;
 }
 
 /** Posting within this many days while still before Social = at risk. */
@@ -266,7 +285,7 @@ export async function getItemDetail(id: string) {
 
 export async function getBrands() {
   return db
-    .select({ ...brandCols, logoUrl: brands.logoUrl, defaultCreatorId: brands.defaultCreatorId, creatorName: users.name, createdAt: brands.createdAt, archivedAt: brands.archivedAt })
+    .select({ ...brandCols, logoUrl: brands.logoUrl, defaultCreatorId: brands.defaultCreatorId, defaultMediaId: brands.defaultMediaId, defaultDesignId: brands.defaultDesignId, defaultSocialId: brands.defaultSocialId, creatorName: users.name, createdAt: brands.createdAt, archivedAt: brands.archivedAt })
     .from(brands)
     .leftJoin(users, eq(users.id, brands.defaultCreatorId))
     .orderBy(asc(brands.name));
@@ -355,7 +374,24 @@ export async function getClientBySlug(slug: string) {
 /* Activity                                                              */
 /* ------------------------------------------------------------------ */
 
-export async function getActivity(f: { actorId?: string; brandId?: string; before?: number; limit?: number } = {}) {
+/** Groups of activity actions, for the Activity log filter. Matched by prefix. */
+export const ACTIVITY_KINDS = {
+  work: { label: "Hand-offs & progress", prefixes: ["stage_completed", "stage_assigned", "stage_progress", "drive_link", "item_created"] },
+  back: { label: "Sent back", prefixes: ["stage_returned", "stage_reopened"] },
+  deadlines: { label: "Deadlines", prefixes: ["deadline_"] },
+  publishing: { label: "Publishing", prefixes: ["platform_updated"] },
+  comments: { label: "Comments", prefixes: ["comment_"] },
+  edits: { label: "Edits & deletes", prefixes: ["item_updated", "item_deleted", "item_restored", "plan_"] },
+  admin: { label: "People & settings", prefixes: ["user_", "brand_", "platform_created", "project_", "client_", "password_", "system_"] },
+} as const;
+export type ActivityKind = keyof typeof ACTIVITY_KINDS;
+
+export function activityKindOf(action: string): ActivityKind {
+  for (const [k, v] of Object.entries(ACTIVITY_KINDS)) if (v.prefixes.some((p) => action.startsWith(p))) return k as ActivityKind;
+  return "admin";
+}
+
+export async function getActivity(f: { actorId?: string; brandId?: string; kind?: ActivityKind; before?: number; limit?: number } = {}) {
   const limit = f.limit ?? 50;
   const rows = await db
     .select({
@@ -379,6 +415,7 @@ export async function getActivity(f: { actorId?: string; brandId?: string; befor
       and(
         f.actorId ? eq(activityLog.actorId, f.actorId) : undefined,
         f.brandId ? eq(activityLog.brandId, f.brandId) : undefined,
+        f.kind ? or(...ACTIVITY_KINDS[f.kind].prefixes.map((p) => like(activityLog.action, `${p}%`))) : undefined,
         f.before ? sql`${activityLog.id} < ${f.before}` : undefined,
       ),
     )

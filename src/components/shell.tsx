@@ -5,8 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { Briefcase, Home, KeyRound, LogOut, Menu, Plus, Search, Settings, Tags, UserRound, Users, X } from "lucide-react";
+import { BarChart3, Briefcase, History, Home, KeyRound, LogOut, Menu, Plus, Search, Settings, Tags, UserRound, Users, X } from "lucide-react";
 import { logoutAction } from "@/app/actions";
+import { NotificationBell } from "./bell";
 import { Avatar, btn } from "./ui";
 
 type NavBrand = { id: string; name: string; slug: string; color: string; open: number; late: number };
@@ -40,8 +41,9 @@ export function Shell({
         )}
       >
         <div className="relative flex h-16 items-center px-5">
-          <Link href="/" className="block" aria-label="NEXORA">
-            <Image src="/brand/nexora-wordmark-white.png" alt="NEXORA" width={777} height={153} priority className="h-[22px] w-auto" />
+          <Link href="/" className="flex items-center gap-2.5" aria-label="NEXORA">
+            <Image src="/brand/nexora-mark-white.png" alt="" width={566} height={565} priority className="size-7 drop-shadow-[0_2px_6px_rgba(96,165,250,0.45)]" />
+            <Image src="/brand/nexora-wordmark-white.png" alt="NEXORA" width={777} height={153} priority className="h-[18px] w-auto" />
           </Link>
           <span className="ml-2 mt-0.5 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-electric-bright">Ops</span>
           <button className="ml-auto rounded-md p-1 text-white/60 hover:text-white lg:hidden" onClick={() => setMobileOpen(false)} aria-label="Close menu">
@@ -52,6 +54,8 @@ export function Shell({
         <nav className="flex-1 overflow-y-auto px-3 pb-4 pt-2">
           <NavItem href="/my-work" icon={UserRound} label="My tasks" active={pathname.startsWith("/my-work")} count={myCount} />
           <NavItem href="/overview" icon={Home} label="Overview" active={pathname.startsWith("/overview") || pathname.startsWith("/work")} />
+          <NavItem href="/stats" icon={BarChart3} label="Dashboard" active={pathname.startsWith("/stats")} />
+          <NavItem href="/activity" icon={History} label="Activity log" active={pathname.startsWith("/activity")} />
 
           <div className="mt-5 mb-1.5 flex items-center justify-between px-3">
             <Link href="/brands" className={clsx("text-[11px] font-semibold uppercase tracking-[0.12em] hover:text-white", pathname === "/brands" ? "text-white" : "text-white/45")}>
@@ -105,8 +109,10 @@ export function Shell({
             <Menu className="size-5" />
           </button>
           <SearchBox />
+          <div className="ml-auto" />
+          <NotificationBell />
           {canAdd && (
-            <Link href="/add" className={btn("primary", "md", "ml-auto")}>
+            <Link href="/add" className={btn("primary", "md")}>
               <Plus className="size-4" strokeWidth={2.5} />
               <span className="hidden sm:inline">Add content</span>
             </Link>
@@ -114,7 +120,11 @@ export function Shell({
         </div>
       </div>
 
-      <main className="mx-auto max-w-[1320px] px-4 pb-16 pt-6 sm:px-6 lg:px-8">{children}</main>
+      {/* The NEXORA sun, very faint, with a soft shadow — brand presence without noise. */}
+      <div aria-hidden className="pointer-events-none fixed -right-24 top-24 -z-0 hidden size-[420px] opacity-[0.045] lg:block">
+        <Image src="/brand/nexora-mark-navy.png" alt="" fill sizes="420px" className="object-contain drop-shadow-[0_18px_30px_rgba(11,22,57,0.5)]" />
+      </div>
+      <main className="relative z-[1] mx-auto max-w-[1320px] px-4 pb-16 pt-6 sm:px-6 lg:px-8">{children}</main>
     </div>
   );
 }

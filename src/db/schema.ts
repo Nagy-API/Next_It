@@ -34,6 +34,10 @@ export const stageKindEnum = pgEnum("stage_kind", STAGE_KINDS);
 export const STAGE_STATUSES = ["waiting", "active", "done"] as const;
 export const stageStatusEnum = pgEnum("stage_status", STAGE_STATUSES);
 
+/** Where the person doing a step is with it (same statuses as the old tracker). Done = the step is completed. */
+export const STAGE_PROGRESS = ["not_started", "processing", "adjusting", "waiting_approval"] as const;
+export const stageProgressEnum = pgEnum("stage_progress", STAGE_PROGRESS);
+
 export const PLATFORM_STATUSES = ["not_planned", "pending", "scheduled", "published", "cancelled"] as const;
 export const platformStatusEnum = pgEnum("platform_status", PLATFORM_STATUSES);
 
@@ -82,6 +86,10 @@ export const brands = pgTable("brands", {
   color: text("color").notNull().default("#3B82F6"),
   isActive: boolean("is_active").notNull().default(true),
   defaultCreatorId: uuid("default_creator_id").references(() => users.id),
+  /** Default people for the other teams on this brand (work goes straight to them; can be changed per item). */
+  defaultMediaId: uuid("default_media_id").references(() => users.id),
+  defaultDesignId: uuid("default_design_id").references(() => users.id),
+  defaultSocialId: uuid("default_social_id").references(() => users.id),
   createdAt: ts("created_at").notNull().defaultNow(),
   archivedAt: ts("archived_at"),
 });
@@ -95,6 +103,10 @@ export const contentPlans = pgTable(
       .references(() => brands.id),
     year: integer("year").notNull(),
     month: integer("month").notNull(),
+    /** The month's Canva presentation (one link for all items; each item has a slide number). */
+    canvaUrl: text("canva_url"),
+    /** The month's Google Drive folder where final files are uploaded. */
+    driveFolderUrl: text("drive_folder_url"),
     createdAt: ts("created_at").notNull().defaultNow(),
     createdById: uuid("created_by_id").references(() => users.id),
   },
@@ -148,6 +160,8 @@ export const contentItems = pgTable(
     driveUrl: text("drive_url"),
     postingDate: date("posting_date", { mode: "string" }),
     postingTime: text("posting_time"),
+    /** Slide/page number in the month's Canva presentation. */
+    slideNumber: integer("slide_number"),
     completedAt: ts("completed_at"),
     cancelledAt: ts("cancelled_at"),
     cancelledById: uuid("cancelled_by_id").references(() => users.id),
@@ -183,6 +197,8 @@ export const stages = pgTable(
     propagatedDelayDays: integer("propagated_delay_days").notNull().default(0),
     /** 1 for the first pass; +1 every time work is returned to this stage. */
     round: integer("round").notNull().default(1),
+    progress: stageProgressEnum("progress").notNull().default("not_started"),
+    progressAt: ts("progress_at"),
     activatedAt: ts("activated_at"),
     completedAt: ts("completed_at"),
     completedById: uuid("completed_by_id").references(() => users.id),
@@ -325,6 +341,29 @@ export const activityLog = pgTable(
   ],
 );
 
+/* ------------------------------------------------------------------ */
+/* Notifications                                                         */
+/* ------------------------------------------------------------------ */
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    /** new_task | sent_back | comment | reply | assigned | deadline | finished */
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    itemId: uuid("item_id").references(() => contentItems.id),
+    actorId: uuid("actor_id").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    readAt: ts("read_at"),
+  },
+  (t) => [index("notifications_user_idx").on(t.userId, t.readAt, t.createdAt)],
+);
+
 export type User = typeof users.$inferSelect;
 export type Brand = typeof brands.$inferSelect;
 export type ContentItem = typeof contentItems.$inferSelect;
@@ -336,3 +375,4 @@ export type ContentType = (typeof CONTENT_TYPES)[number];
 export type StageKind = (typeof STAGE_KINDS)[number];
 export type StageStatus = (typeof STAGE_STATUSES)[number];
 export type PlatformStatus = (typeof PLATFORM_STATUSES)[number];
+export type StageProgress = (typeof STAGE_PROGRESS)[number];

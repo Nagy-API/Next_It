@@ -8,7 +8,9 @@ import { ItemList } from "@/components/item-row";
 import { RangePicker } from "@/components/range-picker";
 import { Avatar, Badge, BrandDot, SectionTitle, Stat, TypeIcon } from "@/components/ui";
 import { STAGE_META, TEAM_META } from "@/domain/workflow";
-import { formatDateTime, formatDay } from "@/lib/dates";
+import { formatDateTime, formatDay, todayISO } from "@/lib/dates";
+import { Delta, MonthColumns } from "@/components/charts";
+import { personPerMonth } from "@/server/stats";
 import { resolveRange } from "@/lib/ranges";
 import { requireUser } from "@/server/auth";
 import { getInsights, getPersonCompletions, getPersonWork } from "@/server/queries";
@@ -19,7 +21,13 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
   const [person] = await db.select().from(users).where(eq(users.username, username));
   if (!person) notFound();
   const range = resolveRange(await searchParams);
-  const [insights, completions, work] = await Promise.all([getInsights(range.from, range.to), getPersonCompletions(person.id, range.from, range.to), getPersonWork(person.id)]);
+  const today = todayISO();
+  const [insights, completions, work, months] = await Promise.all([
+    getInsights(range.from, range.to),
+    getPersonCompletions(person.id, range.from, range.to),
+    getPersonWork(person.id),
+    personPerMonth(person.id, Number(today.slice(0, 4)), Number(today.slice(5, 7)), 6),
+  ]);
   const r = insights.find((x) => x.person.id === person.id)!;
   return (
     <div className="space-y-7">
@@ -39,6 +47,22 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
           </div>
         </div>
       </div>
+      <section className="card p-5">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-display text-[15px] font-bold">Month by month</h2>
+          <span className="text-[13px]">
+            <b>{months.at(-1)!.value}</b> this month · <Delta now={months.at(-1)!.value} before={months.at(-2)!.value} label={months.at(-2)!.label} />
+          </span>
+        </div>
+        <MonthColumns points={months} unit="steps done" />
+        <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
+          {months.map((m) => (
+            <span key={m.label} className="rounded-md bg-canvas px-2 py-1 text-ink-2">
+              {m.label}: <b>{m.value}</b> done{m.late ? <span className="text-bad"> · {m.late} late</span> : null}
+            </span>
+          ))}
+        </div>
+      </section>
       <RangePicker current={range.key} from={range.from} to={range.to} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label="Stages completed" value={r.completed} hint={`${formatDay(range.from, { weekday: false })} – ${formatDay(range.to, { weekday: false })}`} />

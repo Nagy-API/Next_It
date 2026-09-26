@@ -48,8 +48,8 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.getByRole("button", { name: "I’ll take it" }).click();
     await expect(page.getByText("With Ayman")).toBeVisible();
     await page.getByLabel(/Google Drive link to the final video/).fill("https://drive.google.com/file/d/the-ampoule-final");
-    await page.getByRole("button", { name: /Send to Social Media/ }).click();
-    await toast(page, "Sent to the Social Media team.");
+    await page.getByRole("button", { name: /Send to Esraa/ }).click();
+    await toast(page, "Sent to Esraa (Social Media).");
     await expect(page.getByRole("link", { name: /Drive file/ })).toHaveAttribute("href", "https://drive.google.com/file/d/the-ampoule-final");
 
     // Esraa picks the platforms, then pastes live links from her task list — pasting the link marks it Published.
@@ -90,19 +90,20 @@ test.describe.serial("NEXORA acceptance", () => {
 
     // The post had its Canva link → already with Graphic Design; the reels wait with King.
     await page.goto("/brands/vanilla-roza?m=2026-11&team=design");
-    await expect(page.getByText("Waiting for Design team")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Post 01: November Hello", exact: true })).toBeVisible();
+    await expect(page.getByText("Gannah").first()).toBeVisible(); // the brand's default designer
     await page.goto("/my-work");
     await expect(card(page, "Revision Reel")).toBeVisible();
 
     // King pastes the Canva link right in his task list → sent to Media, time recorded.
     await card(page, "Revision Reel").getByPlaceholder(/Canva link/).fill("https://canva.link/revision-reel");
-    await card(page, "Revision Reel").getByRole("button", { name: /Send to Media Production/ }).click();
+    await card(page, "Revision Reel").getByRole("button", { name: /Content ready — send to Media Production/ }).click();
     await toast(page, "Sent to the Media Production team.");
     await expect(page.getByRole("link", { name: "Revision Reel", exact: true })).toHaveCount(0);
   });
 
   test("Scenario 2 — late Content shifts the Media deadline; only an admin can excuse it", async ({ page }) => {
-    await login(page, "ammar");
+    await login(page, "assem"); // the account manager sets deadlines
     await openItem(page, "vanilla-roza", "Late Reel", "2026-11");
     await page.getByText("More details").click();
     const steps = page.locator("details");
@@ -121,12 +122,14 @@ test.describe.serial("NEXORA acceptance", () => {
     await expect(page.getByText("Waiting on previous stage — not late")).toBeVisible();
     await expect(page.getByText("3 days late").first()).toBeVisible();
 
+    await login(page, "king");
+    await openItem(page, "vanilla-roza", "Late Reel", "2026-11");
+    await expect(page.getByRole("button", { name: "Mark as exception" })).toHaveCount(0);
     await page.getByLabel(/Canva link to this content/).fill("https://canva.link/late-reel");
     await page.getByRole("button", { name: /Send to Media Production/ }).click();
     await toast(page, "Sent to the Media Production team.");
     await expect(page.getByText(/Deadline moved from/)).toBeVisible();
     await expect(page.getByText(/Shifted by 3 days because Content was delivered late/).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Mark as exception" })).toHaveCount(0);
 
     await login(page, "shahenda");
     await openItem(page, "vanilla-roza", "Late Reel", "2026-11");
@@ -139,7 +142,8 @@ test.describe.serial("NEXORA acceptance", () => {
     await login(page, "assem");
     await openItem(page, "vanilla-roza", "The Oil");
     await page.getByRole("button", { name: "Send back" }).click();
-    await page.getByPlaceholder("What needs to change? (optional)").fill("The script needs a stronger hook.");
+    await expect(page.getByRole("dialog", { name: "Send it back for changes" })).toBeVisible();
+    await page.getByLabel(/What needs to change/).fill("The script needs a stronger hook.");
     await page.getByRole("button", { name: "Send back to Content" }).click();
     await toast(page, "Sent back to Content.");
     await expect(page.getByText("Assem sent this back")).toBeVisible();
@@ -147,7 +151,8 @@ test.describe.serial("NEXORA acceptance", () => {
     await login(page, "king");
     await page.goto("/my-work");
     await expect(card(page, "The Oil").getByText(/Sent back by Assem/)).toBeVisible();
-    await card(page, "The Oil").getByRole("button", { name: /Send to Media Production/ }).click();
+    await expect(card(page, "The Oil").getByRole("radio", { name: "Adjusting" })).toHaveAttribute("aria-checked", "true");
+    await card(page, "The Oil").getByRole("button", { name: /Content ready — send to Media Production/ }).click();
     await toast(page, "Sent to the Media Production team.");
   });
 
@@ -173,7 +178,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await login(page, "ayman");
     await card(page, "Reel 1").getByPlaceholder(/Google Drive link/).fill("https://drive.google.com/sinai-reel-1");
     await card(page, "Reel 1").getByRole("button", { name: /Done — send to Delivery/ }).click();
-    await toast(page, "Sent to the Delivery team.");
+    await toast(page, "Sent to Assem (Delivery).");
 
     await login(page, "assem");
     await page.goto("/my-work");
@@ -191,7 +196,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await expect(page.getByText("2 projects")).toBeVisible();
   });
 
-  test("Content chooses the team, person and deadline; deadlines lock; team members pick up work", async ({ page }) => {
+  test("Content chooses the team and person; a manager sets the deadline and it locks; team members pick up work", async ({ page }) => {
     await login(page, "king");
     await page.goto("/add?brand=vanilla-roza&m=2026-12");
     await page.getByLabel("Title").first().fill("Cover Reel");
@@ -199,17 +204,29 @@ test.describe.serial("NEXORA acceptance", () => {
     await expect(page).toHaveURL(/m=2026-12/);
     await openItem(page, "vanilla-roza", "Cover Reel", "2026-12");
     await page.getByLabel(/Canva link to this content/).fill("https://canva.link/cover-reel");
-    await page.getByRole("button", { name: /Graphic Design/ }).click();
+    await page.getByRole("radio", { name: /Graphic Design/ }).click();
     await page.getByLabel(/Who\?/).selectOption({ label: "Gannah" });
-    await page.getByLabel(/Deadline/).first().fill("2026-12-05");
+    await expect(page.getByLabel(/Deadline/)).toHaveCount(0); // content creators don't set deadlines
     await page.getByRole("button", { name: "Send to Gannah" }).click();
     await toast(page, "Sent to Gannah (Graphic Design).");
+
+    await login(page, "assem");
+    await openItem(page, "vanilla-roza", "Cover Reel", "2026-12");
+    await page.getByLabel("Deadline").first().fill("2026-12-05");
+    await toast(page, "Deadline saved.");
+    await page.reload();
     await expect(page.getByTitle(/can't be changed once set/).first()).toBeVisible();
 
     await login(page, "gannah");
+    // The bell told her about it.
+    await page.getByRole("button", { name: /Notifications, \d+ need attention/ }).click();
+    await expect(page.getByText("New task: Cover Reel")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await card(page, "Cover Reel").getByRole("radio", { name: "Processing" }).click();
+    await expect(card(page, "Cover Reel").getByRole("radio", { name: "Processing" })).toHaveAttribute("aria-checked", "true");
     await card(page, "Cover Reel").getByPlaceholder(/Google Drive link/).fill("https://drive.google.com/cover-reel");
     await card(page, "Cover Reel").getByRole("button", { name: /Done — send to Social/ }).click();
-    await toast(page, "Sent to the Social Media team.");
+    await toast(page, "Sent to Esraa (Social Media).");
 
     await login(page, "ayman");
     await expect(card(page, "The Wall").getByText("NEW for your team")).toBeVisible();
@@ -282,13 +299,46 @@ test.describe.serial("NEXORA acceptance", () => {
     await expect(page.getByRole("heading", { name: /Hi Nour/ })).toBeVisible();
   });
 
+  test("Delete from the list (with a confirmation), restore it, and edit straight from the row", async ({ page }) => {
+    await login(page, "king");
+    await page.goto("/brands/vanilla-roza?m=2026-11");
+    await page.getByRole("button", { name: "Delete Revision Reel" }).click();
+    const dialog = page.getByRole("dialog", { name: /Delete “Revision Reel”/ });
+    await dialog.getByRole("button", { name: "Delete" }).click();
+    await toast(page, /Deleted/);
+    await expect(page.getByRole("link", { name: "Revision Reel", exact: true })).toHaveCount(0);
+    await page.getByRole("link", { name: /Show deleted items/ }).click();
+    await page.getByRole("button", { name: "Restore" }).first().click();
+    await toast(page, "Item restored.");
+
+    await page.goto("/brands/vanilla-roza?m=2026-11");
+    await page.getByRole("link", { name: "Edit Late Reel" }).click();
+    await expect(page.getByText("Edit details")).toBeVisible();
+  });
+
+  test("Dashboard counts every brand, team and person; brand defaults are editable", async ({ page }) => {
+    await login(page, "shahenda");
+    await page.goto("/stats?m=2026-10");
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByText("Teams by brand")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Vanilla Roza/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Ayman/ }).first()).toBeVisible();
+
+    await page.goto("/settings/brands");
+    await expect(page.getByLabel("Blissify: default Graphic design")).toHaveValue(/.+/);
+    await expect(page.getByLabel("Blissify: default Content").locator("option:checked")).toHaveText("Kemo");
+    await expect(page.getByLabel("Blissify: default Graphic design").locator("option:checked")).toHaveText("Gannah");
+  });
+
   test("Search, history and insights reflect the work", async ({ page }) => {
     await login(page, "shahenda");
     await page.getByPlaceholder(/Search content/).fill("ampoule");
     await page.keyboard.press("Enter");
     await expect(page.getByRole("link", { name: "The Ampoule" })).toBeVisible();
     await page.goto("/activity");
-    await expect(page.getByText("can’t be edited or deleted")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Activity log" })).toBeVisible();
+    await page.getByRole("link", { name: "Sent back" }).click();
+    await expect(page.getByText(/Assem returned the work from Media Production to Content/).first()).toBeVisible();
     await page.goto("/team/ayman?range=last_30");
     await expect(page.getByText("The Ampoule")).toBeVisible();
   });

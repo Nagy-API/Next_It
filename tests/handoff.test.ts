@@ -14,7 +14,7 @@ const stagesOf = (id: string) => db.select().from(stages).where(eq(stages.itemId
 
 describe("Hand-off: the sender chooses where the work goes", () => {
   it("Content can send a Reel to Graphic Design instead of Media, with a person and a deadline", async () => {
-    const king = await makeUser("King", ["content"]);
+    const king = await makeUser("King", ["content", "leadership"]); // a lead content creator may also set deadlines
     const gannah = await makeUser("Gannah", ["design"]);
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Cover", type: "reel" }]);
@@ -32,6 +32,8 @@ describe("Hand-off: the sender chooses where the work goes", () => {
 
   it("without a person, the next team sees it unassigned; Stories can go straight to Social", async () => {
     const king = await makeUser("King", ["content"]);
+    await makeUser("Ayman", ["media"]);
+    await makeUser("Jana", ["media"]); // two people in Media → nobody is picked by default
     const brand = await makeBrand("VR", king.id);
     const [reel, story] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [
       { title: "Reel", type: "reel" },
@@ -61,16 +63,18 @@ describe("Hand-off: the sender chooses where the work goes", () => {
 });
 
 describe("Deadlines are locked once set", () => {
-  it("only an admin can change or remove a deadline; automatic shifts still apply", async () => {
+  it("only managers set deadlines; only an admin can change or remove one; automatic shifts still apply", async () => {
     const king = await makeUser("King", ["content"]);
+    const assem = await makeUser("Assem", ["account"]);
     const admin = { ...(await makeUser("Shahenda", ["leadership"])), isAdmin: true };
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Locked", type: "reel" }]);
     let [content, media] = await stagesOf(id);
-    await setStageDeadline(king, content.id, "2026-10-05");
-    await setStageDeadline(king, media.id, "2026-10-07");
-    await expect(setStageDeadline(king, media.id, "2026-10-20")).rejects.toThrow(/Only an admin/);
-    await expect(setStageDeadline(king, media.id, null)).rejects.toThrow(/Only an admin/);
+    await expect(setStageDeadline(king, content.id, "2026-10-05")).rejects.toThrow(/permission/);
+    await setStageDeadline(assem, content.id, "2026-10-05");
+    await setStageDeadline(assem, media.id, "2026-10-07");
+    await expect(setStageDeadline(assem, media.id, "2026-10-20")).rejects.toThrow(/Only an admin/);
+    await expect(setStageDeadline(assem, media.id, null)).rejects.toThrow(/Only an admin/);
     await setStageDeadline(admin, media.id, "2026-10-08");
     [content, media] = await stagesOf(id);
     expect(media.deadline).toBe("2026-10-08");

@@ -3,8 +3,11 @@ import clsx from "clsx";
 import { Coffee, Hourglass, MessageSquareText } from "lucide-react";
 import { TaskCard } from "@/components/handoff";
 import { Avatar, Badge, BrandDot, SectionTitle, TypeIcon } from "@/components/ui";
-import { STAGE_META, TEAM_META } from "@/domain/workflow";
-import { addDays, formatDateTime, formatRelative, todayISO } from "@/lib/dates";
+import Image from "next/image";
+import { can } from "@/domain/permissions";
+import { STAGE_META } from "@/domain/workflow";
+import { addDays, formatDateTime, formatRelative, monthName, todayISO } from "@/lib/dates";
+import { personPerMonth } from "@/server/stats";
 import { requireUser } from "@/server/auth";
 import { getActivePeople, getOpenItems } from "@/server/cached";
 import { getMyMessages, getPersonCompletions, getPersonWork, tasksFor, type WorkItem } from "@/server/queries";
@@ -45,22 +48,30 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   }
   const filter = typeof sp.brand === "string" && places.has(sp.brand) ? sp.brand : "";
   const tasks = filter ? all.filter((i) => (i.brand ? i.brand.slug : "projects") === filter) : all;
-  const teamLabels = user.teams.filter((t) => t !== "leadership" && t !== "account").map((t) => TEAM_META[t].label);
+  const lateCount = all.filter((i) => i.current?.health === "overdue").length;
+  const dueSoon = all.filter((i) => i.current?.health === "due_today" || i.current?.health === "due_soon").length;
+  const months = await personPerMonth(user.id, Number(today.slice(0, 4)), Number(today.slice(5, 7)), 2);
+  const [lastMonth, thisMonth] = months;
 
   return (
     <div className="mx-auto max-w-[980px] space-y-8">
-      <header>
-        <h1 className="font-display text-[28px] font-bold tracking-[-0.01em]">Hi {user.name} 👋</h1>
-        <p className="mt-1 text-[14.5px] text-muted">
-          {all.length ? (
-            <>
-              You have <b className="text-ink">{all.length}</b> task{all.length === 1 ? "" : "s"}
-              {teamLabels.length > 0 && <> across every brand ({teamLabels.join(", ")})</>}. Paste the link, press done — the time and your name are saved for you.
-            </>
-          ) : (
-            "Nothing waiting for you right now."
-          )}
-        </p>
+      <header className="relative overflow-hidden rounded-2xl bg-navy-900 px-6 py-6 text-white">
+        <Image src="/brand/nexora-mark-white.png" alt="" width={566} height={565} aria-hidden className="pointer-events-none absolute -right-10 -top-12 size-56 opacity-[0.08] drop-shadow-[0_10px_25px_rgba(96,165,250,0.6)]" />
+        <div className="relative">
+          <h1 className="font-display text-[26px] font-bold tracking-[-0.01em]">Hi {user.name}</h1>
+          <p className="mt-1 max-w-2xl text-[14px] text-white/65">
+            {all.length ? "Here's everything on you, from every brand. Paste the link and press done — the time and your name are saved for you." : "Nothing waiting for you right now. New work shows up here and in the bell."}
+          </p>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <HeroStat label="On you now" value={all.length} />
+            <HeroStat label="Late" value={lateCount} tone={lateCount ? "bad" : undefined} />
+            <HeroStat label="Due in 2 days" value={dueSoon} tone={dueSoon ? "warn" : undefined} />
+            <HeroStat label={`Done in ${monthName(thisMonth.month)}`} value={thisMonth.value} hint={deltaText(thisMonth.value, lastMonth.value, monthName(lastMonth.month, true))} />
+          </div>
+          <Link href={`/team/${user.username}`} className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-electric-bright hover:underline">
+            My stats month by month →
+          </Link>
+        </div>
       </header>
 
       {messages.length > 0 && (
@@ -110,7 +121,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
         {tasks.length ? (
           <div className="space-y-3">
             {tasks.map((i) => (
-              <TaskCard key={i.id} item={i} meId={user.id} people={pick} />
+              <TaskCard key={i.id} item={i} meId={user.id} people={pick} canDeadline={can.setDeadline(user)} />
             ))}
           </div>
         ) : (
@@ -174,5 +185,21 @@ function chip(on: boolean) {
   return clsx(
     "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition-colors",
     on ? "border-navy-900 bg-navy-900 text-white" : "border-line bg-white text-ink-2 hover:border-line-strong",
+  );
+}
+
+function deltaText(now: number, before: number, beforeLabel: string) {
+  if (!before && !now) return `0 in ${beforeLabel}`;
+  const d = now - before;
+  return `${d > 0 ? "+" : ""}${d} vs ${beforeLabel} (${before})`;
+}
+
+function HeroStat({ label, value, tone, hint }: { label: string; value: number; tone?: "bad" | "warn"; hint?: string }) {
+  return (
+    <div className="rounded-xl bg-white/[0.07] px-4 py-3 ring-1 ring-white/10">
+      <div className="text-[12px] font-medium text-white/60">{label}</div>
+      <div className={clsx("mt-1 font-display text-[30px] font-bold leading-none", tone === "bad" && "text-[#ff8a8a]", tone === "warn" && "text-[#ffc56b]")}>{value}</div>
+      {hint && <div className="mt-1.5 text-[11.5px] text-white/55">{hint}</div>}
+    </div>
   );
 }

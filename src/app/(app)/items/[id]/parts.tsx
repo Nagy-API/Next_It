@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { ArrowRight, CornerUpLeft, ExternalLink, Lock, Pencil, RotateCcw, ShieldCheck, Undo2 } from "lucide-react";
+import { ArrowRight, CornerUpLeft, ExternalLink, Lock, Pencil, RotateCcw, ShieldCheck, Trash2, Undo2 } from "lucide-react";
 import { formatDay } from "@/lib/dates";
 import {
   assignAction,
@@ -15,7 +15,7 @@ import {
   returnAction,
   updateItemAction,
 } from "@/app/actions";
-import { ActionForm, AutoInput, AutoSelect, Popover, Submit } from "@/components/client";
+import { ActionForm, AutoInput, AutoSelect, Modal, Submit } from "@/components/client";
 import { btn } from "@/components/ui";
 import type { ContentType, PlatformStatus, StageKind } from "@/db/schema";
 import { PLATFORM_STATUS_META, STAGE_META, TYPE_META } from "@/domain/workflow";
@@ -155,57 +155,86 @@ export function CompleteStage({
 }
 
 export function SendBack({ itemId, targets, label = "Send back" }: { itemId: string; targets: { kind: StageKind; owner: string | null }[]; label?: string }) {
-  const [target, setTarget] = useState<StageKind>(targets[targets.length - 1]?.kind);
-  if (!targets.length) return null;
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState<StageKind | undefined>(targets[targets.length - 1]?.kind);
+  if (!targets.length || !target) return null;
   return (
-    <Popover
-      width={340}
-      label={label}
-      triggerClassName={btn("secondary", "md")}
-      trigger={
-        <>
-          <CornerUpLeft className="size-4 text-back" /> {label}
-        </>
-      }
-    >
-      {(close) => (
-        <ActionForm action={returnAction} onSuccess={close} className="space-y-3">
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={btn("secondary", "md", "cursor-pointer")}>
+        <CornerUpLeft className="size-4 text-back" /> {label}
+      </button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Send it back for changes">
+        <ActionForm action={returnAction} onSuccess={() => setOpen(false)} className="space-y-3">
           <input type="hidden" name="itemId" value={itemId} />
-          <div className="text-[13px] font-semibold">Something needs changing? Send it back to:</div>
+          <input type="hidden" name="target" value={target} />
+          <div className="text-[13.5px] text-muted">Who needs to fix it?</div>
           <div className="space-y-1.5">
             {targets.map((t) => (
-              <label key={t.kind} className={clsx("flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-[14px]", target === t.kind ? "border-back bg-back-soft" : "border-line hover:border-line-strong")}>
-                <input type="radio" name="target" value={t.kind} checked={target === t.kind} onChange={() => setTarget(t.kind)} className="accent-[var(--color-back)]" />
-                <span className="flex-1 font-medium">{STAGE_META[t.kind].label}</span>
-                <span className="text-[12.5px] text-muted">{t.owner ?? "no owner"}</span>
-              </label>
+              <button
+                key={t.kind}
+                type="button"
+                onClick={() => setTarget(t.kind)}
+                aria-pressed={target === t.kind}
+                className={clsx(
+                  "flex w-full cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 text-left text-[14px] transition-colors",
+                  target === t.kind ? "border-back bg-back-soft" : "border-line hover:border-line-strong",
+                )}
+              >
+                <span className={clsx("size-3.5 rounded-full border-2", target === t.kind ? "border-back bg-back" : "border-line-strong")} />
+                <span className="flex-1 font-semibold">{STAGE_META[t.kind].label}</span>
+                <span className="text-[12.5px] text-muted">{t.owner ?? "the team"}</span>
+              </button>
             ))}
           </div>
-          <textarea name="note" rows={3} placeholder="What needs to change? (optional)" className="field resize-none" />
-          <Submit variant="primary" className="w-full !bg-back hover:!bg-[#c9560c]">
-            <CornerUpLeft className="size-4" /> Send back to {STAGE_META[target].label}
-          </Submit>
+          <label className="label" htmlFor={`note-${itemId}`}>
+            What needs to change? <span className="font-normal text-muted">(optional)</span>
+          </label>
+          <textarea id={`note-${itemId}`} name="note" rows={3} placeholder="e.g. The hook needs to be stronger" className="field resize-none" />
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setOpen(false)} className={btn("ghost")}>
+              Cancel
+            </button>
+            <Submit variant="primary" className="!bg-back hover:!bg-[#c9560c]">
+              <CornerUpLeft className="size-4" /> Send back to {STAGE_META[target].label}
+            </Submit>
+          </div>
         </ActionForm>
-      )}
-    </Popover>
+      </Modal>
+    </>
   );
 }
 
 export function CancelToggle({ itemId, cancelled }: { itemId: string; cancelled: boolean }) {
+  const [confirming, setConfirming] = useState(false);
+  if (cancelled)
+    return (
+      <ActionForm action={cancelItemAction} inlineError={false}>
+        <input type="hidden" name="itemId" value={itemId} />
+        <input type="hidden" name="cancelled" value="0" />
+        <Submit variant="primary" size="sm">
+          <RotateCcw className="size-3.5" /> Restore item
+        </Submit>
+      </ActionForm>
+    );
   return (
-    <ActionForm action={cancelItemAction} inlineError={false}>
-      <input type="hidden" name="itemId" value={itemId} />
-      <input type="hidden" name="cancelled" value={cancelled ? "0" : "1"} />
-      <Submit variant={cancelled ? "primary" : "ghost"} size="sm">
-        {cancelled ? (
-          <>
-            <RotateCcw className="size-3.5" /> Restore item
-          </>
-        ) : (
-          "Cancel this item"
-        )}
-      </Submit>
-    </ActionForm>
+    <>
+      <button type="button" onClick={() => setConfirming(true)} className={btn("danger", "sm", "cursor-pointer")}>
+        <Trash2 className="size-3.5" /> Delete
+      </button>
+      <Modal open={confirming} onClose={() => setConfirming(false)} title="Delete this item?">
+        <p className="text-[14px] text-ink-2">It disappears from plans, tasks and the calendar. Its history is kept, and it can be restored later.</p>
+        <ActionForm action={cancelItemAction} onSuccess={() => setConfirming(false)} className="mt-4 flex justify-end gap-2">
+          <input type="hidden" name="itemId" value={itemId} />
+          <input type="hidden" name="cancelled" value="1" />
+          <button type="button" onClick={() => setConfirming(false)} className={btn("ghost")}>
+            Keep it
+          </button>
+          <Submit variant="primary" className="!bg-bad hover:!bg-[#b92f2f]">
+            <Trash2 className="size-4" /> Delete
+          </Submit>
+        </ActionForm>
+      </Modal>
+    </>
   );
 }
 
@@ -312,12 +341,14 @@ export function DetailsForm({
   item,
   canChangeType,
   canEditContent = true,
+  defaultOpen = false,
 }: {
-  item: { id: string; title: string; type: ContentType; postingDate: string | null; postingTime: string | null; canvaUrl: string | null; driveUrl: string | null; context: "plan" | "project" };
+  item: { id: string; title: string; type: ContentType; postingDate: string | null; postingTime: string | null; canvaUrl: string | null; driveUrl: string | null; slideNumber: number | null; context: "plan" | "project" };
   canChangeType: boolean;
   canEditContent?: boolean;
+  defaultOpen?: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(defaultOpen);
   if (!editing)
     return (
       <button type="button" onClick={() => setEditing(true)} className={btn("ghost", "sm", "-mr-2")}>
@@ -354,9 +385,15 @@ export function DetailsForm({
               <input type="time" name="postingTime" defaultValue={item.postingTime ?? ""} className="field" />
             </div>
           </div>
-          <div>
-            <label className="label">Canva link (to this exact page)</label>
-            <input name="canvaUrl" defaultValue={item.canvaUrl ?? ""} placeholder="https://canva.link/…" className="field" disabled={!canEditContent} />
+          <div className="grid grid-cols-[110px_1fr] gap-3">
+            <div>
+              <label className="label">Slide #</label>
+              <input type="number" min={1} name="slideNumber" defaultValue={item.slideNumber ?? ""} className="field" disabled={!canEditContent} />
+            </div>
+            <div>
+              <label className="label">This slide&rsquo;s own Canva link (optional)</label>
+              <input name="canvaUrl" defaultValue={item.canvaUrl ?? ""} placeholder="Uses the month's Canva link if empty" className="field" disabled={!canEditContent} />
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className={btn("ghost")} onClick={() => setEditing(false)}>

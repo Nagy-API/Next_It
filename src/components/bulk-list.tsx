@@ -3,17 +3,20 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { X } from "lucide-react";
-import { bulkAction } from "@/app/actions";
+import Link from "next/link";
+import { Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { bulkAction, cancelItemAction } from "@/app/actions";
 import type { StageKind } from "@/db/schema";
 import { STAGE_META } from "@/domain/workflow";
 import type { WorkItem } from "@/server/queries";
-import { ActionForm, Submit } from "./client";
+import { ActionForm, Modal, Submit } from "./client";
+import { btn } from "./ui";
 import { ItemRow } from "./item-row";
 
 type P = { id: string; name: string; teams: string[] };
 
 /** A list of items with checkboxes and a bulk bar (assign / deadline / complete) for a whole month at once. */
-export function BulkList({ items, people, showContext = false, selectable = true }: { items: WorkItem[]; people: P[]; showContext?: boolean; selectable?: boolean }) {
+export function BulkList({ items, people, showContext = false, selectable = true, canDeadline = false }: { items: WorkItem[]; people: P[]; showContext?: boolean; selectable?: boolean; canDeadline?: boolean }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const kinds = useMemo(() => {
     const ks = new Set<StageKind>();
@@ -64,6 +67,7 @@ export function BulkList({ items, people, showContext = false, selectable = true
                 className="relative z-10 size-4 shrink-0 cursor-pointer accent-[var(--color-electric)]"
               />
             }
+            actions={<RowActions itemId={i.id} title={i.title} deleted={!!i.cancelledAt} />}
           />
         ))}
       </div>
@@ -80,7 +84,7 @@ export function BulkList({ items, people, showContext = false, selectable = true
             <input type="hidden" name="action" value={mode} />
             <span className="mr-1 text-[13px] font-semibold">{selected.size} selected</span>
             <div className="flex rounded-lg bg-white/10 p-0.5 text-[13px]">
-              {(["assign", "deadline", "complete"] as const).map((m) => (
+              {(canDeadline ? (["assign", "deadline", "complete"] as const) : (["assign", "complete"] as const)).map((m) => (
                 <button key={m} type="button" onClick={() => setMode(m)} className={clsx("rounded-md px-2.5 py-1", mode === m ? "bg-white text-navy-900" : "text-white/80 hover:text-white")}>
                   {m === "assign" ? "Assign" : m === "deadline" ? "Deadline" : "Mark done"}
                 </button>
@@ -117,5 +121,43 @@ export function BulkList({ items, people, showContext = false, selectable = true
         </div>
       )}
     </div>
+  );
+}
+
+/** Edit / delete right from the list (Content team). Delete asks first and can be undone. */
+function RowActions({ itemId, title, deleted }: { itemId: string; title: string; deleted: boolean }) {
+  const [confirming, setConfirming] = useState(false);
+  if (deleted)
+    return (
+      <ActionForm action={cancelItemAction} inlineError={false}>
+        <input type="hidden" name="itemId" value={itemId} />
+        <input type="hidden" name="cancelled" value="0" />
+        <Submit size="sm" variant="secondary">
+          <RotateCcw className="size-3.5" /> Restore
+        </Submit>
+      </ActionForm>
+    );
+  return (
+    <>
+      <Link href={`/items/${itemId}?edit=1`} className="flex size-8 cursor-pointer items-center justify-center rounded-md text-faint hover:bg-canvas hover:text-ink" aria-label={`Edit ${title}`} title="Edit">
+        <Pencil className="size-4" />
+      </Link>
+      <button type="button" onClick={() => setConfirming(true)} className="flex size-8 cursor-pointer items-center justify-center rounded-md text-faint hover:bg-bad-soft hover:text-bad" aria-label={`Delete ${title}`} title="Delete">
+        <Trash2 className="size-4" />
+      </button>
+      <Modal open={confirming} onClose={() => setConfirming(false)} title={`Delete “${title}”?`}>
+        <p className="text-[14px] text-ink-2">It disappears from the plan, tasks and calendar. Its history is kept and it can be restored (Show deleted items).</p>
+        <ActionForm action={cancelItemAction} onSuccess={() => setConfirming(false)} className="mt-4 flex justify-end gap-2">
+          <input type="hidden" name="itemId" value={itemId} />
+          <input type="hidden" name="cancelled" value="1" />
+          <button type="button" onClick={() => setConfirming(false)} className={btn("ghost")}>
+            Keep it
+          </button>
+          <Submit variant="primary" className="!bg-bad hover:!bg-[#b92f2f]">
+            <Trash2 className="size-4" /> Delete
+          </Submit>
+        </ActionForm>
+      </Modal>
+    </>
   );
 }
