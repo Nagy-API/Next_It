@@ -73,7 +73,7 @@ const VANILLA_ROZA_OCTOBER: [string, string, string][] = [
 export async function seed() {
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(users);
   if (count > 0) {
-    console.log("Database already has users — skipping seed. Run `npm run db:reset` to start from scratch.");
+    console.log("Database already has users — skipping the initial seed.");
     return;
   }
   const passwordHash = await hashPassword(PASSWORD);

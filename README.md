@@ -16,6 +16,19 @@ stages' deadlines by the same delay so nobody is blamed for waiting. Anyone can 
 with an optional note. Social publishing is tracked per platform; the item is Published once every planned platform is live.
 Every change is written to an append-only history that the database refuses to edit or delete.
 
+## Start it (one line)
+
+Needs [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker + Compose) installed and running.
+
+```bash
+git clone https://github.com/Nagy-API/Nexora_System.git && cd Nexora_System && docker compose up -d --build
+```
+
+Open **http://localhost:3000** and sign in as `shahenda` / `Nexora@2026`.
+The database, tables and starting data are created automatically on first start; data is kept between restarts.
+Stop with `docker compose down` (add `-v` only if you want to wipe all data).
+Other devices on the office network can use `http://<this-computer's-IP>:3000`.
+
 ## Stack
 
 - Next.js 16 (App Router, Server Actions) · React 19 · TypeScript · Tailwind CSS 4
@@ -23,7 +36,7 @@ Every change is written to an append-only history that the database refuses to e
 - Username + password auth: Argon2id hashes, random session tokens stored hashed in the DB, httpOnly cookies
 - Vitest (domain + database integration tests) and Playwright (browser acceptance tests)
 
-## Run it
+## Run it without Docker
 
 ```bash
 cp .env.example .env          # set DATABASE_URL
