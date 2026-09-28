@@ -1,2 +1,2 @@
-# Windows batch files need CRLF line endings
-*.bat text eol=crlf
+# Windows batch files: stored with CRLF as-is so ZIP downloads always run correctly
+*.bat -text
