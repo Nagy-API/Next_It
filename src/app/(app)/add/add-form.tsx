@@ -9,7 +9,7 @@ import { ActionForm, Submit } from "@/components/client";
 import { TypeIcon, btn } from "@/components/ui";
 import type { ContentType } from "@/db/schema";
 import { TYPE_META, guessTypeFromTitle } from "@/domain/workflow";
-import { monthLabel, monthName } from "@/lib/dates";
+import { formatDay, monthLabel, monthName } from "@/lib/dates";
 import { parsePastedList } from "@/lib/paste";
 
 type Brand = { id: string; name: string; slug: string; color: string; defaultCreatorId: string | null };
@@ -77,6 +77,15 @@ export function AddForm({
       }),
     );
 
+  const preview = pasteText.trim() ? parsePastedList(pasteText, year, month) : [];
+  const mm = String(month).padStart(2, "0");
+  const example = [
+    `Reel | The Ampoule | 11/${mm} | 7pm | https://canva.link/the-ampoule`,
+    `Post 02: Talk To Me | 10/${mm}`,
+    `Carousel: 5 Hair Myths | 14/${mm} | 19:00`,
+    `Story | Behind the scenes | 12/${mm}`,
+    `OFF`,
+  ].join("\n");
   const applyPaste = () => {
     const parsed = parsePastedList(pasteText, year, month);
     if (!parsed.length) return;
@@ -167,21 +176,79 @@ export function AddForm({
 
         {pasting && (
           <div className="border-b border-line bg-electric-soft/40 px-5 py-4">
-            <label className="label">Paste lines from Canva, the old Excel sheet, or a message — one item per line</label>
-            <textarea
-              autoFocus
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              rows={7}
-              placeholder={"The Ampoule\thttps://canva.link/…\t11/10/2026\nPost 02: Talk To Me   10 Oct\nCarousel 01: Swipe To Complete | Oct 6 | 19:00"}
-              className="field font-mono text-[12.5px]"
-            />
-            <div className="mt-2 flex items-center gap-3">
-              <button type="button" onClick={applyPaste} disabled={!pasteText.trim()} className={btn("primary", "sm")}>
-                <Wand2 className="size-4" /> Read {pasteText.trim() ? parsePastedList(pasteText, year, month).length : 0} items
-              </button>
-              <span className="text-[12px] text-muted">Links, dates (day first), times and types are picked out automatically. “OFF” lines are skipped.</span>
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div>
+                <label className="label" htmlFor="paste-box">
+                  Paste or type your list — <b>one line = one post</b>
+                </label>
+                <textarea
+                  id="paste-box"
+                  autoFocus
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  rows={8}
+                  placeholder={example}
+                  className="field font-mono text-[12.5px]"
+                />
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={applyPaste} disabled={!preview.length} className={btn("primary", "sm")}>
+                    <Wand2 className="size-4" /> Add {preview.length} item{preview.length === 1 ? "" : "s"} to the list below
+                  </button>
+                  <button type="button" onClick={() => setPasteText(example)} className={btn("secondary", "sm")}>
+                    Try the example
+                  </button>
+                  {pasteText && (
+                    <button type="button" onClick={() => setPasteText("")} className={btn("ghost", "sm")}>
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-xl border border-line bg-white p-3.5 text-[12.5px] leading-relaxed text-ink-2">
+                <div className="mb-1.5 font-display text-[13.5px] font-bold text-ink">How to write it</div>
+                <p>
+                  Write the <b>title</b>, then anything you know — in any order, separated by <b>|</b> (or copy the columns straight from Excel):
+                </p>
+                <ul className="mt-1.5 space-y-1">
+                  <li>
+                    📅 <b>Date</b>: <code className="rounded bg-canvas px-1">11/10</code>, <code className="rounded bg-canvas px-1">11 Oct</code> (day first)
+                  </li>
+                  <li>
+                    ⏰ <b>Time</b>: <code className="rounded bg-canvas px-1">19:00</code> or <code className="rounded bg-canvas px-1">7pm</code>
+                  </li>
+                  <li>
+                    🔗 <b>Canva link</b>: paste it anywhere on the line
+                  </li>
+                  <li>
+                    🎬 <b>Type</b>: the words Reel, Post, Carousel or Story
+                  </li>
+                  <li>
+                    🚫 Lines that say <code className="rounded bg-canvas px-1">OFF</code> are skipped
+                  </li>
+                </ul>
+                <p className="mt-1.5 text-muted">You&rsquo;ll see exactly what was understood before anything is saved.</p>
+              </div>
             </div>
+            {preview.length > 0 && (
+              <div className="mt-4 overflow-hidden rounded-xl border border-line bg-white">
+                <div className="bg-[#fafbfd] px-3 py-2 text-[12px] font-semibold text-muted">What we understood ({preview.length})</div>
+                <table className="w-full text-[12.5px]">
+                  <tbody className="divide-y divide-line">
+                    {preview.slice(0, 12).map((r, i) => (
+                      <tr key={i}>
+                        <td className="w-8 px-3 py-1.5 text-faint">{i + 1}</td>
+                        <td className="px-2 py-1.5 font-medium">{r.title}</td>
+                        <td className="px-2 py-1.5">{TYPE_META[r.type].label}</td>
+                        <td className="px-2 py-1.5 tabular-nums">{r.postingDate ? formatDay(r.postingDate) : <span className="text-faint">no date</span>}</td>
+                        <td className="px-2 py-1.5 tabular-nums">{r.postingTime || <span className="text-faint">—</span>}</td>
+                        <td className="px-2 py-1.5">{r.canvaUrl ? <span className="font-semibold text-ok">✓ Canva</span> : <span className="text-faint">no link</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {preview.length > 12 && <div className="px-3 py-1.5 text-[12px] text-muted">…and {preview.length - 12} more</div>}
+              </div>
+            )}
           </div>
         )}
 

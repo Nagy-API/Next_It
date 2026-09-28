@@ -3,8 +3,8 @@ import { asc, eq } from "drizzle-orm";
 import { closeDb, db } from "@/db";
 import { stages } from "@/db/schema";
 import { createItems } from "@/server/items";
-import { handOff, setStageDeadline, completeStage } from "@/server/workflow";
-import { makeBrand, makeUser } from "./helpers";
+import { handOff, setStageDeadline, completeStage, submitVersion } from "@/server/workflow";
+import { makeBrand, makeManager, makeUser } from "./helpers";
 
 afterAll(async () => {
   await closeDb();
@@ -14,7 +14,7 @@ const stagesOf = (id: string) => db.select().from(stages).where(eq(stages.itemId
 
 describe("Hand-off: the sender chooses where the work goes", () => {
   it("Content can send a Reel to Graphic Design instead of Media, with a person and a deadline", async () => {
-    const king = await makeUser("King", ["content", "leadership"]); // a lead content creator may also set deadlines
+    const king = await makeManager("King", ["content"]); // a manager may also choose the person and the deadline
     const gannah = await makeUser("Gannah", ["design"]);
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Cover", type: "reel" }]);
@@ -41,31 +41,36 @@ describe("Hand-off: the sender chooses where the work goes", () => {
     ]);
     const [c1] = await stagesOf(reel);
     await expect(handOff(king, c1.id, {})).rejects.toThrow(/Canva link/);
+    await expect(handOff(king, c1.id, { canvaUrl: "https://canva.link/reel", assigneeId: king.id })).rejects.toThrow(/Only managers choose/);
     await handOff(king, c1.id, { canvaUrl: "https://canva.link/reel" });
-    expect((await stagesOf(reel))[1]).toMatchObject({ kind: "media", status: "active", assigneeId: null });
+    expect((await stagesOf(reel))[1]).toMatchObject({ kind: "shooting", status: "active", assigneeId: null });
 
     const [c2] = await stagesOf(story);
     await handOff(king, c2.id, { target: "social", canvaUrl: "https://canva.link/post" });
     expect((await stagesOf(story)).map((s) => s.kind)).toEqual(["content", "social"]);
   });
 
-  it("Media must attach the Drive link before sending on", async () => {
+  it("Shooting goes on to editing; editing is sent as versions for approval", async () => {
     const king = await makeUser("King", ["content"]);
     const ayman = await makeUser("Ayman", ["media"]);
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "R", type: "reel" }], { contentReady: true });
-    const media = (await stagesOf(id))[1];
+    const shoot = (await stagesOf(id))[1];
+    await expect(handOff(ayman, shoot.id, { target: "social" })).rejects.toThrow();
+    expect((await handOff(ayman, shoot.id)).next).toBe("media");
+    const media = (await stagesOf(id))[2];
     await expect(handOff(ayman, media.id)).rejects.toThrow(/Drive link/);
-    await expect(handOff(ayman, media.id, { target: "design" })).rejects.toThrow();
-    const r = await handOff(ayman, media.id, { driveUrl: "https://drive.google.com/r" });
-    expect(r.next).toBe("social");
+    await expect(handOff(ayman, media.id, { driveUrl: "https://drive.google.com/r" })).rejects.toThrow(/approval/);
+    await expect(submitVersion(ayman, media.id, { url: "not a link" })).rejects.toThrow(/doesn't look like a link/);
+    const v = await submitVersion(ayman, media.id, { url: "https://drive.google.com/r" });
+    expect(v).toMatchObject({ number: 1, status: "pending", submittedById: ayman.id });
   });
 });
 
 describe("Deadlines are locked once set", () => {
   it("only managers set deadlines; only an admin can change or remove one; automatic shifts still apply", async () => {
     const king = await makeUser("King", ["content"]);
-    const assem = await makeUser("Assem", ["account"]);
+    const assem = await makeManager("Assem", ["account"]);
     const admin = { ...(await makeUser("Shahenda", ["leadership"])), isAdmin: true };
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Locked", type: "reel" }]);

@@ -38,6 +38,15 @@ export function addDays(iso: string, days: number): string {
   return toISO(d);
 }
 
+/** Same day next month (clamped to the month's last day: Jan 31 → Feb 28). */
+export function addMonthsISO(iso: string, months: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, last));
+  return toISO(target);
+}
+
 /** Whole days from `b` to `a` (a - b). */
 export function diffDays(a: string, b: string): number {
   return Math.round((parseISO(a).getTime() - parseISO(b).getTime()) / 86_400_000);

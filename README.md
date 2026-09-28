@@ -6,10 +6,10 @@ Every Reel, Static, Carousel and Story moves through a fixed cycle that the syst
 
 | Work | Route |
 | --- | --- |
-| Monthly Reel | Content → Media Production → Social Media → **Published** |
+| Monthly Reel | Content → Pre-production (shooting) → Post-production (editing) → Social Media → **Published** |
 | Monthly Static / Carousel | Content → Graphic Design → Social Media → **Published** |
 | Monthly Story | Content → Social Media → **Published** |
-| One-off project deliverable | Content → Media / Design → **Delivered** (no Social) |
+| One-off project deliverable | Content → (Shooting →) Editing / Design → **Delivered** (no Social) |
 
 Completing a stage records who and when, hands the work to the next stage, and — if it was late — moves the next
 stages' deadlines by the same delay so nobody is blamed for waiting. Anyone can send work back to an earlier stage
@@ -43,27 +43,26 @@ Other devices on the office network can use `http://<this-computer's-IP>:3000`.
 
 ## How the team uses it
 
-- **Everyone lands on "My tasks"** — the work waiting for them or their team, from every brand and one-off project,
-  with counts (on you now, late, due soon, done this month vs last month). Finished work leaves the list but is counted.
-  Each task has one field and one button: paste the link, press done.
-- **Status like the old sheet** — Not started → Processing → Adjusting → Waiting approval; *Done* happens by itself when
-  the Drive link is pasted. Sending work back sets the step to *Adjusting*.
-- **Content** writes on the month's Canva (one link per brand-month, each item has a slide number and a
-  "Open Canva · slide N" button), or pastes a slide's own link. It goes to Media (Reels) or Graphic Design
-  (Posts/Carousels), or to the team they choose.
-- **Media / Design** paste the Google Drive link → it goes to Social. Time and name are saved automatically and shown on
-  the task ("Content ✓ 22 Sep 18:00 · King").
+- **Everyone lands on "My tasks"** (managers on the Overview) — the work waiting for them from every brand and project,
+  with *Everything / Today / This week / This month* filters. Anything posting or due within **48 hours** is highlighted 🔥
+  and sits at the top. Finished work leaves the list but is counted (and compared with last month).
+- **Content** writes on the month's Canva (each item has a slide number) and sends it on: Reels go to **Pre-production**
+  (or straight to editing), Posts/Carousels to **Graphic Design**.
+- **Pre-production**: the shoot day, time, how long and where — then *Shooting done → send to editing*.
+- **Post-production & Graphic Design** send **versions**: paste the Drive link to v1 → the content creator (or a manager)
+  **approves** it and it moves on by itself, or **requests changes** with a comment → v2 opens, and so on.
 - **Social** pastes each platform's live link → that platform is Published; when all planned platforms are live the item is done.
-- **Default people per brand and team** (Settings → Brands): e.g. Blissify content → Kemo, design → Gannah, social → Esraa.
-  "Whole team" means everyone in that team sees it and whoever starts it takes it.
-- **Notifications** (the bell, plus optional desktop pop-ups): new task, sent back, comments/replies, deadline set,
-  finished; and live reminders for late work, due today/tomorrow, and posting soon.
-- **Comments** can be written to a person; it shows in their tasks until they reply or mark it done.
-- **Dashboard** — every brand, team and person for any month, with month-over-month comparison.
-- **Activity log** — every change with who and when, filterable by type, person and brand. It can't be edited or deleted.
-- **Permissions**: each team does its own step; only managers (CEO, leadership, account manager) set deadlines, and once
-  set only the admin can change them (automatic shifts for upstream delays still apply); settings are admin-only.
-  Deleting an item hides it with its history kept, and it can be restored.
+- **Status like the old sheet**: Not started → Processing → Adjusting → Waiting approval (set automatically where possible).
+- **Managers** (Shahenda, Ammar, Ayman, Assem — star ⭐ on their photo) **give tasks** to anyone, once or repeating every
+  day/week/month (the next one is created when it's done), choose who does a step, set deadlines (locked once set — only the
+  admin changes them), see the **Dashboard**, **Activity log** and everyone's numbers, and **export Excel reports**.
+- **Team chat** for everyone, with **@mentions**; @Name also works in comments. Both notify the person.
+- **Notifications** (the bell + optional desktop pop-ups): new task, approvals, changes requested, mentions, deadlines,
+  finished; plus live reminders for late work and anything due in the next 48 hours.
+- **Default people per brand and step** (Settings → Brands), e.g. Shooting → Ayman, Editing → Jana, Design → Gannah, Social → Esraa.
+- **One-off projects** are assigned to a content creator (they write and approve every deliverable) and can be deleted/restored.
+- **Profile photos**: Settings → My account → Upload a photo.
+- **Delete** is available on items, projects, tasks, comments and chat messages; history is always kept.
 
 ## Stack
 

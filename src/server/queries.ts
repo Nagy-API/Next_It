@@ -14,6 +14,7 @@ import {
   stageCompletions,
   stages,
   users,
+  versions,
   type ContentType,
   type PlatformStatus,
   type StageKind,
@@ -24,11 +25,31 @@ import {
 import { currentStage, stageHealth, type StageHealth, type WorkContext } from "@/domain/workflow";
 import { addDays, monthRange, startOfCairoDay, todayISO, weekRange } from "@/lib/dates";
 
-export type Person = { id: string; name: string; username: string; isActive: boolean; teams: Team[]; title: string | null };
+export type Person = {
+  id: string;
+  name: string;
+  username: string;
+  isActive: boolean;
+  teams: Team[];
+  title: string | null;
+  isManager: boolean;
+  isAdmin: boolean;
+  avatarUpdatedAt: Date | null;
+};
 
 export async function getPeople(opts: { includeInactive?: boolean } = {}): Promise<Person[]> {
   const rows = await db
-    .select({ id: users.id, name: users.name, username: users.username, isActive: users.isActive, teams: users.teams, title: users.title })
+    .select({
+      id: users.id,
+      name: users.name,
+      username: users.username,
+      isActive: users.isActive,
+      teams: users.teams,
+      title: users.title,
+      isManager: users.isManager,
+      isAdmin: users.isAdmin,
+      avatarUpdatedAt: users.avatarUpdatedAt,
+    })
     .from(users)
     .where(opts.includeInactive ? undefined : eq(users.isActive, true))
     .orderBy(asc(users.name));
@@ -59,6 +80,20 @@ export type StageView = {
   health: StageHealth;
 };
 
+export type VersionView = {
+  id: string;
+  kind: StageKind;
+  number: number;
+  url: string;
+  note: string | null;
+  status: string;
+  submittedAt: Date;
+  submittedBy: { id: string; name: string } | null;
+  reviewedAt: Date | null;
+  reviewedBy: { id: string; name: string } | null;
+  reviewNote: string | null;
+};
+
 export type WorkItem = {
   id: string;
   title: string;
@@ -81,6 +116,13 @@ export type WorkItem = {
   project: { id: string; name: string; clientId: string; clientName: string; clientSlug: string } | null;
   stages: StageView[];
   current: StageView | null;
+  shoot: { date: string | null; time: string | null; duration: string | null; location: string | null };
+  /** The brand's default person per step (Settings → Brands) — shown before the work is sent there. */
+  defaults: Partial<Record<StageKind, string>>;
+  /** Versions sent for approval (post-production & design), oldest first. */
+  versions: VersionView[];
+  /** Posting (or due) within the next 48 hours and not finished — highlighted everywhere. */
+  hot: boolean;
   /** What the item needs right now, in one word — drives badges & sorting. */
   attention: "overdue" | "returned" | "unassigned" | "at_risk" | "due_soon" | null;
   platforms: { platformId: string; name: string; status: PlatformStatus; date: string | null; time: string | null; liveUrl: string | null }[];
@@ -116,6 +158,8 @@ export async function getWorkItems(f: ItemFilter = {}, today = todayISO()): Prom
   if (f.postingFrom) where.push(gte(contentItems.postingDate, f.postingFrom));
   if (f.postingTo) where.push(lte(contentItems.postingDate, f.postingTo));
   if (f.titleLike) where.push(ilike(contentItems.title, `%${f.titleLike}%`));
+  // Items of a deleted one-off project are hidden with it.
+  where.push(or(isNull(contentItems.projectId), isNull(projects.deletedAt)));
 
   const rows = await db
     .select({
@@ -146,7 +190,7 @@ async function enrich(
 ): Promise<WorkItem[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.item.id);
-  const [stageRows, people, platRows] = await Promise.all([
+  const [stageRows, people, platRows, versionRows] = await Promise.all([
     db.select().from(stages).where(inArray(stages.itemId, ids)).orderBy(asc(stages.position)),
     db.select({ id: users.id, name: users.name }).from(users),
     db
@@ -155,7 +199,15 @@ async function enrich(
       .innerJoin(platforms, eq(platforms.id, itemPlatforms.platformId))
       .where(inArray(itemPlatforms.itemId, ids))
       .orderBy(asc(platforms.sortOrder)),
+    db.select().from(versions).where(inArray(versions.itemId, ids)).orderBy(asc(versions.submittedAt)),
   ]);
+  const brandIds = [...new Set(rows.map((r) => r.brand?.id).filter((x): x is string => !!x))];
+  const brandDefaults = brandIds.length
+    ? await db
+        .select({ id: brands.id, content: brands.defaultCreatorId, shooting: brands.defaultShootId, media: brands.defaultMediaId, design: brands.defaultDesignId, social: brands.defaultSocialId })
+        .from(brands)
+        .where(inArray(brands.id, brandIds))
+    : [];
   const nameOf = new Map(people.map((p) => [p.id, p]));
   const person = (id: string | null) => (id ? (nameOf.get(id) ?? null) : null);
   const stagesByItem = new Map<string, StageView[]>();
@@ -186,6 +238,24 @@ async function enrich(
     const list = stagesByItem.get(s.itemId) ?? [];
     list.push(view);
     stagesByItem.set(s.itemId, list);
+  }
+  const versionsByItem = new Map<string, VersionView[]>();
+  for (const v of versionRows) {
+    const list = versionsByItem.get(v.itemId) ?? [];
+    list.push({
+      id: v.id,
+      kind: v.kind,
+      number: v.number,
+      url: v.url,
+      note: v.note,
+      status: v.status,
+      submittedAt: v.submittedAt,
+      submittedBy: person(v.submittedById),
+      reviewedAt: v.reviewedAt,
+      reviewedBy: person(v.reviewedById),
+      reviewNote: v.reviewNote,
+    });
+    versionsByItem.set(v.itemId, list);
   }
   const platsByItem = new Map<string, WorkItem["platforms"]>();
   for (const p of platRows) {
@@ -218,10 +288,25 @@ async function enrich(
       project: project?.id ? (project as WorkItem["project"]) : null,
       stages: st,
       current: cur,
+      shoot: { date: item.shootDate, time: item.shootTime, duration: item.shootDuration, location: item.shootLocation },
+      defaults: (() => {
+        const b = brandDefaults.find((x) => x.id === brand?.id);
+        const out: Partial<Record<StageKind, string>> = {};
+        if (b) for (const k of ["content", "shooting", "media", "design", "social"] as const) if (b[k]) out[k] = nameOf.get(b[k]!)?.name;
+        return out;
+      })(),
+      versions: versionsByItem.get(item.id) ?? [],
+      hot: !!cur && isHot(item.postingDate, cur.deadline, today),
       attention: attentionOf(cur, item.postingDate, context, today),
       platforms: platsByItem.get(item.id) ?? [],
     };
   });
+}
+
+/** Posting or the current step's deadline is today, tomorrow or the day after (48h window), or already passed. */
+export function isHot(postingDate: string | null, deadline: string | null, today: string) {
+  const soon = addDays(today, 2);
+  return (!!postingDate && postingDate <= soon) || (!!deadline && deadline <= soon);
 }
 
 /** Month presentation link, pointed at the item's slide where the browser/Canva supports it. */
@@ -273,7 +358,7 @@ export async function getItemDetail(id: string) {
       })
       .from(comments)
       .innerJoin(users, eq(users.id, comments.authorId))
-      .where(eq(comments.itemId, id))
+      .where(and(eq(comments.itemId, id), isNull(comments.deletedAt)))
       .orderBy(desc(comments.createdAt)),
   ]);
   return { item, history, allPlatforms, comments: commentRows };
@@ -285,7 +370,7 @@ export async function getItemDetail(id: string) {
 
 export async function getBrands() {
   return db
-    .select({ ...brandCols, logoUrl: brands.logoUrl, defaultCreatorId: brands.defaultCreatorId, defaultMediaId: brands.defaultMediaId, defaultDesignId: brands.defaultDesignId, defaultSocialId: brands.defaultSocialId, creatorName: users.name, createdAt: brands.createdAt, archivedAt: brands.archivedAt })
+    .select({ ...brandCols, logoUrl: brands.logoUrl, defaultCreatorId: brands.defaultCreatorId, defaultShootId: brands.defaultShootId, defaultMediaId: brands.defaultMediaId, defaultDesignId: brands.defaultDesignId, defaultSocialId: brands.defaultSocialId, creatorName: users.name, createdAt: brands.createdAt, archivedAt: brands.archivedAt })
     .from(brands)
     .leftJoin(users, eq(users.id, brands.defaultCreatorId))
     .orderBy(asc(brands.name));
@@ -338,18 +423,20 @@ export async function getClientsWithProjects() {
       projectId: projects.id,
       projectName: projects.name,
       projectCreatedAt: projects.createdAt,
+      ownerName: users.name,
       total: sql<number>`count(${contentItems.id}) filter (where ${contentItems.cancelledAt} is null)::int`,
       done: sql<number>`count(${contentItems.id}) filter (where ${contentItems.completedAt} is not null and ${contentItems.cancelledAt} is null)::int`,
     })
     .from(clients)
-    .leftJoin(projects, eq(projects.clientId, clients.id))
+    .leftJoin(projects, and(eq(projects.clientId, clients.id), isNull(projects.deletedAt)))
+    .leftJoin(users, eq(users.id, projects.ownerId))
     .leftJoin(contentItems, eq(contentItems.projectId, projects.id))
-    .groupBy(clients.id, projects.id)
+    .groupBy(clients.id, projects.id, users.name)
     .orderBy(asc(clients.name), desc(projects.createdAt));
-  const map = new Map<string, { id: string; name: string; slug: string; projects: { id: string; name: string; createdAt: Date; total: number; done: number }[] }>();
+  const map = new Map<string, { id: string; name: string; slug: string; projects: { id: string; name: string; createdAt: Date; ownerName: string | null; total: number; done: number }[] }>();
   for (const r of rows) {
     const c = map.get(r.clientId) ?? { id: r.clientId, name: r.clientName, slug: r.clientSlug, projects: [] };
-    if (r.projectId) c.projects.push({ id: r.projectId, name: r.projectName!, createdAt: r.projectCreatedAt!, total: r.total, done: r.done });
+    if (r.projectId) c.projects.push({ id: r.projectId, name: r.projectName!, createdAt: r.projectCreatedAt!, ownerName: r.ownerName, total: r.total, done: r.done });
     map.set(r.clientId, c);
   }
   return [...map.values()];
@@ -358,9 +445,22 @@ export async function getClientsWithProjects() {
 export async function getProject(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [p] = await db
-    .select({ id: projects.id, name: projects.name, notes: projects.notes, createdAt: projects.createdAt, clientId: clients.id, clientName: clients.name, clientSlug: clients.slug })
+    .select({
+      id: projects.id,
+      name: projects.name,
+      notes: projects.notes,
+      createdAt: projects.createdAt,
+      createdById: projects.createdById,
+      ownerId: projects.ownerId,
+      ownerName: users.name,
+      deletedAt: projects.deletedAt,
+      clientId: clients.id,
+      clientName: clients.name,
+      clientSlug: clients.slug,
+    })
     .from(projects)
     .innerJoin(clients, eq(clients.id, projects.clientId))
+    .leftJoin(users, eq(users.id, projects.ownerId))
     .where(eq(projects.id, id));
   return p ?? null;
 }
@@ -376,7 +476,9 @@ export async function getClientBySlug(slug: string) {
 
 /** Groups of activity actions, for the Activity log filter. Matched by prefix. */
 export const ACTIVITY_KINDS = {
-  work: { label: "Hand-offs & progress", prefixes: ["stage_completed", "stage_assigned", "stage_progress", "drive_link", "item_created"] },
+  work: { label: "Hand-offs & progress", prefixes: ["stage_completed", "stage_assigned", "stage_progress", "drive_link", "item_created", "shoot_"] },
+  versions: { label: "Versions & approvals", prefixes: ["version_"] },
+  tasks: { label: "Tasks", prefixes: ["task_"] },
   back: { label: "Sent back", prefixes: ["stage_returned", "stage_reopened"] },
   deadlines: { label: "Deadlines", prefixes: ["deadline_"] },
   publishing: { label: "Publishing", prefixes: ["platform_updated"] },
@@ -637,4 +739,21 @@ export function tasksFor(open: WorkItem[], user: { id: string; teams: readonly s
   });
 }
 /** Whose task list a step shows up in. Handing one-off work to the client is Account Management's. */
-const STAGE_TEAM: Record<string, string> = { content: "content", media: "media", design: "design", social: "social", delivery: "account" };
+const STAGE_TEAM: Record<string, string> = { content: "content", shooting: "media", media: "media", design: "design", social: "social", delivery: "account" };
+
+/**
+ * Versions waiting for this person's approval: the item's content creator reviews it;
+ * managers see every version that's waiting (they can approve anything).
+ */
+export function reviewsFor(open: WorkItem[], user: { id: string; isAdmin?: boolean; isManager?: boolean }) {
+  const manager = !!user.isAdmin || !!user.isManager;
+  return open.filter((i) => {
+    const c = i.current;
+    if (!c || (c.kind !== "media" && c.kind !== "design")) return false;
+    const latest = i.versions.filter((v) => v.kind === c.kind).at(-1);
+    if (latest?.status !== "pending") return false;
+    const content = i.stages.find((s) => s.kind === "content");
+    const owner = content?.assignee?.id ?? content?.completedBy?.id;
+    return owner === user.id || manager;
+  });
+}

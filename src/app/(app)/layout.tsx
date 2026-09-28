@@ -1,25 +1,46 @@
 import { Shell } from "@/components/shell";
 import { ToastProvider } from "@/components/client";
+import { AvatarProvider } from "@/components/avatar";
 import { requireUser } from "@/server/auth";
-import { getAllBrands, getOpenItems } from "@/server/cached";
-import { getMyMessages, tasksFor } from "@/server/queries";
-import { can } from "@/domain/permissions";
+import { getActivePeople, getAllBrands, getOpenItems } from "@/server/cached";
+import { getMyMessages, getPeople, tasksFor } from "@/server/queries";
+import { getTasksFor } from "@/server/tasks";
+import { unreadChatCount } from "@/server/chat";
+import { can, isManager } from "@/domain/permissions";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const [brands, open, messages] = await Promise.all([getAllBrands(), getOpenItems(), getMyMessages(user.id)]);
+  const [brands, open, messages, everyone, active, myTasks, chatUnread] = await Promise.all([
+    getAllBrands(),
+    getOpenItems(),
+    getMyMessages(user.id),
+    getPeople({ includeInactive: true }),
+    getActivePeople(),
+    getTasksFor(user.id),
+    unreadChatCount(user.id),
+  ]);
   const navBrands = brands
     .filter((b) => b.isActive)
     .map((b) => {
       const mine = open.filter((i) => i.brand?.id === b.id);
       return { id: b.id, name: b.name, slug: b.slug, color: b.color, open: mine.length, late: mine.filter((i) => i.attention === "overdue").length };
     });
-  const myCount = tasksFor(open, user).length + messages.length;
+  const myCount = tasksFor(open, user).length + messages.length + myTasks.filter((t) => !t.doneAt).length;
   return (
     <ToastProvider>
-      <Shell user={user} brands={navBrands} myCount={myCount} canAdd={can.editContent(user)}>
-        {children}
-      </Shell>
+      <AvatarProvider people={everyone.map((p) => ({ id: p.id, name: p.name, v: p.avatarUpdatedAt?.getTime() ?? null, manager: p.isManager || p.isAdmin }))}>
+        <Shell
+          user={{ ...user, manager: isManager(user) }}
+          brands={navBrands}
+          myCount={myCount}
+          chatUnread={chatUnread}
+          canAdd={can.editContent(user)}
+          taskPeople={active.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))}
+          taskBrands={brands.filter((b) => b.isActive).map((b) => ({ id: b.id, name: b.name }))}
+        >
+          {children}
+        </Shell>
+      </AvatarProvider>
     </ToastProvider>
   );
 }

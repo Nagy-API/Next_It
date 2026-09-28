@@ -7,13 +7,15 @@ import {
   assignStage,
   completeStage,
   returnToStage,
+  reviewVersion,
   setLateException,
   setPlatformState,
   setStageDeadline,
+  submitVersion,
 } from "@/server/workflow";
 import { createProject, findOrCreateClient } from "@/server/admin";
 import { stageHealth } from "@/domain/workflow";
-import { cairoNoon, makeBrand, makePlatform, makeUser, uid } from "./helpers";
+import { cairoNoon, makeBrand, makeManager, makePlatform, makeUser, uid } from "./helpers";
 
 afterAll(async () => {
   await closeDb();
@@ -28,9 +30,10 @@ async function logOf(itemId: string) {
 const byKind = (all: Awaited<ReturnType<typeof stagesOf>>, k: string) => all.find((s) => s.kind === k)!;
 
 describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
-  it("hands off automatically from Content → Media → Social → Published", async () => {
+  it("hands off automatically: Content → Pre-production → Post-production (v1 approved) → Social → Published", async () => {
     const king = await makeUser("King", ["content"]);
     const ayman = await makeUser("Ayman", ["media"]);
+    const assem = await makeManager("Assem", ["account"]);
     const esraa = await makeUser("Esraa", ["social"]);
     const brand = await makeBrand("Vanilla Roza", king.id);
     const ig = await makePlatform("Instagram");
@@ -40,7 +43,7 @@ describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
       { title: "The Ampoule", type: "reel", postingDate: "2026-10-11", canvaUrl: "https://canva.link/fxgdr0zjw5uxt3m" },
     ]);
     let all = await stagesOf(id);
-    expect(all.map((s) => s.kind)).toEqual(["content", "media", "social"]);
+    expect(all.map((s) => s.kind)).toEqual(["content", "shooting", "media", "social"]);
     expect(byKind(all, "content").status).toBe("active");
     expect(byKind(all, "content").assigneeId).toBe(king.id); // brand default creator
 
@@ -50,17 +53,33 @@ describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
     all = await stagesOf(id);
     expect(byKind(all, "content")).toMatchObject({ status: "done", completedById: king.id });
     expect(byKind(all, "content").completedAt?.toISOString()).toBe(t1.toISOString());
-    expect(byKind(all, "media").status).toBe("active");
-    expect(byKind(all, "media").activatedAt?.toISOString()).toBe(t1.toISOString());
+    expect(byKind(all, "shooting").status).toBe("active");
+    expect(byKind(all, "shooting").activatedAt?.toISOString()).toBe(t1.toISOString());
 
-    // Ayman takes it; can't submit without a Drive link.
-    await assignStage(ayman, byKind(all, "media").id, ayman.id);
-    await expect(completeStage(ayman, byKind(all, "media").id)).rejects.toThrow(/Drive link/);
-
-    const t2 = cairoNoon("2026-09-29");
-    await completeStage(ayman, byKind(all, "media").id, { driveUrl: "https://drive.google.com/file/d/ampoule-final", now: t2 });
+    // Pre-production: the shoot is done, it goes to editing.
+    await completeStage(ayman, byKind(all, "shooting").id, { now: cairoNoon("2026-09-24") });
     all = await stagesOf(id);
-    expect(byKind(all, "media")).toMatchObject({ status: "done", completedById: ayman.id });
+    expect(byKind(all, "media").status).toBe("active");
+
+    // A manager puts Ayman on the edit; he can't skip approval.
+    await assignStage(assem, byKind(all, "media").id, ayman.id);
+    await expect(completeStage(ayman, byKind(all, "media").id, { driveUrl: "https://drive.google.com/x" })).rejects.toThrow(/approval/);
+
+    // v1 → changes requested → v2 → approved by the content creator: it moves on by itself.
+    const v1 = await submitVersion(ayman, byKind(all, "media").id, { url: "https://drive.google.com/file/d/ampoule-v1", now: cairoNoon("2026-09-27") });
+    expect(v1.number).toBe(1);
+    await expect(reviewVersion(king, v1.id, { approve: false })).rejects.toThrow(/Write what needs to change/);
+    await reviewVersion(king, v1.id, { approve: false, note: "Cut the intro" });
+    all = await stagesOf(id);
+    expect(byKind(all, "media")).toMatchObject({ status: "active", progress: "adjusting" });
+    const t2 = cairoNoon("2026-09-29");
+    const v2 = await submitVersion(ayman, byKind(all, "media").id, { url: "https://drive.google.com/file/d/ampoule-final", now: t2 });
+    expect(v2.number).toBe(2);
+    expect((await stagesOf(id)).find((s) => s.kind === "media")!.progress).toBe("waiting_approval");
+    await reviewVersion(king, v2.id, { approve: true });
+    await expect(reviewVersion(king, v2.id, { approve: true })).rejects.toThrow(/already approved/);
+    all = await stagesOf(id);
+    expect(byKind(all, "media")).toMatchObject({ status: "done", completedById: king.id, assigneeId: ayman.id });
     expect(byKind(all, "social").status).toBe("active");
     const [item] = await db.select().from(contentItems).where(eq(contentItems.id, id));
     expect(item.driveUrl).toBe("https://drive.google.com/file/d/ampoule-final");
@@ -86,6 +105,7 @@ describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
     expect(comps.map((c) => [c.kind, c.creditedUserId])).toEqual(
       expect.arrayContaining([
         ["content", king.id],
+        ["shooting", ayman.id],
         ["media", ayman.id],
         ["social", esraa.id],
       ]),
@@ -93,8 +113,8 @@ describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
 
     const log = await logOf(id);
     const actions = log.map((l) => l.action);
-    expect(actions).toEqual(expect.arrayContaining(["item_created", "stage_completed", "stage_assigned", "drive_link_changed", "platform_updated"]));
-    expect(log.find((l) => l.action === "stage_assigned")?.summary).toContain("assigned Media Production to Ayman");
+    expect(actions).toEqual(expect.arrayContaining(["item_created", "stage_completed", "stage_assigned", "drive_link_changed", "platform_updated", "version_submitted", "version_changes", "version_approved"]));
+    expect(log.find((l) => l.action === "stage_assigned")?.summary).toContain("assigned Post-production to Ayman");
 
     // Un-publishing a platform re-opens Social.
     await setPlatformState(esraa, id, tt.id, { status: "scheduled" });
@@ -118,9 +138,9 @@ describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
 describe("Scenario 2 — delay dependency", () => {
   it("shifts downstream deadlines by the upstream delay, once, and never blames the blocked stage", async () => {
     const king = await makeUser("King", ["content"]);
-    const ayman = await makeUser("Ayman", ["media"]);
+    const ayman = await makeManager("Ayman", ["media"]); // media lead: may finish a step without a separate approval
     const brand = await makeBrand("VR", king.id);
-    const assem = await makeUser("Assem", ["account"]); // account manager sets deadlines
+    const assem = await makeManager("Assem", ["account"]); // managers set deadlines
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Late Reel", type: "reel" }]);
     let all = await stagesOf(id);
     await expect(setStageDeadline(king, byKind(all, "content").id, "2026-10-05")).rejects.toThrow(/permission/);
@@ -141,7 +161,9 @@ describe("Scenario 2 — delay dependency", () => {
     expect(byKind(all, "media")).toMatchObject({ originalDeadline: "2026-10-07", deadline: "2026-10-10", shiftDays: 3 });
     expect(byKind(all, "media").shiftReason).toMatch(/Shifted by 3 days because Content was delivered late/);
     expect(byKind(all, "social")).toMatchObject({ originalDeadline: "2026-10-09", deadline: "2026-10-12", shiftDays: 3 });
-    expect(stageHealth(byKind(all, "media"), "2026-10-08")).toBe("due_soon");
+    // Media hasn't received the work yet (the shoot is next): waiting, not late.
+    expect(byKind(all, "shooting").status).toBe("active");
+    expect(stageHealth(byKind(all, "media"), "2026-10-08")).toBe("waiting");
 
     const [contentComp] = await db.select().from(stageCompletions).where(and(eq(stageCompletions.itemId, id), eq(stageCompletions.kind, "content")));
     expect(contentComp).toMatchObject({ lateDays: 3, excused: false, creditedUserId: king.id });
@@ -152,7 +174,8 @@ describe("Scenario 2 — delay dependency", () => {
       ["social", "2026-10-09", "2026-10-12"],
     ]);
 
-    // Media delivers on its adjusted deadline → on time, no further shift.
+    // The shoot happens the same day; then Media delivers on its adjusted deadline → on time, no further shift.
+    await completeStage(ayman, byKind(all, "shooting").id, { now: cairoNoon("2026-10-08") });
     const m = await completeStage(ayman, byKind(all, "media").id, { driveUrl: "https://drive.google.com/x", now: cairoNoon("2026-10-10") });
     expect(m.lateDays).toBe(0);
     all = await stagesOf(id);
@@ -205,18 +228,20 @@ describe("Scenario 3 — return to an earlier stage", () => {
   it("anyone can send work back with an optional note; the cycle then continues", async () => {
     const king = await makeUser("King", ["content"]);
     const ayman = await makeUser("Ayman", ["media"]);
-    const assem = await makeUser("Assem", ["account"]);
+    const assem = await makeManager("Assem", ["account"]);
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Script Fix", type: "reel" }], {
       contentReady: true,
     });
     let all = await stagesOf(id);
-    expect(byKind(all, "media").status).toBe("active");
+    expect(byKind(all, "shooting").status).toBe("active");
+    await expect(assignStage(ayman, byKind(all, "media").id, await makeUser("Other", ["media"]).then((u) => u.id))).rejects.toThrow(/permission/);
     await assignStage(assem, byKind(all, "media").id, ayman.id);
 
     await returnToStage(assem, id, "content", "The script needs a stronger hook.");
     all = await stagesOf(id);
     expect(byKind(all, "content")).toMatchObject({ status: "active", round: 2, returnedById: assem.id, returnNote: "The script needs a stronger hook." });
+    expect(byKind(all, "shooting").status).toBe("waiting");
     expect(byKind(all, "media").status).toBe("waiting");
     expect(byKind(all, "media").assigneeId).toBe(ayman.id); // assignment kept
 
@@ -225,7 +250,7 @@ describe("Scenario 3 — return to an earlier stage", () => {
     const log = await logOf(id);
     const ret = log.find((l) => l.action === "stage_returned")!;
     expect(ret.actorId).toBe(assem.id);
-    expect(ret.summary).toContain("from Media Production to Content");
+    expect(ret.summary).toContain("from Pre-production to Content");
 
     // Can't "return" forward.
     await expect(returnToStage(assem, id, "social")).rejects.toThrow(/earlier stage/);
@@ -233,7 +258,7 @@ describe("Scenario 3 — return to an earlier stage", () => {
     // No note is fine too.
     await completeStage(king, byKind(all, "content").id);
     all = await stagesOf(id);
-    expect(byKind(all, "media").status).toBe("active");
+    expect(byKind(all, "shooting").status).toBe("active");
     expect(stageHealth(byKind(all, "content"))).toBe("done");
   });
 
@@ -245,7 +270,9 @@ describe("Scenario 3 — return to an earlier stage", () => {
     });
     let all = await stagesOf(id);
     const gannah = await makeUser("Gannah", ["design"]);
-    await completeStage(gannah, byKind(all, "design").id, { driveUrl: "drive.google.com/abc" });
+    const v = await submitVersion(gannah, byKind(all, "design").id, { url: "drive.google.com/abc" });
+    await expect(reviewVersion(gannah, v.id, { approve: true })).rejects.toThrow(/approve/);
+    await reviewVersion(king, v.id, { approve: true });
     all = await stagesOf(id);
     expect(byKind(all, "social").status).toBe("active");
     await returnToStage(king, id, "content");
@@ -270,14 +297,18 @@ describe("Scenario 4 — one-off client SINAI", () => {
     );
     expect(ids).toHaveLength(5);
     let all = await stagesOf(ids[0]);
-    expect(all.map((s) => s.kind)).toEqual(["content", "media", "delivery"]);
+    expect(all.map((s) => s.kind)).toEqual(["content", "shooting", "media", "delivery"]);
 
     await completeStage(ammar, byKind(all, "content").id);
-    await completeStage(ayman, byKind(all, "media").id, { driveUrl: "https://drive.google.com/sinai-1" });
+    await completeStage(ayman, byKind(all, "shooting").id);
+    const v1 = await submitVersion(ayman, byKind(all, "media").id, { url: "https://drive.google.com/sinai-1" });
+    await reviewVersion(ammar, v1.id, { approve: true });
     // Client asks for a revision after seeing it.
     await returnToStage(ammar, ids[0], "media", "Client wants the logo bigger");
     all = await stagesOf(ids[0]);
-    await completeStage(ayman, byKind(all, "media").id);
+    const v2 = await submitVersion(ayman, byKind(all, "media").id, { url: "https://drive.google.com/sinai-1-v2" });
+    expect(v2.number).toBe(2);
+    await reviewVersion(ammar, v2.id, { approve: true });
     all = await stagesOf(ids[0]);
     await completeStage(ammar, byKind(all, "delivery").id);
     const [it1] = await db.select().from(contentItems).where(eq(contentItems.id, ids[0]));
@@ -312,7 +343,7 @@ describe("Editing & bulk", () => {
   it("bulk-assigns a stage across a month", async () => {
     const king = await makeUser("King", ["content"]);
     const jana = await makeUser("Gannah", ["design"]);
-    const assem = await makeUser("Assem", ["account"]);
+    const assem = await makeManager("Assem", ["account"]);
     const brand = await makeBrand("VR", king.id);
     const ids = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 11 }, [
       { title: "A", type: "static" },

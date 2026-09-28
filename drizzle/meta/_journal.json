@@ -29,6 +29,13 @@
       "when": 1790449537992,
       "tag": "0003_notifications_progress_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790601019296,
+      "tag": "0004_managers_workflow_tasks_chat",
+      "breakpoints": true
     }
   ]
 }

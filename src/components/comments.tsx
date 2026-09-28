@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { AtSign, Check, CornerDownRight, RotateCcw } from "lucide-react";
-import { commentAction, resolveCommentAction } from "@/app/actions";
+import { AtSign, Check, CornerDownRight, RotateCcw, Trash2 } from "lucide-react";
+import { commentAction, deleteCommentAction, resolveCommentAction } from "@/app/actions";
 import { formatDateTime, formatRelative } from "@/lib/dates";
 import { ActionForm, Submit } from "./client";
 import { Avatar, Badge } from "./ui";
@@ -56,6 +56,7 @@ export function Comments({ itemId, comments, people, meId, isAdmin }: { itemId: 
                       <span className="text-faint" title={formatDateTime(t.createdAt)}>
                         {formatRelative(t.createdAt)}
                       </span>
+                      {(t.authorId === meId || isAdmin) && <DeleteComment id={t.id} />}
                     </div>
                     {t.tag && (
                       <div className="mt-1">
@@ -149,6 +150,17 @@ function ThreadFooter({ thread, waitingFor, canResolve, itemId, replies }: { thr
   );
 }
 
+function DeleteComment({ id }: { id: string }) {
+  return (
+    <ActionForm action={deleteCommentAction} inlineError={false} className="ml-auto">
+      <input type="hidden" name="commentId" value={id} />
+      <button type="submit" className="rounded p-0.5 text-faint hover:bg-bad-soft hover:text-bad" aria-label="Delete comment" title="Delete comment">
+        <Trash2 className="size-3.5" />
+      </button>
+    </ActionForm>
+  );
+}
+
 function NewComment({ itemId, people }: { itemId: string; people: { id: string; name: string }[] }) {
   return (
     <ActionForm action={commentAction} resetOnSuccess toast={false} className="space-y-2">
@@ -157,7 +169,7 @@ function NewComment({ itemId, people }: { itemId: string; people: { id: string; 
         name="body"
         rows={2}
         required
-        placeholder="Write a comment…"
+        placeholder="Write a comment… (type @Name to notify someone)"
         className="field resize-y"
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();

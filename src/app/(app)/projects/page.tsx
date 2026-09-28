@@ -5,20 +5,23 @@ import { Empty, PageHeader, ProgressBar } from "@/components/ui";
 import { formatDay, cairoDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
 import { getClientsWithProjects } from "@/server/queries";
+import { getActivePeople } from "@/server/cached";
+import { Avatar } from "@/components/ui";
 import { NewProject } from "./new-project";
 
 export const metadata = { title: "One-off projects" };
 
 export default async function ProjectsPage() {
   const me = await requireUser();
-  const clients = await getClientsWithProjects();
+  const [clients, people] = await Promise.all([getClientsWithProjects(), getActivePeople()]);
+  const creators = people.filter((p) => p.teams.includes("content")).map((p) => ({ id: p.id, name: p.name }));
   const canCreate = can.manageProjects(me);
   return (
     <div>
       <PageHeader
         title="One-off projects"
         subtitle="Clients who hire NEXORA for a specific job. We produce and deliver the files — no publishing stage."
-        actions={canCreate ? <NewProject clients={clients.map((c) => c.name)} /> : undefined}
+        actions={canCreate ? <NewProject clients={clients.map((c) => c.name)} creators={creators} /> : undefined}
       />
       {clients.length === 0 ? (
         <Empty icon={Briefcase} title="No one-off clients yet">
@@ -35,14 +38,22 @@ export default async function ProjectsPage() {
                     {c.projects.length} project{c.projects.length === 1 ? "" : "s"}
                   </div>
                 </div>
-                {canCreate && <NewProject clients={[c.name]} defaultClient={c.name} />}
+                {canCreate && <NewProject clients={[c.name]} defaultClient={c.name} creators={creators} />}
               </div>
               <div className="divide-y divide-line">
                 {c.projects.map((p) => (
                   <Link key={p.id} href={`/projects/${p.id}`} className="grid items-center gap-4 px-5 py-3 hover:bg-[#f8faff] md:grid-cols-[1fr_240px_120px]">
                     <div>
                       <div className="font-medium">{p.name}</div>
-                      <div className="text-[12.5px] text-muted">Started {formatDay(cairoDate(p.createdAt), { weekday: false })}</div>
+                      <div className="flex items-center gap-1.5 text-[12.5px] text-muted">
+                        Started {formatDay(cairoDate(p.createdAt), { weekday: false })}
+                        {p.ownerName && (
+                          <>
+                            {" · "}
+                            <Avatar name={p.ownerName} size={16} badge={false} /> {p.ownerName}
+                          </>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <div className="mb-1 text-[12.5px] text-muted">

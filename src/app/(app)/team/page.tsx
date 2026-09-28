@@ -1,6 +1,8 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { Avatar, PageHeader } from "@/components/ui";
+import { Avatar, ManagerChip, PageHeader } from "@/components/ui";
+import { isManager } from "@/domain/permissions";
+import type { Team } from "@/db/schema";
 import { RangePicker } from "@/components/range-picker";
 import { TEAM_META } from "@/domain/workflow";
 import { formatDay } from "@/lib/dates";
@@ -10,39 +12,76 @@ import { getInsights, type PersonInsight } from "@/server/queries";
 
 export const metadata = { title: "Team" };
 
+/** Departments as the agency is organised: Graphic Design sits inside Media Production. */
+const DEPARTMENTS: { label: string; teams: Team[] }[] = [
+  { label: "Content Creation", teams: ["content"] },
+  { label: "Media Production", teams: ["media", "design"] },
+  { label: "Social Media", teams: ["social"] },
+  { label: "Account Management", teams: ["account"] },
+  { label: "Leadership", teams: ["leadership"] },
+];
+
 export default async function TeamPage({ searchParams }: PageProps<"/team">) {
-  await requireUser();
+  const me = await requireUser();
+  const manager = isManager(me);
   const range = resolveRange(await searchParams);
   const rows = (await getInsights(range.from, range.to)).filter((r) => r.person.isActive || r.completed > 0);
+  const placed = new Set<string>();
+  const groups = DEPARTMENTS.map((d) => {
+    const list = rows.filter((r) => !placed.has(r.person.id) && r.person.teams.some((t) => d.teams.includes(t)));
+    list.forEach((r) => placed.add(r.person.id));
+    return { ...d, list };
+  }).filter((g) => g.list.length);
+  const rest = rows.filter((r) => !placed.has(r.person.id));
+  if (rest.length) groups.push({ label: "Other", teams: [], list: rest });
   return (
     <div>
       <PageHeader
         title="Team"
         subtitle={`What each person handled from ${formatDay(range.from, { weekday: false })} to ${formatDay(range.to, { weekday: false })}. Lateness only counts when the work was actually with them — never when they were waiting on a previous stage, and never when marked as an exception.`}
       />
-      <div className="mb-5">
-        <RangePicker current={range.key} from={range.from} to={range.to} />
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {rows.map((r) => (
-          <PersonCard key={r.person.id} r={r} q={`?range=${range.key}${range.key === "custom" ? `&from=${range.from}&to=${range.to}` : ""}`} />
+      {manager && (
+        <div className="mb-5">
+          <RangePicker current={range.key} from={range.from} to={range.to} />
+        </div>
+      )}
+      <div className="space-y-8">
+        {groups.map((g) => (
+          <section key={g.label}>
+            <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
+              {g.label} <span className="rounded-full bg-canvas px-2 text-[12px] font-semibold text-muted">{g.list.length}</span>
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {g.list.map((r) => (
+                <PersonCard key={r.person.id} r={r} showStats={manager || r.person.id === me.id} q={`?range=${range.key}${range.key === "custom" ? `&from=${range.from}&to=${range.to}` : ""}`} />
+              ))}
+            </div>
+          </section>
         ))}
       </div>
     </div>
   );
 }
 
-function PersonCard({ r, q }: { r: PersonInsight; q: string }) {
+function PersonCard({ r, q, showStats }: { r: PersonInsight; q: string; showStats: boolean }) {
   const withDeadline = r.onTime + r.late + r.excused;
-  return (
-    <Link href={`/team/${r.person.username}${q}`} className={clsx("card group block p-5 transition-colors hover:border-line-strong", !r.person.isActive && "opacity-70")}>
-      <div className="flex items-center gap-3">
-        <Avatar name={r.person.name} size={40} />
-        <div className="min-w-0">
-          <div className="font-display text-[16px] font-bold group-hover:text-electric">{r.person.name}</div>
-          <div className="truncate text-[12.5px] text-muted">{r.person.isActive ? r.person.teams.map((t) => TEAM_META[t].label).join(" · ") || r.person.title : "Inactive"}</div>
+  const head = (
+    <div className="flex items-center gap-3">
+      <Avatar name={r.person.name} size={44} />
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 font-display text-[16px] font-bold group-hover:text-electric">
+          {r.person.name} {(r.person.isManager || r.person.isAdmin) && <ManagerChip />}
+        </div>
+        <div className="truncate text-[12.5px] text-muted">
+          {r.person.isActive ? r.person.title || r.person.teams.map((t) => TEAM_META[t].label).join(" · ") : "Inactive"}
         </div>
       </div>
+    </div>
+  );
+  if (!showStats) return <div className={clsx("card p-5", !r.person.isActive && "opacity-70")}>{head}</div>;
+  return (
+    <Link href={`/team/${r.person.username}${q}`} className={clsx("card group block p-5 transition-colors hover:border-line-strong", !r.person.isActive && "opacity-70")}>
+      {head}
       <div className="mt-4 grid grid-cols-3 gap-2 text-center">
         <Num label="Completed" value={r.completed} />
         <Num label="With them now" value={r.openNow} />

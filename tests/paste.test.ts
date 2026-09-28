@@ -26,10 +26,10 @@ describe("bulk paste parser", () => {
 
 describe("workflow rules", () => {
   it("routes by type and context", () => {
-    expect(routeFor("reel", "plan")).toEqual(["content", "media", "social"]);
+    expect(routeFor("reel", "plan")).toEqual(["content", "shooting", "media", "social"]);
     expect(routeFor("carousel", "plan")).toEqual(["content", "design", "social"]);
     expect(routeFor("story", "plan")).toEqual(["content", "social"]);
-    expect(routeFor("reel", "project")).toEqual(["content", "media", "delivery"]);
+    expect(routeFor("reel", "project")).toEqual(["content", "shooting", "media", "delivery"]);
   });
   it("never marks a stage late without a deadline or before it receives the work", () => {
     const base = { kind: "media" as const, position: 1, completedAt: null, returnedAt: null, round: 1, lateExcusedAt: null };

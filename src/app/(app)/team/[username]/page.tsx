@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { isManager } from "@/domain/permissions";
 import { eq } from "drizzle-orm";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileSpreadsheet } from "lucide-react";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { ItemList } from "@/components/item-row";
@@ -16,8 +17,10 @@ import { requireUser } from "@/server/auth";
 import { getInsights, getPersonCompletions, getPersonWork } from "@/server/queries";
 
 export default async function PersonPage({ params, searchParams }: PageProps<"/team/[username]">) {
-  await requireUser();
+  const me = await requireUser();
   const { username } = await params;
+  // Everyone can see their own numbers; only managers see other people's.
+  if (!isManager(me) && username !== me.username) redirect(`/team/${me.username}`);
   const [person] = await db.select().from(users).where(eq(users.username, username));
   if (!person) notFound();
   const range = resolveRange(await searchParams);
@@ -45,6 +48,12 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
               {!person.isActive && " · Inactive"}
             </div>
           </div>
+          <a
+            href={`/api/export/person/${person.username}`}
+            className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[14px] font-semibold text-ink shadow-card hover:border-[#1d6f42] hover:text-[#1d6f42]"
+          >
+            <FileSpreadsheet className="size-4 text-[#1d6f42]" /> Export to Excel
+          </a>
         </div>
       </div>
       <section className="card p-5">

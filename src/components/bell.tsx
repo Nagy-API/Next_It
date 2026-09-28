@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { AlertTriangle, Bell, BellRing, CheckCheck, Clock, CornerUpLeft, Inbox, MessageSquare, PartyPopper, UserPlus } from "lucide-react";
+import { AlertTriangle, AtSign, Bell, BellRing, CheckCheck, ClipboardCheck, Clock, CornerUpLeft, Inbox, MessageSquare, PartyPopper, ThumbsUp, UserPlus } from "lucide-react";
 import { markReadAction } from "@/app/actions";
 import { formatRelative } from "@/lib/dates";
 
-type Note = { id: string; kind: string; title: string; body: string | null; itemId: string | null; createdAt: string; read: boolean; actorName: string | null };
-type Alert = { id: string; tone: "bad" | "warn"; title: string; body: string; itemId: string };
+type Note = { id: string; kind: string; title: string; body: string | null; itemId: string | null; href: string | null; createdAt: string; read: boolean; actorName: string | null };
+type Alert = { id: string; tone: "bad" | "warn"; title: string; body: string; itemId?: string; href?: string };
 type Feed = { unread: number; notifications: Note[]; alerts: Alert[] };
 
 const ICON: Record<string, typeof Bell> = {
@@ -20,7 +20,14 @@ const ICON: Record<string, typeof Bell> = {
   reply: MessageSquare,
   deadline: Clock,
   finished: PartyPopper,
+  review: ThumbsUp,
+  approved: ThumbsUp,
+  task: ClipboardCheck,
+  mention: AtSign,
+  chat: MessageSquare,
 };
+
+const noteHref = (n: Note) => n.href ?? (n.itemId ? `/items/${n.itemId}` : "/my-work");
 
 const SEEN_KEY = "nexora-seen-notifications";
 
@@ -52,7 +59,7 @@ export function NotificationBell() {
           const pop = new Notification(n.title, { body: n.body ?? undefined, icon: "/icon.png", tag: n.id });
           pop.onclick = () => {
             window.focus();
-            if (n.itemId) router.push(`/items/${n.itemId}`);
+            router.push(noteHref(n));
           };
         }
         try {
@@ -137,7 +144,7 @@ export function NotificationBell() {
               <div className="border-b border-line bg-[#fffaf5] py-1">
                 <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Needs attention</div>
                 {feed.alerts.map((a) => (
-                  <Link key={a.id} href={`/items/${a.itemId}`} onClick={() => setOpen(false)} className="flex gap-3 px-4 py-2.5 hover:bg-white">
+                  <Link key={a.id} href={a.href ?? `/items/${a.itemId}`} onClick={() => setOpen(false)} className="flex gap-3 px-4 py-2.5 hover:bg-white">
                     <AlertTriangle className={clsx("mt-0.5 size-4 shrink-0", a.tone === "bad" ? "text-bad" : "text-warn")} />
                     <span className="min-w-0">
                       <span className={clsx("block text-[13.5px] font-semibold", a.tone === "bad" && "text-bad")}>{a.title}</span>
@@ -161,14 +168,14 @@ export function NotificationBell() {
                 return (
                   <Link
                     key={n.id}
-                    href={n.itemId ? `/items/${n.itemId}` : "/my-work"}
+                    href={noteHref(n)}
                     onClick={() => {
                       setOpen(false);
                       if (!n.read) markRead([n.id]);
                     }}
                     className={clsx("flex gap-3 border-b border-line/70 px-4 py-3 last:border-0 hover:bg-canvas", !n.read && "bg-electric-soft/40")}
                   >
-                    <span className={clsx("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", n.kind === "sent_back" ? "bg-back-soft text-back" : n.kind === "finished" ? "bg-ok-soft text-ok" : "bg-electric-soft text-electric")}>
+                    <span className={clsx("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", n.kind === "sent_back" ? "bg-back-soft text-back" : n.kind === "finished" || n.kind === "approved" ? "bg-ok-soft text-ok" : n.kind === "mention" || n.kind === "task" ? "bg-[#fff1c2] text-[#8a5a00]" : "bg-electric-soft text-electric")}>
                       <Icon className="size-3.5" />
                     </span>
                     <span className="min-w-0 flex-1">

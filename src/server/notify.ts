@@ -8,16 +8,16 @@ import { notifications, users, type StageKind, type Team } from "@/db/schema";
 import { STAGE_META } from "@/domain/workflow";
 import type { Actor } from "./activity";
 
-export type NotificationKind = "new_task" | "sent_back" | "comment" | "reply" | "assigned" | "deadline" | "finished";
+export type NotificationKind = "new_task" | "sent_back" | "comment" | "reply" | "assigned" | "deadline" | "finished" | "review" | "approved" | "task" | "chat" | "mention";
 
 /** Whose task list a step shows up in when nobody is assigned. */
-export const STAGE_TEAM: Record<StageKind, Team> = { content: "content", media: "media", design: "design", social: "social", delivery: "account" };
+export const STAGE_TEAM: Record<StageKind, Team> = { content: "content", shooting: "media", media: "media", design: "design", social: "social", delivery: "account" };
 
 export async function notify(
   tx: Tx,
   actor: Actor | null,
   userIds: (string | null | undefined)[],
-  n: { kind: NotificationKind; title: string; body?: string | null; itemId?: string | null; at?: Date },
+  n: { kind: NotificationKind; title: string; body?: string | null; itemId?: string | null; href?: string | null; at?: Date },
 ) {
   const ids = [...new Set(userIds.filter((u): u is string => !!u && u !== actor?.id))];
   if (!ids.length) return;
@@ -28,6 +28,7 @@ export async function notify(
       title: n.title,
       body: n.body ?? null,
       itemId: n.itemId ?? null,
+      href: n.href ?? null,
       actorId: actor?.id ?? null,
       ...(n.at ? { createdAt: n.at } : {}),
     })),

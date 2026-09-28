@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { Avatar, Badge } from "@/components/ui";
+import { Avatar, Badge, ManagerChip } from "@/components/ui";
+import { PhotoPicker } from "@/components/photo";
 import { TEAM_META } from "@/domain/workflow";
 import { requireUser } from "@/server/auth";
 import { getPeople } from "@/server/queries";
@@ -32,6 +33,7 @@ export default async function PeopleSettings() {
             <div className="min-w-[180px] flex-1">
               <div className="flex items-center gap-2 font-medium">
                 {p.name}
+                {p.isManager && <ManagerChip />}
                 {admins.has(p.id) && <Badge tone="blue">Admin</Badge>}
                 {!p.isActive && <Badge tone="neutral">Inactive</Badge>}
               </div>
@@ -49,7 +51,8 @@ export default async function PeopleSettings() {
             </div>
             {me.isAdmin && (
               <div className="flex items-center gap-1">
-                <EditUser u={{ id: p.id, name: p.name, title: p.title, teams: p.teams, isAdmin: admins.has(p.id) }} />
+                <PhotoPicker userId={p.id} name={p.name} hasPhoto={!!p.avatarUpdatedAt} compact />
+                <EditUser u={{ id: p.id, name: p.name, title: p.title, teams: p.teams, isAdmin: admins.has(p.id), isManager: p.isManager }} />
                 <ResetPassword userId={p.id} name={p.name} />
                 {p.id !== me.id && <UserActiveToggle userId={p.id} active={p.isActive} />}
               </div>

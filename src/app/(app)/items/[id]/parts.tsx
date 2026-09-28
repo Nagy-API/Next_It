@@ -349,16 +349,12 @@ export function DetailsForm({
   defaultOpen?: boolean;
 }) {
   const [editing, setEditing] = useState(defaultOpen);
-  if (!editing)
-    return (
+  return (
+    <>
       <button type="button" onClick={() => setEditing(true)} className={btn("ghost", "sm", "-mr-2")}>
         <Pencil className="size-3.5" /> Edit
       </button>
-    );
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-navy-950/30 p-4 pt-[10vh]" onMouseDown={(e) => e.target === e.currentTarget && setEditing(false)}>
-      <div className="card w-full max-w-lg animate-in p-5 shadow-pop">
-        <div className="mb-4 font-display text-[16px] font-bold">Edit details</div>
+      <Modal open={editing} onClose={() => setEditing(false)} title="Edit details" width={520}>
         <ActionForm action={updateItemAction} onSuccess={() => setEditing(false)} className="space-y-3">
           <input type="hidden" name="itemId" value={item.id} />
           <div>
@@ -402,8 +398,8 @@ export function DetailsForm({
             <Submit>Save changes</Submit>
           </div>
         </ActionForm>
-      </div>
-    </div>
+      </Modal>
+    </>
   );
 }
 

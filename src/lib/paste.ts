@@ -73,6 +73,15 @@ export function parsePastedList(text: string, defaultYear: number, defaultMonth:
       if (time[3]?.toLowerCase() === "am" && h === 12) h = 0;
       postingTime = `${pad(h)}:${time[2]}`;
       line = line.replace(time[0], "\t");
+    } else {
+      // "7pm", "11 am"
+      const short = /\b(1[0-2]|0?[1-9])\s*(am|pm)\b/i.exec(line);
+      if (short) {
+        let h = +short[1] % 12;
+        if (short[2].toLowerCase() === "pm") h += 12;
+        postingTime = `${pad(h)}:00`;
+        line = line.replace(short[0], "\t");
+      }
     }
     // When a line has several dates (e.g. copied Excel rows with delivery + posting date), the last one is the posting date.
     let postingDate = "";

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { ArrowRightLeft, CalendarClock, CornerUpLeft, Lock, MessageSquare, Pencil, Send, Settings2 } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, CheckSquare, CornerUpLeft, Layers, Lock, MessageSquare, Pencil, Send, Settings2 } from "lucide-react";
+import { redirect } from "next/navigation";
+import { can } from "@/domain/permissions";
 import { FilterBar } from "@/components/filter-bar";
 import { BrandDot, PageHeader, btn } from "@/components/ui";
 import { addDays, cairoDate, formatDay, formatTime, todayISO } from "@/lib/dates";
@@ -12,6 +14,8 @@ export const metadata = { title: "Activity log" };
 
 const KIND_STYLE: Record<ActivityKind, { icon: typeof Send; cls: string }> = {
   work: { icon: ArrowRightLeft, cls: "bg-electric-soft text-electric" },
+  versions: { icon: Layers, cls: "bg-[#e0f2fe] text-[#0369a1]" },
+  tasks: { icon: CheckSquare, cls: "bg-ok-soft text-ok" },
   back: { icon: CornerUpLeft, cls: "bg-back-soft text-back" },
   deadlines: { icon: CalendarClock, cls: "bg-warn-soft text-warn" },
   publishing: { icon: Send, cls: "bg-ok-soft text-ok" },
@@ -21,7 +25,8 @@ const KIND_STYLE: Record<ActivityKind, { icon: typeof Send; cls: string }> = {
 };
 
 export default async function ActivityPage({ searchParams }: PageProps<"/activity">) {
-  await requireUser();
+  const me = await requireUser();
+  if (!can.seeActivity(me)) redirect("/my-work");
   const sp = await searchParams;
   const get = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : undefined);
   const [people, brands] = await Promise.all([getPeople({ includeInactive: true }), getAllBrands()]);

@@ -53,7 +53,7 @@ export function BrandCreatorSelect({ brandId, value, people }: { brandId: string
 }
 
 /** Auto-saving "default person" picker for one team on one brand. */
-export function BrandDefaultSelect({ brandId, field, value, people, label, empty = "Nobody" }: { brandId: string; field: "defaultCreatorId" | "defaultMediaId" | "defaultDesignId" | "defaultSocialId"; value: string | null; people: P[]; label: string; empty?: string }) {
+export function BrandDefaultSelect({ brandId, field, value, people, label, empty = "Nobody" }: { brandId: string; field: "defaultCreatorId" | "defaultShootId" | "defaultMediaId" | "defaultDesignId" | "defaultSocialId"; value: string | null; people: P[]; label: string; empty?: string }) {
   return (
     <ActionForm action={updateBrandAction} inlineError={false}>
       <input type="hidden" name="brandId" value={brandId} />
@@ -76,12 +76,16 @@ export function BrandEdit({ brandId, name, color }: { brandId: string; name: str
         <ActionForm action={updateBrandAction} onSuccess={close} className="space-y-3">
           <input type="hidden" name="brandId" value={brandId} />
           <div>
-            <label className="label">Name</label>
-            <input name="name" defaultValue={name} required className="field" />
+            <label className="label" htmlFor={`bn-${brandId}`}>
+              Name
+            </label>
+            <input id={`bn-${brandId}`} name="name" defaultValue={name} required className="field" />
           </div>
           <div>
-            <label className="label">Calendar color</label>
-            <input type="color" name="color" defaultValue={color} className="h-9 w-full cursor-pointer rounded-lg border border-line" />
+            <label className="label" htmlFor={`bc-${brandId}`}>
+              Calendar color
+            </label>
+            <input id={`bc-${brandId}`} type="color" name="color" defaultValue={color} className="h-9 w-full cursor-pointer rounded-lg border border-line" />
           </div>
           <Submit className="w-full">Save</Submit>
         </ActionForm>
@@ -190,6 +194,9 @@ export function NewUserForm() {
         <TeamChecks value={[]} />
       </div>
       <label className="flex items-center gap-2 text-[13.5px]">
+        <input type="checkbox" name="isManager" value="1" className="size-4 accent-[var(--color-electric)]" /> Manager (gives tasks, sets deadlines, sees the dashboard & activity log)
+      </label>
+      <label className="flex items-center gap-2 text-[13.5px]">
         <input type="checkbox" name="isAdmin" value="1" className="size-4 accent-[var(--color-electric)]" /> Can manage accounts (CEO / IT)
       </label>
       <div className="flex justify-end gap-2">
@@ -202,7 +209,7 @@ export function NewUserForm() {
   );
 }
 
-export function EditUser({ u }: { u: { id: string; name: string; title: string | null; teams: string[]; isAdmin: boolean } }) {
+export function EditUser({ u }: { u: { id: string; name: string; title: string | null; teams: string[]; isAdmin: boolean; isManager: boolean } }) {
   return (
     <Popover align="right" width={380} triggerClassName={btn("ghost", "sm")} trigger={<><Pencil className="size-3.5" /> Edit</>}>
       {(close) => (
@@ -222,6 +229,9 @@ export function EditUser({ u }: { u: { id: string; name: string; title: string |
             <div className="label">Teams</div>
             <TeamChecks value={u.teams} />
           </div>
+          <label className="flex items-center gap-2 text-[13.5px]">
+            <input type="checkbox" name="isManager" value="1" defaultChecked={u.isManager} className="size-4 accent-[var(--color-electric)]" /> Manager
+          </label>
           <label className="flex items-center gap-2 text-[13.5px]">
             <input type="checkbox" name="isAdmin" value="1" defaultChecked={u.isAdmin} className="size-4 accent-[var(--color-electric)]" /> Can manage accounts
           </label>

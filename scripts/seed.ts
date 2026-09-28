@@ -18,15 +18,17 @@ import { guessTypeFromTitle } from "../src/domain/workflow";
 
 const PASSWORD = process.env.SEED_DEFAULT_PASSWORD || "Nexora@2026";
 
+/** Managers: Shahenda (CEO), Ammar, Ayman and Assem. Gannah (design) and Jana (editing) are in the Media Production department. */
+const MANAGERS = ["shahenda", "ammar", "ayman", "assem"];
 const TEAM: { username: string; name: string; title: string; teams: Team[]; isAdmin?: boolean }[] = [
   { username: "shahenda", name: "Shahenda", title: "CEO", teams: ["leadership", "social"], isAdmin: true },
   { username: "assem", name: "Assem", title: "Account Manager", teams: ["account"] },
-  { username: "ammar", name: "Ammar", title: "Content Creator", teams: ["content"] },
+  { username: "ammar", name: "Ammar", title: "Content Lead", teams: ["content"] },
   { username: "king", name: "King", title: "Content Creator", teams: ["content"] },
   { username: "kemo", name: "Kemo", title: "Content Creator", teams: ["content"] },
-  { username: "ayman", name: "Ayman", title: "Media Production", teams: ["media"] },
-  { username: "jana", name: "Jana", title: "Media Production", teams: ["media"] },
-  { username: "gannah", name: "Gannah", title: "Graphic Designer", teams: ["design"] },
+  { username: "ayman", name: "Ayman", title: "Media Production Lead", teams: ["media"] },
+  { username: "jana", name: "Jana", title: "Video Editor · Media Production", teams: ["media"] },
+  { username: "gannah", name: "Gannah", title: "Graphic Designer · Media Production", teams: ["design"] },
   { username: "esraa", name: "Esraa", title: "Social Media", teams: ["social"] },
 ];
 
@@ -110,18 +112,41 @@ async function fillTeamDefaults() {
   console.log("✓ Brand defaults set: Graphic Design → Gannah, Social → Esraa");
 }
 
+/**
+ * Installs from before managers / pre-production: mark the managers, set Gannah's and Jana's titles,
+ * and give every brand Ayman for shooting and Jana for editing. Once only (never overwrites later choices).
+ */
+async function managersAndMediaDefaults() {
+  const [done] = await db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.action, "managers_media_defaults")).limit(1);
+  if (done) return;
+  const all = await db.select({ id: users.id, username: users.username }).from(users);
+  const id = (u: string) => all.find((x) => x.username === u)?.id;
+  for (const u of MANAGERS) if (id(u)) await db.update(users).set({ isManager: true }).where(eq(users.username, u));
+  for (const t of TEAM.filter((x) => x.username === "gannah" || x.username === "jana")) {
+    if (id(t.username)) await db.update(users).set({ title: t.title }).where(eq(users.username, t.username));
+  }
+  if (id("ayman")) await db.update(brands).set({ defaultShootId: id("ayman") }).where(isNull(brands.defaultShootId));
+  if (id("jana")) await db.update(brands).set({ defaultMediaId: id("jana") }).where(isNull(brands.defaultMediaId));
+  await logActivity(db, null, {
+    action: "managers_media_defaults",
+    summary: "Managers: Shahenda, Ammar, Ayman, Assem. Brand defaults: Shooting → Ayman, Editing → Jana (change them in Settings → Brands).",
+  });
+  console.log("✓ Managers set (Shahenda, Ammar, Ayman, Assem); Shooting → Ayman, Editing → Jana");
+}
+
 export async function seed() {
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(users);
   if (count > 0) {
     console.log("Database already has users — skipping the initial seed.");
     await fixDesignTeam();
     await fillTeamDefaults();
+    await managersAndMediaDefaults();
     return;
   }
   const passwordHash = await hashPassword(PASSWORD);
   const created = await db
     .insert(users)
-    .values(TEAM.map((u) => ({ ...u, isAdmin: !!u.isAdmin, passwordHash, createdAt: new Date("2026-09-01T07:00:00Z") })))
+    .values(TEAM.map((u) => ({ ...u, isAdmin: !!u.isAdmin, isManager: MANAGERS.includes(u.username), passwordHash, createdAt: new Date("2026-09-01T07:00:00Z") })))
     .returning();
   const byUsername = new Map(created.map((u) => [u.username, u]));
   const ceo = byUsername.get("shahenda")!;
@@ -137,7 +162,9 @@ export async function seed() {
         slug: slugify(b.name),
         color: b.color,
         defaultCreatorId: byUsername.get(b.creator)!.id,
-        // Gannah is the graphic designer and Esraa runs social for every brand; Media stays with the whole team (Ayman & Jana).
+        // Ayman shoots, Jana edits, Gannah designs and Esraa runs social for every brand (all changeable per brand and per item).
+        defaultShootId: byUsername.get("ayman")!.id,
+        defaultMediaId: byUsername.get("jana")!.id,
         defaultDesignId: byUsername.get("gannah")!.id,
         defaultSocialId: byUsername.get("esraa")!.id,
         createdAt: new Date("2026-09-01T07:00:00Z"),
@@ -167,6 +194,7 @@ export async function seed() {
   console.log(`✓ Seeded ${created.length} users, ${brandRows.length} brands, ${PLATFORMS.length} platforms, ${rows.length} Vanilla Roza October items.`);
   console.log(`  Every account's initial password: ${PASSWORD}`);
   await logActivity(db, null, { action: "brand_team_defaults", summary: "Brand defaults set: Graphic Design → Gannah, Social → Esraa." });
+  await logActivity(db, null, { action: "managers_media_defaults", summary: "Managers: Shahenda, Ammar, Ayman, Assem. Shooting → Ayman, Editing → Jana." });
 }
 
 if (process.argv[1]?.endsWith("seed.ts")) {

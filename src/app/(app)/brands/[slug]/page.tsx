@@ -71,7 +71,7 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
   };
   const done = live.filter((i) => i.completedAt).length;
   const social = live.filter((i) => i.current?.kind === "social").length;
-  const production = live.filter((i) => i.current && ["media", "design"].includes(i.current.kind)).length;
+  const production = live.filter((i) => i.current && ["shooting", "media", "design"].includes(i.current.kind)).length;
   const content = live.filter((i) => i.current?.kind === "content").length;
   const late = live.filter((i) => i.attention === "overdue").length;
   const blocked = live.filter((i) => i.stages.some((s) => s.health === "blocked")).length;

@@ -1,6 +1,9 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { AlertTriangle, ArrowRight, CalendarDays, Check, CircleUserRound, CornerUpLeft, Hourglass, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, Check, CircleUserRound, ClipboardCheck, CornerUpLeft, Flame, Hourglass, PartyPopper, Sparkles } from "lucide-react";
+import { isManager } from "@/domain/permissions";
+import { getTasksFor } from "@/server/tasks";
+import { HotBadge } from "@/components/handoff";
 import { STAGE_META } from "@/domain/workflow";
 import type { StageKind } from "@/db/schema";
 import { addDays, dayOfWeek, formatDay, formatRelative, monthLabel, todayISO } from "@/lib/dates";
@@ -12,12 +15,17 @@ import { Avatar, BrandDot, Empty, ProgressBar, SectionTitle, TypeIcon } from "@/
 
 export const metadata = { title: "Overview" };
 
-const PIPELINE: StageKind[] = ["content", "media", "design", "social", "delivery"];
+const PIPELINE: StageKind[] = ["content", "shooting", "media", "design", "social", "delivery"];
 
 export default async function HomePage() {
   const user = await requireUser();
   const today = todayISO();
-  const [open, home, activity] = await Promise.all([getOpenItems(), getHomeData(today), getActivity({ limit: 8 })]);
+  const manager = isManager(user);
+  const [open, home, activity, myTasks] = await Promise.all([getOpenItems(), getHomeData(today), manager ? getActivity({ limit: 8 }) : Promise.resolve({ rows: [], hasMore: false }), getTasksFor(user.id, today)]);
+  const mine = tasksFor(open, user);
+  const moveNow = mine.filter((i) => i.hot || i.current?.health === "overdue").sort((a, b) => (a.postingDate ?? a.current?.deadline ?? "9").localeCompare(b.postingDate ?? b.current?.deadline ?? "9"));
+  const tasksSoon = myTasks.filter((t) => !t.doneAt && t.dueDate && t.dueDate <= addDays(today, 2));
+  const agencyHot = open.filter((i) => i.hot && i.current?.kind !== "social" && !moveNow.includes(i));
   const year = Number(today.slice(0, 4));
   const month = Number(today.slice(5, 7));
   // Before the 20th people mostly care about this month; after, next month's plan is being prepared.
@@ -53,7 +61,66 @@ export default async function HomePage() {
         </div>
       </header>
 
+      {/* ---------------- Personal: what must move in the next 48 hours ---------------- */}
+      <section>
+        <SectionTitle right={<Link href="/my-work" className="text-[13px] font-medium text-electric hover:underline">All my tasks</Link>}>
+          <span className="inline-flex items-center gap-2">
+            <Flame className="size-4 text-[#ff8a1f]" /> Move now — the next 48 hours
+          </span>
+        </SectionTitle>
+        {moveNow.length + tasksSoon.length === 0 ? (
+          <div className="card flex items-center gap-3 px-5 py-4 text-[14px]">
+            <PartyPopper className="size-5 text-ok" />
+            <span>
+              <b>Nothing urgent on you.</b> <span className="text-muted">Anything posting or due within 48 hours shows up here first.</span>
+            </span>
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {moveNow.map((i) => (
+              <Link key={i.id} href={`/items/${i.id}`} className="card group flex flex-col gap-2 border-[#ff8a1f]/50 bg-gradient-to-br from-white to-[#fff6ee] p-4 ring-2 ring-[#ff8a1f]/10 transition-shadow hover:shadow-pop">
+                <div className="flex flex-wrap items-center gap-2">
+                  <HotBadge item={i} today={today} />
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[11.5px] font-semibold text-ink-2 ring-1 ring-line">{STAGE_META[i.current!.kind].label}</span>
+                </div>
+                <div className="flex items-center gap-1.5 font-semibold group-hover:text-electric">
+                  <TypeIcon type={i.type} /> <span className="truncate">{i.title}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[12.5px] text-muted">
+                  {i.brand && <BrandDot color={i.brand.color} />} {i.brand?.name ?? i.project?.clientName}
+                  {i.current?.deadline && <span>· step due {formatDay(i.current.deadline)}</span>}
+                </div>
+              </Link>
+            ))}
+            {tasksSoon.map((t) => (
+              <Link key={t.id} href="/my-work#tasks" className="card flex flex-col gap-2 border-[#ff8a1f]/50 p-4 transition-shadow hover:shadow-pop">
+                <span className="inline-flex w-fit items-center gap-1 rounded-full bg-[#ff8a1f] px-2 py-0.5 text-[11.5px] font-bold text-white">
+                  <ClipboardCheck className="size-3.5" /> Task · {t.dueDate! < today ? "late" : t.dueDate === today ? "today" : formatDay(t.dueDate)}
+                </span>
+                <div className="font-semibold">{t.title}</div>
+                <div className="text-[12.5px] text-muted">from {t.createdByName}</div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
       <MyTasksStrip open={open} user={user} />
+
+      {manager && agencyHot.length > 0 && (
+        <section>
+          <SectionTitle right={<span className="text-[12.5px] text-muted">Posting within 48 hours and not with Social yet</span>}>
+            <span className="inline-flex items-center gap-2">
+              <Flame className="size-4 text-bad" /> Across the agency
+            </span>
+          </SectionTitle>
+          <div className="card divide-y divide-line overflow-hidden">
+            {agencyHot.slice(0, 8).map((i) => (
+              <ItemRow key={i.id} item={i} compact />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ---------------- The cycle ---------------- */}
       <section>
@@ -61,8 +128,9 @@ export default async function HomePage() {
         <Pipeline open={open} publishedThisMonth={home.finishedThisMonth} />
       </section>
 
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-        {/* ---------------- Needs attention ---------------- */}
+      <div className={clsx("grid gap-8", manager && "xl:grid-cols-[minmax(0,1fr)_380px]")}>
+        {/* ---------------- Needs attention (managers) ---------------- */}
+        {manager && (
         <section className="min-w-0">
           <SectionTitle right={<Link href="/work" className="text-[13px] font-medium text-electric hover:underline">All open work</Link>}>Needs attention</SectionTitle>
           {late.length + returned.length + atRisk.length + unassigned.length === 0 ? (
@@ -76,6 +144,7 @@ export default async function HomePage() {
             </div>
           )}
         </section>
+        )}
 
         {/* ---------------- This week ---------------- */}
         <section className="min-w-0">
@@ -96,7 +165,8 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ---------------- Activity ---------------- */}
+      {/* ---------------- Activity (managers) ---------------- */}
+      {manager && (
       <section>
         <SectionTitle right={<Link href="/activity" className="text-[13px] font-medium text-electric hover:underline">Full history</Link>}>Latest changes</SectionTitle>
         <div className="card divide-y divide-line">
@@ -117,6 +187,7 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
+      )}
     </div>
   );
 }
@@ -274,7 +345,7 @@ function BrandCard({ brand, items, next, label, nextLabel }: { brand: { id: stri
 function MonthProgress({ label, items }: { label: string; items: WorkItem[] }) {
   const done = items.filter((i) => i.completedAt).length;
   const social = items.filter((i) => i.current?.kind === "social").length;
-  const production = items.filter((i) => i.current && (i.current.kind === "media" || i.current.kind === "design")).length;
+  const production = items.filter((i) => i.current && (i.current.kind === "shooting" || i.current.kind === "media" || i.current.kind === "design")).length;
   const content = items.filter((i) => i.current?.kind === "content").length;
   return (
     <div>

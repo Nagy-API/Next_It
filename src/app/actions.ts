@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { CONTENT_TYPES, PLATFORM_STATUSES, STAGE_KINDS, STAGE_PROGRESS, type StageProgress, type ContentType, type PlatformStatus, type StageKind } from "@/db/schema";
+import { CONTENT_TYPES, PLATFORM_STATUSES, RECURRENCES, STAGE_KINDS, STAGE_PROGRESS, type Recurrence, type StageProgress, type ContentType, type PlatformStatus, type StageKind } from "@/db/schema";
 import { STAGE_META } from "@/domain/workflow";
 import type { Actor } from "@/server/activity";
 import {
@@ -11,7 +11,9 @@ import {
   createProject,
   createUser,
   findOrCreateClient,
+  setAvatar,
   setBrandActive,
+  setProjectDeleted,
   setUserActive,
   setUserPassword,
   updateBrand,
@@ -21,9 +23,12 @@ import {
 } from "@/server/admin";
 import { endSession, requireActor, requireAdmin, startSession } from "@/server/auth";
 import { UserError } from "@/server/errors";
-import { addComment, bulkStageAction, createItems, resolveComment, setItemCancelled, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
+import { createTasks, deleteTask, setTaskDone } from "@/server/tasks";
+import { deleteChatMessage, markChatRead, postChatMessage } from "@/server/chat";
+import { addComment, bulkStageAction, createItems, deleteComment, resolveComment, setItemCancelled, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
 import { checkCredentials } from "@/server/sessions";
 import { markNotificationsRead } from "@/server/stats";
+import { reviewVersion, setShootDetails, submitVersion } from "@/server/workflow";
 import { assignStage, completeStage, handOff, setStageProgress, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
 
 export type ActionResult = { ok: true; message?: string; at: number } | { ok: false; error: string; at: number } | null;
@@ -216,6 +221,13 @@ export async function commentAction(_: ActionResult, fd: FormData): Promise<Acti
   });
 }
 
+export async function deleteCommentAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await deleteComment(actor, str(fd, "commentId"));
+    return "Comment deleted.";
+  });
+}
+
 export async function resolveCommentAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
     const resolved = str(fd, "resolved") !== "0";
@@ -231,7 +243,8 @@ export async function createItemsAction(_: ActionResult, fd: FormData): Promise<
     const rows = JSON.parse(str(fd, "rows") || "[]") as NewItemRow[];
     const platformIds = JSON.parse(str(fd, "platformIds") || "[]") as string[];
     const ids = await createItems(actor, target, rows, {
-      contentAssigneeId: fd.has("contentAssigneeId") ? str(fd, "contentAssigneeId") || null : undefined,
+      // Empty = the default person (brand creator, or the person the project is assigned to).
+      contentAssigneeId: str(fd, "contentAssigneeId") || undefined,
       platformIds,
       contentReady: str(fd, "contentReady") === "1",
       sendWithCanva: str(fd, "sendWithCanva") === "1",
@@ -270,6 +283,7 @@ export async function updateBrandAction(_: ActionResult, fd: FormData): Promise<
     await updateBrand(actor, str(fd, "brandId"), {
       name: fd.has("name") ? str(fd, "name") : undefined,
       defaultCreatorId: fd.has("defaultCreatorId") ? str(fd, "defaultCreatorId") || null : undefined,
+      defaultShootId: fd.has("defaultShootId") ? str(fd, "defaultShootId") || null : undefined,
       defaultMediaId: fd.has("defaultMediaId") ? str(fd, "defaultMediaId") || null : undefined,
       defaultDesignId: fd.has("defaultDesignId") ? str(fd, "defaultDesignId") || null : undefined,
       defaultSocialId: fd.has("defaultSocialId") ? str(fd, "defaultSocialId") || null : undefined,
@@ -292,7 +306,7 @@ export async function createProjectAction(_: ActionResult, fd: FormData): Promis
   let id = "";
   const res = await run(async (actor) => {
     const { client } = await findOrCreateClient(actor, str(fd, "clientName"));
-    const p = await createProject(actor, { clientId: client.id, name: str(fd, "name"), notes: opt(fd, "notes") });
+    const p = await createProject(actor, { clientId: client.id, name: str(fd, "name"), notes: opt(fd, "notes"), ownerId: opt(fd, "ownerId") });
     id = p.id;
   });
   if (res?.ok && id) redirect(`/projects/${id}`);
@@ -301,8 +315,114 @@ export async function createProjectAction(_: ActionResult, fd: FormData): Promis
 
 export async function updateProjectAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
-    await updateProject(actor, str(fd, "projectId"), { name: fd.has("name") ? str(fd, "name") : undefined, notes: opt(fd, "notes") });
+    await updateProject(actor, str(fd, "projectId"), {
+      name: fd.has("name") ? str(fd, "name") : undefined,
+      notes: opt(fd, "notes"),
+      ownerId: fd.has("ownerId") ? str(fd, "ownerId") || null : undefined,
+    });
     return "Project saved.";
+  });
+}
+
+export async function deleteProjectAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  const deleted = str(fd, "deleted") !== "0";
+  const res = await run(async (actor) => {
+    await setProjectDeleted(actor, str(fd, "projectId"), deleted);
+    return deleted ? "Project deleted." : "Project restored.";
+  });
+  if (res?.ok && deleted) redirect("/projects");
+  return res;
+}
+
+/* ------------------------ Versions & shooting ------------------------ */
+
+export async function submitVersionAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const v = await submitVersion(actor, str(fd, "stageId"), { url: str(fd, "url"), note: opt(fd, "note") });
+    return `v${v.number} sent for approval.`;
+  });
+}
+
+export async function reviewVersionAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const approve = str(fd, "decision") === "approve";
+    const r = await reviewVersion(actor, str(fd, "versionId"), { approve, note: opt(fd, "note") });
+    if (!r.approved) return "Sent back for changes — they'll upload the next version.";
+    return r.next ? `Approved and sent to ${r.nextAssignee ?? STAGE_META[r.next].label}.` : "Approved — done.";
+  });
+}
+
+export async function shootAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await setShootDetails(actor, str(fd, "itemId"), {
+      shootDate: opt(fd, "shootDate"),
+      shootTime: opt(fd, "shootTime"),
+      shootDuration: opt(fd, "shootDuration"),
+      shootLocation: opt(fd, "shootLocation"),
+    });
+    return "Shoot saved.";
+  });
+}
+
+/* ------------------------------- Tasks ------------------------------- */
+
+export async function createTaskAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const r = str(fd, "recurrence") as Recurrence;
+    const created = await createTasks(actor, {
+      title: str(fd, "title"),
+      notes: opt(fd, "notes"),
+      assigneeIds: fd.getAll("assigneeId").map(String),
+      brandId: opt(fd, "brandId"),
+      dueDate: opt(fd, "dueDate"),
+      dueTime: opt(fd, "dueTime"),
+      recurrence: RECURRENCES.includes(r) ? r : "none",
+    });
+    return created.length > 1 ? `Task sent to ${created.length} people.` : "Task sent.";
+  });
+}
+
+export async function taskDoneAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const done = str(fd, "done") !== "0";
+    const next = await setTaskDone(actor, str(fd, "taskId"), done);
+    return done ? (next ? "Done! The next one is already scheduled." : "Done — nice work.") : "Reopened.";
+  });
+}
+
+export async function deleteTaskAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await deleteTask(actor, str(fd, "taskId"), { series: str(fd, "series") === "1" });
+    return "Task deleted.";
+  });
+}
+
+/* -------------------------------- Chat -------------------------------- */
+
+export async function chatPostAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await postChatMessage(actor, { body: str(fd, "body"), itemId: opt(fd, "itemId") });
+  });
+}
+
+export async function chatDeleteAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await deleteChatMessage(actor, str(fd, "messageId"));
+  });
+}
+
+export async function chatReadAction(): Promise<void> {
+  const actor = await requireActor();
+  await markChatRead(actor.id);
+}
+
+/* ----------------------------- Profile ------------------------------ */
+
+export async function avatarAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const data = str(fd, "avatar");
+    await setAvatar(actor, str(fd, "userId") || actor.id, data || null);
+    return data ? "Photo updated." : "Photo removed.";
   });
 }
 
@@ -333,6 +453,7 @@ export async function createUserAction(_: ActionResult, fd: FormData): Promise<A
       title: opt(fd, "title"),
       teams: fd.getAll("teams").map(String),
       isAdmin: str(fd, "isAdmin") === "1",
+      isManager: str(fd, "isManager") === "1",
       password: str(fd, "password"),
     });
     return `Account created for ${u.name}. Username: ${u.username}`;
@@ -346,6 +467,7 @@ export async function updateUserAction(_: ActionResult, fd: FormData): Promise<A
       title: opt(fd, "title"),
       teams: fd.getAll("teams").map(String),
       isAdmin: str(fd, "isAdmin") === "1",
+      isManager: str(fd, "isManager") === "1",
     });
     return "Saved.";
   }, true);

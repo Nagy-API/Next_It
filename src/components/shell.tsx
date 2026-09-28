@@ -5,7 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { BarChart3, Briefcase, History, Home, KeyRound, LogOut, Menu, Plus, Search, Settings, Tags, UserRound, Users, X } from "lucide-react";
+import { BarChart3, Briefcase, Camera, History, Home, KeyRound, LogOut, Menu, MessagesSquare, Plus, Search, Settings, Tags, UserRound, Users, X } from "lucide-react";
+import { GiveTaskButton } from "./tasks";
+import { ManagerChip } from "./avatar";
 import { logoutAction } from "@/app/actions";
 import { NotificationBell } from "./bell";
 import { Avatar, btn } from "./ui";
@@ -16,13 +18,19 @@ export function Shell({
   user,
   brands,
   myCount,
+  chatUnread,
   canAdd,
+  taskPeople,
+  taskBrands,
   children,
 }: {
-  user: { name: string; title: string | null; isAdmin: boolean; username: string };
+  user: { name: string; title: string | null; isAdmin: boolean; username: string; manager: boolean };
   brands: NavBrand[];
   myCount: number;
+  chatUnread: number;
   canAdd: boolean;
+  taskPeople: { id: string; name: string; teams: string[] }[];
+  taskBrands: { id: string; name: string }[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -52,10 +60,12 @@ export function Shell({
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 pb-4 pt-2">
+          {user.manager && <GiveTaskButton people={taskPeople} brands={taskBrands} />}
           <NavItem href="/my-work" icon={UserRound} label="My tasks" active={pathname.startsWith("/my-work")} count={myCount} />
           <NavItem href="/overview" icon={Home} label="Overview" active={pathname.startsWith("/overview") || pathname.startsWith("/work")} />
-          <NavItem href="/stats" icon={BarChart3} label="Dashboard" active={pathname.startsWith("/stats")} />
-          <NavItem href="/activity" icon={History} label="Activity log" active={pathname.startsWith("/activity")} />
+          <NavItem href="/chat" icon={MessagesSquare} label="Team chat" active={pathname.startsWith("/chat")} count={pathname.startsWith("/chat") ? 0 : chatUnread} highlight />
+          {user.manager && <NavItem href="/stats" icon={BarChart3} label="Dashboard" active={pathname.startsWith("/stats")} />}
+          {user.manager && <NavItem href="/activity" icon={History} label="Activity log" active={pathname.startsWith("/activity")} />}
 
           <div className="mt-5 mb-1.5 flex items-center justify-between px-3">
             <Link href="/brands" className={clsx("text-[11px] font-semibold uppercase tracking-[0.12em] hover:text-white", pathname === "/brands" ? "text-white" : "text-white/45")}>
@@ -129,7 +139,7 @@ export function Shell({
   );
 }
 
-function NavItem({ href, icon: Icon, label, active, count }: { href: string; icon: typeof Home; label: string; active: boolean; count?: number }) {
+function NavItem({ href, icon: Icon, label, active, count, highlight }: { href: string; icon: typeof Home; label: string; active: boolean; count?: number; highlight?: boolean }) {
   return (
     <Link
       href={href}
@@ -141,13 +151,13 @@ function NavItem({ href, icon: Icon, label, active, count }: { href: string; ico
       <Icon className="size-[18px] shrink-0" strokeWidth={1.9} />
       <span className="flex-1">{label}</span>
       {!!count && (
-        <span className={clsx("rounded-full px-1.5 text-[11px] font-semibold leading-[18px] tabular-nums", active ? "bg-white/25" : "bg-white/12 text-white")}>{count}</span>
+        <span className={clsx("rounded-full px-1.5 text-[11px] font-semibold leading-[18px] tabular-nums", active ? "bg-white/25" : highlight ? "bg-electric text-white" : "bg-white/12 text-white")}>{count}</span>
       )}
     </Link>
   );
 }
 
-function UserMenu({ user }: { user: { name: string; title: string | null; username: string } }) {
+function UserMenu({ user }: { user: { name: string; title: string | null; username: string; manager: boolean } }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -162,11 +172,19 @@ function UserMenu({ user }: { user: { name: string; title: string | null; userna
         <Avatar name={user.name} size={30} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[14px] font-semibold text-white">{user.name}</span>
-          <span className="block truncate text-[12px] text-white/50">{user.title ?? `@${user.username}`}</span>
+          <span className="block truncate text-[12px] text-white/50">{user.manager ? "Manager · " : ""}{user.title ?? `@${user.username}`}</span>
         </span>
       </button>
       {open && (
         <div className="absolute bottom-full left-0 right-0 mb-2 animate-in overflow-hidden rounded-xl border border-line bg-white py-1 text-ink shadow-pop">
+          {user.manager && (
+            <div className="border-b border-line px-3 pb-2 pt-1.5">
+              <ManagerChip />
+            </div>
+          )}
+          <Link href="/settings/account" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-2 text-[14px] hover:bg-canvas">
+            <Camera className="size-4 text-muted" /> My photo
+          </Link>
           <Link href="/settings/account" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-2 text-[14px] hover:bg-canvas">
             <KeyRound className="size-4 text-muted" /> Change password
           </Link>

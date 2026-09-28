@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { closeDb, db } from "@/db";
-import { comments, itemPlatforms, stages } from "@/db/schema";
+import { comments, itemPlatforms, stages, versions } from "@/db/schema";
 import { addComment, createItems, resolveComment, updateItem } from "@/server/items";
 import { createBrand } from "@/server/admin";
-import { completeStage, handOff, setPlatformState } from "@/server/workflow";
+import { completeStage, handOff, reviewVersion, setPlatformState, submitVersion } from "@/server/workflow";
 import { makeBrand, makePlatform, makeUser, uid } from "./helpers";
 
 afterAll(async () => {
@@ -38,8 +38,8 @@ describe("Things that happen by themselves", () => {
     expect((await stagesOf(withoutLink))[0].status).toBe("active");
     await updateItem(king, withoutLink, { canvaUrl: "https://canva.link/later" });
     const b = await stagesOf(withoutLink);
-    expect(b.map((s) => s.status)).toEqual(["done", "active", "waiting"]);
-    expect(b[1].kind).toBe("media");
+    expect(b.map((s) => s.status)).toEqual(["done", "active", "waiting", "waiting"]);
+    expect(b[1].kind).toBe("shooting");
   });
 
   it("whoever submits an unassigned step gets it; pasting a live link publishes the platform", async () => {
@@ -52,9 +52,14 @@ describe("Things that happen by themselves", () => {
       sendWithCanva: true,
       platformIds: [ig.id],
     });
-    const media = (await stagesOf(id))[1];
-    await handOff(jana, media.id, { driveUrl: "https://drive.google.com/r" });
-    expect((await stagesOf(id))[1]).toMatchObject({ assigneeId: jana.id, completedById: jana.id });
+    const shoot = (await stagesOf(id))[1];
+    await handOff(jana, shoot.id);
+    expect((await stagesOf(id))[1]).toMatchObject({ kind: "shooting", assigneeId: jana.id, completedById: jana.id });
+    const media = (await stagesOf(id))[2];
+    await submitVersion(jana, media.id, { url: "https://drive.google.com/r" });
+    expect((await stagesOf(id))[2]).toMatchObject({ assigneeId: jana.id, progress: "waiting_approval" });
+    const [v] = await db.select().from(versions).where(eq(versions.stageId, media.id));
+    await reviewVersion(king, v.id, { approve: true });
 
     await setPlatformState(esraa, id, ig.id, { date: "2026-10-11" });
     let [row] = await db.select().from(itemPlatforms).where(and(eq(itemPlatforms.itemId, id), eq(itemPlatforms.platformId, ig.id)));
@@ -62,7 +67,7 @@ describe("Things that happen by themselves", () => {
     await setPlatformState(esraa, id, ig.id, { liveUrl: "https://instagram.com/p/r" });
     [row] = await db.select().from(itemPlatforms).where(and(eq(itemPlatforms.itemId, id), eq(itemPlatforms.platformId, ig.id)));
     expect(row.status).toBe("published");
-    expect((await stagesOf(id))[2].status).toBe("done");
+    expect((await stagesOf(id))[3].status).toBe("done");
   });
 });
 
@@ -75,8 +80,8 @@ describe("Permissions: each team does its own step", () => {
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "R", type: "reel", canvaUrl: "https://canva.link/r" }], {
       sendWithCanva: true,
     });
-    const media = (await stagesOf(id))[1];
-    await expect(completeStage(gannah, media.id, { driveUrl: "https://drive.google.com/x" })).rejects.toThrow(/permission/);
+    const shoot = (await stagesOf(id))[1];
+    await expect(completeStage(gannah, shoot.id)).rejects.toThrow(/permission/);
     await expect(updateItem(ayman, id, { title: "Renamed" })).rejects.toThrow(/Content team/);
     await expect(createItems(ayman, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "X", type: "reel" }])).rejects.toThrow(/Content team/);
     await expect(createBrand(king, { name: `New ${uid()}` })).rejects.toThrow(/admin/);
