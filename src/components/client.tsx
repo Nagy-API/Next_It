@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useActionState, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useActionState, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useFormStatus } from "react-dom";
 import clsx from "clsx";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
@@ -186,11 +187,41 @@ export function Popover({
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // The panel floats above the page (portal + fixed position), so a card or table edge can never cut it off.
+  const place = useCallback(() => {
+    const b = btnRef.current?.getBoundingClientRect();
+    if (!b) return;
+    const w = Math.min(width, window.innerWidth - 16);
+    let left = align === "right" ? b.right - w : b.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    const h = panelRef.current?.offsetHeight ?? 0;
+    let top = b.bottom + 6;
+    if (h && top + h > window.innerHeight - 8 && b.top - h - 6 >= 8) top = b.top - h - 6;
+    setPos({ top, left });
+  }, [align, width]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    place();
+    const raf = requestAnimationFrame(place); // again once the panel has its height
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, place]);
+
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!btnRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("mousedown", onDoc);
@@ -200,19 +231,23 @@ export function Popover({
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+
   return (
-    <div ref={ref} className={clsx("relative inline-block", className)}>
-      <button type="button" aria-label={label} aria-expanded={open} onClick={() => setOpen((o) => !o)} className={triggerClassName}>
+    <div className={clsx("relative inline-block", className)}>
+      <button ref={btnRef} type="button" aria-label={label} aria-expanded={open} onClick={() => setOpen((o) => !o)} className={triggerClassName}>
         {trigger}
       </button>
-      {open && (
-        <div
-          className={clsx("absolute z-50 mt-1.5 animate-in rounded-xl border border-line bg-white p-3 shadow-pop", align === "right" ? "right-0" : "left-0")}
-          style={{ width }}
-        >
-          {children(() => setOpen(false))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="fixed z-[90] animate-in rounded-xl border border-line bg-white p-3 text-ink shadow-pop"
+            style={{ width: Math.min(width, typeof window === "undefined" ? width : window.innerWidth - 16), top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
+          >
+            {children(() => setOpen(false))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -229,18 +264,19 @@ export function Modal({ open, onClose, title, children, width = 440 }: { open: b
     return () => document.removeEventListener("keydown", k);
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-start justify-center bg-navy-950/40 p-4 pt-[12vh]"
+      className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-navy-950/40 p-4 pt-[10vh]"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
       role="dialog"
       aria-modal="true"
       aria-label={title}
     >
-      <div className="card w-full animate-in p-5 shadow-pop" style={{ maxWidth: width }}>
+      <div className="card mb-10 w-full animate-in p-5 text-ink shadow-pop" style={{ maxWidth: width }}>
         <div className="mb-4 font-display text-[17px] font-bold">{title}</div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

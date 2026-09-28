@@ -4,7 +4,7 @@
  *  - derives timestamps / completing user / next stage automatically,
  *  - writes immutable activity records for everything it changes.
  */
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import {
   brands,
@@ -18,6 +18,7 @@ import {
   stageCompletions,
   stages,
   users,
+  versions,
   type ContentItem,
   type PlatformStatus,
   type Stage,
@@ -32,6 +33,7 @@ import {
   downstreamShift,
   finalLabel,
   handoffTargets,
+  isReviewed,
   lateDaysFor,
   routeAfter,
   shiftedDeadline,
@@ -140,11 +142,11 @@ export async function completeStageTx(
   all: Stage[],
   stage: Stage,
   now: Date,
-  opts: { quiet?: boolean } = {},
+  opts: { quiet?: boolean; /** When the work was actually delivered (e.g. the approved version's upload time). */ deliveredAt?: Date } = {},
 ): Promise<CompleteResult> {
   assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current stage.`);
   const label = STAGE_META[stage.kind].label;
-  const completedDay = cairoDate(now);
+  const completedDay = cairoDate(opts.deliveredAt ?? now);
   const lateDays = lateDaysFor(completedDay, stage.deadline);
 
   // Whoever finishes an unassigned step gets it (and the credit) automatically.
@@ -295,6 +297,7 @@ export async function completeStage(
     if (STAGE_META[stage.kind].needsDriveLink && !ctx.item.driveUrl) {
       throw new UserError("Add the Google Drive link to the final file before submitting.");
     }
+    if (isReviewed(stage.kind)) assert(can.review(actor), APPROVAL_NEEDED);
     if (stage.kind === "social") {
       const rows = await tx.select().from(itemPlatforms).where(eq(itemPlatforms.itemId, ctx.item.id));
       const open = rows.filter((r) => PLATFORM_STATUS_META[r.status].targeted && r.status !== "published");
@@ -688,7 +691,13 @@ async function rerouteTx(tx: Tx, ctx: ItemCtx, all: Stage[], from: Stage, target
 export async function defaultAssigneeTx(tx: Tx, brandId: string | null, kind: StageKind): Promise<string | null> {
   if (brandId) {
     const [b] = await tx.select().from(brands).where(eq(brands.id, brandId));
-    const byKind: Partial<Record<StageKind, string | null>> = { content: b?.defaultCreatorId, media: b?.defaultMediaId, design: b?.defaultDesignId, social: b?.defaultSocialId };
+    const byKind: Partial<Record<StageKind, string | null>> = {
+      content: b?.defaultCreatorId,
+      shooting: b?.defaultShootId,
+      media: b?.defaultMediaId,
+      design: b?.defaultDesignId,
+      social: b?.defaultSocialId,
+    };
     const id = byKind[kind];
     if (id) {
       const [u] = await tx.select({ isActive: users.isActive }).from(users).where(eq(users.id, id));
@@ -727,6 +736,7 @@ export async function handOff(actor: Actor, stageId: string, input: HandOffInput
     if (STAGE_META[stage.kind].needsDriveLink && !ctx.item.driveUrl) {
       throw new UserError("Add the Google Drive link to the final file before sending it on.");
     }
+    if (isReviewed(stage.kind)) assert(can.review(actor), APPROVAL_NEEDED);
     if (input.target) {
       assert(handoffTargets(stage.kind, ctx.context).includes(input.target), "That team can't receive this work from here.");
       all = await rerouteTx(tx, ctx, all, stage, input.target);
@@ -734,6 +744,7 @@ export async function handOff(actor: Actor, stageId: string, input: HandOffInput
     // The person chosen for the next step is set first so the "new task" notification goes to them.
     const me = all.find((s) => s.id === stage.id)!;
     const upcoming = all.find((s) => s.position > me.position);
+    if (input.assigneeId) assert(can.assign(actor), "Only managers choose the person — it goes to the default person or team.");
     if (upcoming && input.assigneeId) {
       await assignStageTx(tx, actor, ctx, upcoming, input.assigneeId, { quiet: true });
       all = await loadStages(tx, ctx.item.id);
@@ -782,6 +793,190 @@ export async function setStageProgress(actor: Actor, stageId: string, progress: 
       newValue: progress,
       summary: `${actor.name} set ${STAGE_META[stage.kind].label} to “${PROGRESS_LABEL[progress]}”.`,
       at: now,
+    });
+    return true;
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Versions: editors / designers send v1, v2… for approval               */
+/* ------------------------------------------------------------------ */
+
+const APPROVAL_NEEDED = "Send it as a version for approval — a manager or the content creator approves it.";
+
+/** Who is asked to review a version: the item's content creator (or project owner), else the managers. */
+async function reviewersFor(tx: Tx, ctx: ItemCtx, all: Stage[]): Promise<string[]> {
+  const content = all.find((s) => s.kind === "content");
+  const ids = [content?.assigneeId ?? content?.completedById];
+  if (ctx.projectId) {
+    const [p] = await tx.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, ctx.projectId));
+    ids.push(p?.ownerId);
+  }
+  const people = ids.filter((x): x is string => !!x);
+  if (people.length) return people;
+  const managers = await tx.select({ id: users.id }).from(users).where(and(eq(users.isActive, true), eq(users.isManager, true)));
+  return managers.map((m) => m.id);
+}
+
+export async function submitVersion(actor: Actor, stageId: string, input: { url: string; note?: string | null; now?: Date }) {
+  return db.transaction(async (tx) => {
+    const now = input.now ?? new Date();
+    const { ctx, all, stage } = await stageWithItem(tx, stageId);
+    ensureOpen(ctx);
+    assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current step.`);
+    assert(isReviewed(stage.kind), "This step doesn't have versions.");
+    assert(can.doStage(actor, stage), NOT_ALLOWED);
+    const url = normalizeUrl(input.url);
+    assert(url, "Paste the Google Drive link to this version.");
+    const [{ n }] = await tx.select({ n: max(versions.number) }).from(versions).where(eq(versions.stageId, stage.id));
+    const number = (n ?? 0) + 1;
+    await tx
+      .update(versions)
+      .set({ status: "replaced" })
+      .where(and(eq(versions.stageId, stage.id), eq(versions.status, "pending")));
+    const note = input.note?.trim() || null;
+    const [v] = await tx
+      .insert(versions)
+      .values({ itemId: ctx.item.id, stageId: stage.id, kind: stage.kind, number, url, note, submittedById: actor.id, submittedAt: now })
+      .returning();
+    await setDriveUrlTx(tx, actor, ctx, url, now);
+    await tx
+      .update(stages)
+      .set({ progress: "waiting_approval", progressAt: now, assigneeId: stage.assigneeId ?? actor.id })
+      .where(eq(stages.id, stage.id));
+    await notify(tx, actor, await reviewersFor(tx, ctx, all), {
+      kind: "review",
+      title: `v${number} ready to approve: ${ctx.item.title}`,
+      body: `${STAGE_META[stage.kind].label} · ${ctx.where} · from ${actor.name}${note ? ` — “${truncate(note, 80)}”` : ""}`,
+      itemId: ctx.item.id,
+      at: now,
+    });
+    await logActivity(tx, actor, {
+      ...refs(ctx),
+      action: "version_submitted",
+      stageKind: stage.kind,
+      field: "version",
+      newValue: `v${number}`,
+      summary: `${actor.name} sent v${number} of ${STAGE_META[stage.kind].label} for approval.`,
+      meta: { url, note },
+      at: now,
+    });
+    return v;
+  });
+}
+
+/** Approve a version (the step finishes and goes on) or ask for changes (a new version opens). */
+export async function reviewVersion(actor: Actor, versionId: string, input: { approve: boolean; note?: string | null; now?: Date }) {
+  return db.transaction(async (tx) => {
+    const now = input.now ?? new Date();
+    const [v] = await tx.select().from(versions).where(eq(versions.id, versionId));
+    assert(v, "Version not found.");
+    const { ctx, all, stage } = await stageWithItem(tx, v.stageId);
+    ensureOpen(ctx);
+    assert(can.review(actor), "Only managers or the Content team can approve versions.");
+    assert(v.status === "pending", `v${v.number} was already ${v.status === "approved" ? "approved" : v.status === "changes" ? "sent back for changes" : "replaced by a newer version"}.`);
+    assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current step.`);
+    const note = input.note?.trim() || null;
+    if (!input.approve) assert(note, "Write what needs to change.");
+    await tx
+      .update(versions)
+      .set({ status: input.approve ? "approved" : "changes", reviewedById: actor.id, reviewedAt: now, reviewNote: note })
+      .where(eq(versions.id, v.id));
+    const label = STAGE_META[stage.kind].label;
+    await logActivity(tx, actor, {
+      ...refs(ctx),
+      action: input.approve ? "version_approved" : "version_changes",
+      stageKind: stage.kind,
+      field: "version",
+      newValue: `v${v.number}`,
+      summary: input.approve
+        ? `${actor.name} approved v${v.number} of ${label}.`
+        : `${actor.name} asked for changes on v${v.number} of ${label}: “${truncate(note!, 140)}”`,
+      at: now,
+    });
+    if (note) {
+      await tx.insert(comments).values({
+        itemId: ctx.item.id,
+        authorId: actor.id,
+        body: note,
+        tag: `v${v.number} · ${input.approve ? "approved" : "changes requested"}`,
+        mentionUserId: input.approve ? null : v.submittedById,
+        createdAt: now,
+      });
+    }
+    if (!input.approve) {
+      await tx.update(stages).set({ progress: "adjusting", progressAt: now }).where(eq(stages.id, stage.id));
+      await notify(tx, actor, [stage.assigneeId ?? v.submittedById], {
+        kind: "sent_back",
+        title: `Changes on v${v.number}: ${ctx.item.title}`,
+        body: `${actor.name}: “${truncate(note!, 120)}” — upload v${v.number + 1} when ready`,
+        itemId: ctx.item.id,
+        at: now,
+      });
+      return { approved: false as const, next: null };
+    }
+    await notify(tx, actor, [stage.assigneeId ?? v.submittedById], {
+      kind: "approved",
+      title: `v${v.number} approved: ${ctx.item.title}`,
+      body: `${actor.name} approved it — it moved on automatically`,
+      itemId: ctx.item.id,
+      at: now,
+    });
+    const r = await completeStageTx(tx, actor, ctx, all, stage, now, { deliveredAt: v.submittedAt });
+    return { approved: true as const, next: r.next, nextAssignee: r.nextAssignee ?? null };
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Pre-production: when and how long the shoot is                        */
+/* ------------------------------------------------------------------ */
+
+export async function setShootDetails(
+  actor: Actor,
+  itemId: string,
+  input: { shootDate?: string | null; shootTime?: string | null; shootDuration?: string | null; shootLocation?: string | null },
+) {
+  return db.transaction(async (tx) => {
+    const ctx = await loadItemCtx(tx, itemId);
+    ensureOpen(ctx);
+    assert(can.planShoot(actor), NOT_ALLOWED);
+    const next = {
+      shootDate: input.shootDate !== undefined ? input.shootDate || null : ctx.item.shootDate,
+      shootTime: input.shootTime !== undefined ? input.shootTime?.trim() || null : ctx.item.shootTime,
+      shootDuration: input.shootDuration !== undefined ? input.shootDuration?.trim() || null : ctx.item.shootDuration,
+      shootLocation: input.shootLocation !== undefined ? input.shootLocation?.trim() || null : ctx.item.shootLocation,
+    };
+    if (next.shootDate) assert(isValidISODate(next.shootDate), "Invalid shoot date.");
+    if (next.shootTime) assert(isValidTime(next.shootTime), "Time must look like 14:30.");
+    const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => next[k] !== ctx.item[k]);
+    if (!changed.length) return false;
+    await tx.update(contentItems).set(next).where(eq(contentItems.id, itemId));
+    const parts = [
+      next.shootDate ? `${formatDay(next.shootDate)}${next.shootTime ? ` ${next.shootTime}` : ""}` : null,
+      next.shootDuration ? `for ${next.shootDuration}` : null,
+      next.shootLocation ? `at ${next.shootLocation}` : null,
+    ].filter(Boolean);
+    const all = await loadStages(tx, itemId);
+    const shoot = all.find((s) => s.kind === "shooting");
+    // Planning the shoot means the step has started.
+    if (shoot?.status === "active" && shoot.progress === "not_started" && next.shootDate) {
+      await tx.update(stages).set({ progress: "processing", progressAt: new Date(), assigneeId: shoot.assigneeId ?? actor.id }).where(eq(stages.id, shoot.id));
+    }
+    const editor = all.find((s) => s.kind === "media");
+    if (next.shootDate) {
+      await notify(tx, actor, [shoot?.assigneeId, editor?.assigneeId], {
+        kind: "deadline",
+        title: `Shoot ${parts.join(" ")}: ${ctx.item.title}`,
+        body: `${ctx.where} · planned by ${actor.name}`,
+        itemId,
+      });
+    }
+    await logActivity(tx, actor, {
+      ...refs(ctx),
+      action: "shoot_planned",
+      stageKind: "shooting",
+      summary: parts.length ? `${actor.name} planned the shoot: ${parts.join(" ")}.` : `${actor.name} cleared the shoot plan.`,
+      meta: next,
     });
     return true;
   });

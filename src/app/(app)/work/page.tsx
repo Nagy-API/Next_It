@@ -45,7 +45,7 @@ export default async function WorkPage({ searchParams }: PageProps<"/work">) {
       <div className="mb-4">
         <FilterBar
           filters={[
-            { name: "stage", label: "Stage", options: (["content", "media", "design", "social", "delivery"] as StageKind[]).map((k) => ({ value: k, label: STAGE_META[k].label })) },
+            { name: "stage", label: "Stage", options: (["content", "shooting", "media", "design", "social", "delivery"] as StageKind[]).map((k) => ({ value: k, label: STAGE_META[k].label })) },
             { name: "person", label: "With", options: [{ value: "none", label: "No owner" }, ...people.map((p) => ({ value: p.id, label: p.name }))] },
             { name: "brand", label: "Brand", options: [...brands.filter((b) => b.isActive).map((b) => ({ value: b.slug, label: b.name })), { value: "projects", label: "One-off projects" }] },
             { name: "type", label: "Type", options: (Object.keys(TYPE_META) as ContentType[]).map((t) => ({ value: t, label: TYPE_META[t].plural })) },

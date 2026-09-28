@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { can } from "@/domain/permissions";
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileSpreadsheet } from "lucide-react";
 import { Delta, Legend, Meter, MonthColumns, STAGE_RAMP, StackedBar } from "@/components/charts";
 import { Avatar, BrandDot, SectionTitle } from "@/components/ui";
 import { TEAM_META } from "@/domain/workflow";
@@ -18,7 +20,8 @@ const STAGE_LEGEND = [
 ];
 
 export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
-  await requireUser();
+  const me = await requireUser();
+  if (!can.seeDashboard(me)) redirect(`/team/${me.username}`);
   const sp = await searchParams;
   const today = todayISO();
   const cur = { year: Number(today.slice(0, 4)), month: Number(today.slice(5, 7)) };
@@ -41,6 +44,10 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
           <h1 className="font-display text-[28px] font-bold tracking-[-0.01em]">Dashboard</h1>
           <p className="mt-1 text-[14px] text-muted">Every brand, every team, every person — counted automatically from the work itself.</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        <a href={`/api/export/dashboard?m=${monthKey(sel.year, sel.month)}`} className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[14px] font-semibold text-ink shadow-card hover:border-[#1d6f42] hover:text-[#1d6f42]">
+          <FileSpreadsheet className="size-4 text-[#1d6f42]" /> Export to Excel
+        </a>
         <div className="flex items-center rounded-xl border border-line bg-white p-1 shadow-card">
           <Link href={`/stats?m=${monthKey(prev.year, prev.month)}`} className="cursor-pointer rounded-lg p-2 text-muted hover:bg-canvas hover:text-ink" aria-label="Previous month">
             <ChevronLeft className="size-4" />
@@ -49,6 +56,7 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
           <Link href={`/stats?m=${monthKey(next.year, next.month)}`} className="cursor-pointer rounded-lg p-2 text-muted hover:bg-canvas hover:text-ink" aria-label="Next month">
             <ChevronRight className="size-4" />
           </Link>
+        </div>
         </div>
       </header>
 

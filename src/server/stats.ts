@@ -99,7 +99,7 @@ export async function getDashboard(year: number, month: number) {
         total: mine.length,
         published: mine.filter((i) => i.completedAt).length,
         social: mine.filter((i) => i.current?.kind === "social").length,
-        production: mine.filter((i) => i.current && (i.current.kind === "media" || i.current.kind === "design")).length,
+        production: mine.filter((i) => i.current && (i.current.kind === "shooting" || i.current.kind === "media" || i.current.kind === "design")).length,
         content: mine.filter((i) => i.current?.kind === "content").length,
         late: mine.filter((i) => i.attention === "overdue").length,
         media: dept(mine, "media"),
@@ -154,10 +154,14 @@ export async function getDashboard(year: number, month: number) {
 /* Notification bell                                                        */
 /* ------------------------------------------------------------------ */
 
-export type Alert = { id: string; tone: "bad" | "warn"; title: string; body: string; itemId: string };
+export type Alert = { id: string; tone: "bad" | "warn"; title: string; body: string; itemId?: string; href?: string };
 
 /** Live reminders computed from the work itself (no need to store them): late / due soon / posting soon. */
-export function alertsFor(open: WorkItem[], user: { id: string; teams: readonly string[]; isAdmin: boolean }): Alert[] {
+export function alertsFor(
+  open: WorkItem[],
+  user: { id: string; teams: readonly string[]; isAdmin: boolean; isManager?: boolean },
+  myTasks: { id: string; title: string; dueDate: string | null; doneAt: Date | null; createdByName: string }[] = [],
+): Alert[] {
   const today = todayISO();
   const out: Alert[] = [];
   for (const i of tasksFor(open, user)) {
@@ -167,7 +171,16 @@ export function alertsFor(open: WorkItem[], user: { id: string; teams: readonly 
       out.push({ id: `due-${c.id}`, tone: "warn", title: `Due ${diffDays(c.deadline, today) === 0 ? "today" : "tomorrow"}: ${i.title}`, body: STAGE_META[c.kind].label, itemId: i.id });
     else if (i.attention === "at_risk") out.push({ id: `risk-${c.id}`, tone: "warn", title: `Posting soon: ${i.title}`, body: `Posts ${formatDay(i.postingDate)} and it's still with ${STAGE_META[c.kind].label}`, itemId: i.id });
   }
-  const manager = user.isAdmin || user.teams.includes("leadership") || user.teams.includes("account");
+  for (const t of myTasks.filter((x) => !x.doneAt && x.dueDate)) {
+    const d = diffDays(t.dueDate!, today);
+    if (d < 0) out.push({ id: `tlate-${t.id}`, tone: "bad", title: `Late task: ${t.title}`, body: `From ${t.createdByName} · was due ${formatDay(t.dueDate)}`, href: "/my-work#tasks" });
+    else if (d <= 1) out.push({ id: `tdue-${t.id}`, tone: "warn", title: `Task due ${d === 0 ? "today" : "tomorrow"}: ${t.title}`, body: `From ${t.createdByName}`, href: "/my-work#tasks" });
+  }
+  // Content posting within 48h that's still on me — highlighted even without a deadline.
+  for (const i of tasksFor(open, user).filter((x) => x.hot && !out.some((a) => a.itemId === x.id))) {
+    out.push({ id: `hot-${i.id}`, tone: "warn", title: `Posts ${i.postingDate === today ? "today" : formatDay(i.postingDate)}: ${i.title}`, body: `Still with ${STAGE_META[i.current!.kind].label} — move it now`, itemId: i.id });
+  }
+  const manager = user.isAdmin || !!user.isManager;
   if (manager) {
     for (const i of open.filter((x) => x.attention === "overdue" && !tasksFor([x], user).length).slice(0, 10)) {
       const c = i.current!;
@@ -185,6 +198,7 @@ export async function getNotifications(userId: string, limit = 30) {
       title: notifications.title,
       body: notifications.body,
       itemId: notifications.itemId,
+      href: notifications.href,
       createdAt: notifications.createdAt,
       readAt: notifications.readAt,
       actorName: users.name,

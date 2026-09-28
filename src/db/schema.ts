@@ -26,8 +26,11 @@ export const teamEnum = pgEnum("team", TEAMS);
 export const CONTENT_TYPES = ["reel", "static", "carousel", "story"] as const;
 export const contentTypeEnum = pgEnum("content_type", CONTENT_TYPES);
 
-/** A workflow stage. `delivery` is the final hand-over step for one-off project work. */
-export const STAGE_KINDS = ["content", "media", "design", "social", "delivery"] as const;
+/**
+ * A workflow stage. `shooting` = pre-production, `media` = post-production (editing).
+ * `delivery` is the final hand-over step for one-off project work.
+ */
+export const STAGE_KINDS = ["content", "shooting", "media", "design", "social", "delivery"] as const;
 export const stageKindEnum = pgEnum("stage_kind", STAGE_KINDS);
 
 /** waiting = previous stage not delivered yet, active = current stage, done = completed. */
@@ -54,6 +57,13 @@ export const users = pgTable("users", {
   title: text("title"),
   teams: teamEnum("teams").array().notNull().default(sql`'{}'::team[]`),
   isAdmin: boolean("is_admin").notNull().default(false),
+  /** Managers assign work, set deadlines, see the dashboard and the activity log. */
+  isManager: boolean("is_manager").notNull().default(false),
+  /** Profile photo as a small data URL (resized in the browser before upload). */
+  avatar: text("avatar"),
+  avatarUpdatedAt: ts("avatar_updated_at"),
+  /** Last time this person opened Team chat (for the unread badge). */
+  chatReadAt: ts("chat_read_at"),
   isActive: boolean("is_active").notNull().default(true),
   passwordHash: text("password_hash").notNull(),
   createdAt: ts("created_at").notNull().defaultNow(),
@@ -87,6 +97,7 @@ export const brands = pgTable("brands", {
   isActive: boolean("is_active").notNull().default(true),
   defaultCreatorId: uuid("default_creator_id").references(() => users.id),
   /** Default people for the other teams on this brand (work goes straight to them; can be changed per item). */
+  defaultShootId: uuid("default_shoot_id").references(() => users.id),
   defaultMediaId: uuid("default_media_id").references(() => users.id),
   defaultDesignId: uuid("default_design_id").references(() => users.id),
   defaultSocialId: uuid("default_social_id").references(() => users.id),
@@ -137,8 +148,11 @@ export const projects = pgTable(
       .references(() => clients.id),
     name: text("name").notNull(),
     notes: text("notes"),
+    /** The content creator responsible for this project (default for its content steps). */
+    ownerId: uuid("owner_id").references(() => users.id),
     createdAt: ts("created_at").notNull().defaultNow(),
     createdById: uuid("created_by_id").references(() => users.id),
+    deletedAt: ts("deleted_at"),
   },
   (t) => [index("projects_client_idx").on(t.clientId)],
 );
@@ -162,6 +176,11 @@ export const contentItems = pgTable(
     postingTime: text("posting_time"),
     /** Slide/page number in the month's Canva presentation. */
     slideNumber: integer("slide_number"),
+    /** Pre-production: when and how long the shoot is. */
+    shootDate: date("shoot_date", { mode: "string" }),
+    shootTime: text("shoot_time"),
+    shootDuration: text("shoot_duration"),
+    shootLocation: text("shoot_location"),
     completedAt: ts("completed_at"),
     cancelledAt: ts("cancelled_at"),
     cancelledById: uuid("cancelled_by_id").references(() => users.id),
@@ -302,6 +321,7 @@ export const comments = pgTable(
     resolvedAt: ts("resolved_at"),
     resolvedById: uuid("resolved_by_id").references(() => users.id),
     createdAt: ts("created_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
   },
   (t) => [
     index("comments_item_idx").on(t.itemId, t.createdAt),
@@ -357,11 +377,100 @@ export const notifications = pgTable(
     title: text("title").notNull(),
     body: text("body"),
     itemId: uuid("item_id").references(() => contentItems.id),
+    /** Where the notification opens when it isn't about a content item (e.g. /chat, /my-work). */
+    href: text("href"),
     actorId: uuid("actor_id").references(() => users.id),
     createdAt: ts("created_at").notNull().defaultNow(),
     readAt: ts("read_at"),
   },
   (t) => [index("notifications_user_idx").on(t.userId, t.readAt, t.createdAt)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Versions (post-production & design): v1, v2… each approved or not    */
+/* ------------------------------------------------------------------ */
+
+export const VERSION_STATUSES = ["pending", "approved", "changes", "replaced"] as const;
+
+export const versions = pgTable(
+  "versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => contentItems.id),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => stages.id),
+    kind: stageKindEnum("kind").notNull(),
+    number: integer("number").notNull(),
+    url: text("url").notNull(),
+    note: text("note"),
+    submittedById: uuid("submitted_by_id")
+      .notNull()
+      .references(() => users.id),
+    submittedAt: ts("submitted_at").notNull().defaultNow(),
+    /** pending → approved | changes (rejected with a note) | replaced (a newer version was sent first) */
+    status: text("status").notNull().default("pending"),
+    reviewedById: uuid("reviewed_by_id").references(() => users.id),
+    reviewedAt: ts("reviewed_at"),
+    reviewNote: text("review_note"),
+  },
+  (t) => [uniqueIndex("versions_stage_number_uq").on(t.stageId, t.number), index("versions_item_idx").on(t.itemId)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Tasks managers give to anyone (one-off or repeating)                  */
+/* ------------------------------------------------------------------ */
+
+export const RECURRENCES = ["none", "daily", "weekly", "monthly"] as const;
+
+export const tasks = pgTable(
+  "tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    notes: text("notes"),
+    assigneeId: uuid("assignee_id")
+      .notNull()
+      .references(() => users.id),
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    brandId: uuid("brand_id").references(() => brands.id),
+    dueDate: date("due_date", { mode: "string" }),
+    dueTime: text("due_time"),
+    /** none | daily | weekly | monthly — finishing a repeating task creates the next one automatically. */
+    recurrence: text("recurrence").notNull().default("none"),
+    /** All occurrences of a repeating task share the first one's id. */
+    seriesId: uuid("series_id"),
+    doneAt: ts("done_at"),
+    doneById: uuid("done_by_id").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("tasks_assignee_idx").on(t.assigneeId, t.doneAt), index("tasks_creator_idx").on(t.createdById)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Team chat                                                             */
+/* ------------------------------------------------------------------ */
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id),
+    body: text("body").notNull(),
+    mentions: uuid("mentions").array().notNull().default(sql`'{}'::uuid[]`),
+    /** Optional link to a content item the message is about. */
+    itemId: uuid("item_id").references(() => contentItems.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("chat_created_idx").on(t.createdAt)],
 );
 
 export type User = typeof users.$inferSelect;
@@ -376,3 +485,6 @@ export type StageKind = (typeof STAGE_KINDS)[number];
 export type StageStatus = (typeof STAGE_STATUSES)[number];
 export type PlatformStatus = (typeof PLATFORM_STATUSES)[number];
 export type StageProgress = (typeof STAGE_PROGRESS)[number];
+export type Version = typeof versions.$inferSelect;
+export type Task = typeof tasks.$inferSelect;
+export type Recurrence = (typeof RECURRENCES)[number];

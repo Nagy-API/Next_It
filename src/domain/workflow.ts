@@ -12,7 +12,8 @@ export const STAGE_META: Record<
   { label: string; short: string; team: Team | null; completeLabel: string; needsDriveLink: boolean }
 > = {
   content: { label: "Content", short: "Content", team: "content", completeLabel: "Content is ready", needsDriveLink: false },
-  media: { label: "Media Production", short: "Media", team: "media", completeLabel: "Submit final video", needsDriveLink: true },
+  shooting: { label: "Pre-production", short: "Shooting", team: "media", completeLabel: "Shooting done", needsDriveLink: false },
+  media: { label: "Post-production", short: "Editing", team: "media", completeLabel: "Submit final video", needsDriveLink: true },
   design: { label: "Graphic Design", short: "Design", team: "design", completeLabel: "Submit design", needsDriveLink: true },
   social: { label: "Social Media", short: "Social", team: "social", completeLabel: "Mark as published", needsDriveLink: false },
   delivery: { label: "Delivery", short: "Delivery", team: null, completeLabel: "Mark as delivered", needsDriveLink: false },
@@ -47,7 +48,7 @@ export const PLATFORM_STATUS_META: Record<PlatformStatus, { label: string; targe
  * monthly brand content (published by NEXORA) or one-off project work (delivered to the client).
  */
 export function routeFor(type: ContentType, context: WorkContext): StageKind[] {
-  const production: StageKind[] = type === "reel" ? ["media"] : type === "story" ? [] : ["design"];
+  const production: StageKind[] = type === "reel" ? ["shooting", "media"] : type === "story" ? [] : ["design"];
   const finish: StageKind = context === "plan" ? "social" : "delivery";
   return ["content", ...production, finish];
 }
@@ -58,7 +59,8 @@ export function routeFor(type: ContentType, context: WorkContext): StageKind[] {
  */
 export function handoffTargets(from: StageKind, context: WorkContext): StageKind[] {
   const final: StageKind = context === "plan" ? "social" : "delivery";
-  if (from === "content") return ["media", "design", final];
+  if (from === "content") return ["shooting", "media", "design", final];
+  if (from === "shooting") return ["media"];
   if (from === "media" || from === "design") return [final];
   return [];
 }
@@ -66,7 +68,14 @@ export function handoffTargets(from: StageKind, context: WorkContext): StageKind
 /** The route after `from` when work is sent to `target`. */
 export function routeAfter(target: StageKind, context: WorkContext): StageKind[] {
   const final: StageKind = context === "plan" ? "social" : "delivery";
-  return target === final ? [final] : [target, final];
+  if (target === final) return [final];
+  if (target === "shooting") return ["shooting", "media", final];
+  return [target, final];
+}
+
+/** Steps whose output is a file that goes through versions (v1, v2…) and approval. */
+export function isReviewed(kind: StageKind) {
+  return kind === "media" || kind === "design";
 }
 
 export function finalLabel(context: WorkContext): string {

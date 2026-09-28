@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/server/auth";
+import { isManager } from "@/domain/permissions";
 
-/** Managers land on the company overview; everyone else lands on their own tasks. */
+/** Managers land on the overview; everyone else lands on their own tasks. */
 export default async function Landing() {
   const user = await requireUser();
-  const manager = user.isAdmin || user.teams.includes("leadership") || user.teams.includes("account");
-  redirect(manager ? "/overview" : "/my-work");
+  redirect(isManager(user) ? "/overview" : "/my-work");
 }

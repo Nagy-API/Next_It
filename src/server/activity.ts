@@ -2,7 +2,7 @@ import { activityLog, type StageKind } from "@/db/schema";
 import type { Tx } from "@/db";
 
 /** Who is making a change. `isAdmin` unlocks the few admin-only operations (e.g. changing a set deadline). */
-export type Actor = { id: string; name: string; isAdmin?: boolean; teams?: readonly string[] };
+export type Actor = { id: string; name: string; isAdmin?: boolean; isManager?: boolean; teams?: readonly string[] };
 
 export type LogEntry = {
   action: string;

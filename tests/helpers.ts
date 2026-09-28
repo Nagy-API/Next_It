@@ -6,13 +6,16 @@ import { brands, platforms, users, type Team } from "@/db/schema";
 /** Tests never delete data (the activity log is append-only), so every fixture gets a unique suffix. */
 export const uid = () => randomBytes(4).toString("hex");
 
-export async function makeUser(name: string, teams: Team[] = [], isAdmin = false) {
+export async function makeUser(name: string, teams: Team[] = [], isAdmin = false, isManager = false) {
   const [u] = await db
     .insert(users)
-    .values({ username: `${name.toLowerCase()}-${uid()}`, name, teams, isAdmin, passwordHash: "x" })
+    .values({ username: `${name.toLowerCase()}-${uid()}`, name, teams, isAdmin, isManager, passwordHash: "x" })
     .returning();
-  return { id: u.id, name: u.name, teams: u.teams, isAdmin: u.isAdmin };
+  return { id: u.id, name: u.name, teams: u.teams, isAdmin: u.isAdmin, isManager: u.isManager };
 }
+
+/** A manager (Ammar, Ayman, Assem…): gives tasks, chooses people, sets deadlines, approves versions. */
+export const makeManager = (name: string, teams: Team[] = []) => makeUser(name, teams, false, true);
 
 export async function makeBrand(name: string, defaultCreatorId: string) {
   const s = uid();

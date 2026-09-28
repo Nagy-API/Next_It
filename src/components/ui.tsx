@@ -58,40 +58,8 @@ export function Badge({ tone = "neutral", children, className, icon: Icon, title
 
 /* ------------------------------- People ------------------------------ */
 
-const AVATAR_COLORS = ["#3B82F6", "#E0569B", "#10B981", "#F59E0B", "#8B5CF6", "#06B6D4", "#EF4444", "#0EA5E9", "#F97316", "#14B8A6"];
-export function personColor(name: string) {
-  let h = 0;
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
-
-export function Avatar({ name, size = 24, className, ring }: { name: string | null | undefined; size?: number; className?: string; ring?: boolean }) {
-  if (!name)
-    return (
-      <span
-        title="Unassigned"
-        className={clsx("inline-flex shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong bg-white text-faint", className)}
-        style={{ width: size, height: size, fontSize: size * 0.42 }}
-      >
-        ?
-      </span>
-    );
-  const initials = name
-    .split(/\s+/)
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  return (
-    <span
-      title={name}
-      className={clsx("inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white", ring && "ring-2 ring-white", className)}
-      style={{ width: size, height: size, fontSize: Math.max(9, size * 0.4), background: personColor(name) }}
-    >
-      {initials}
-    </span>
-  );
-}
+export { Avatar, ManagerChip, personColor } from "./avatar";
+import { Avatar } from "./avatar";
 
 export function Person({ name, size = 22, muted }: { name: string | null | undefined; size?: number; muted?: boolean }) {
   return (

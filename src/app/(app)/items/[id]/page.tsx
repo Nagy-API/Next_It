@@ -10,9 +10,10 @@ import { requireUser } from "@/server/auth";
 import { getActivePeople } from "@/server/cached";
 import { getItemDetail, type StageView } from "@/server/queries";
 import { Comments } from "@/components/comments";
-import { can } from "@/domain/permissions";
+import { can, isManager } from "@/domain/permissions";
 import { AssignSelect, CancelToggle, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, PlatformRow, SendBack } from "./parts";
-import { DeliverButton, DeliveryTimes, HandOffPanel, ProgressPicker, TakeButton } from "@/components/handoff";
+import { DeliverButton, DeliveryTimes, HandOffPanel, HotBadge, ProgressPicker, ShootSummary, TakeButton, VersionPanel } from "@/components/handoff";
+import { isReviewed } from "@/domain/workflow";
 
 export async function generateMetadata({ params }: PageProps<"/items/[id]">) {
   const d = await getItemDetail((await params).id);
@@ -45,6 +46,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
   // What this person is allowed to do here.
   const may = {
     doCurrent: !!cur && can.doStage(me, { kind: cur.kind, assigneeId: cur.assignee?.id }),
+    review: can.review(me),
     assign: !!cur && can.assign(me, cur),
     deadline: can.setDeadline(me),
     changeDeadline: can.changeDeadline(me),
@@ -75,6 +77,8 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
               </span>
             )}
             {item.slideNumber && <span className="rounded-md bg-[#f1e8fd] px-1.5 py-0.5 text-[12px] font-bold text-[#6d28d9]">Slide {item.slideNumber}</span>}
+            <HotBadge item={item} today={today} />
+            <ShootSummary shoot={item.shoot} />
             {item.cancelledAt && <Badge tone="bad">Deleted</Badge>}
             {item.completedAt && <Badge tone="ok" icon={CheckCircle2}>{finalLabel(item.context)}</Badge>}
           </div>
@@ -135,7 +139,17 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                 </div>
               )}
               <div className="space-y-5 p-5">
-                {!may.doCurrent ? (
+                {isReviewed(cur.kind) ? (
+                  <div className="space-y-5">
+                    {may.doCurrent && (
+                      <div>
+                        <div className="label">Where are you with it?</div>
+                        <ProgressPicker stage={cur} />
+                      </div>
+                    )}
+                    <VersionPanel item={item} stage={cur} canDo={may.doCurrent} canReview={may.review} />
+                  </div>
+                ) : !may.doCurrent ? (
                   <p className="text-[14px] text-ink-2">
                     This step belongs to the <b>{STAGE_META[cur.kind].label}</b> team. You&rsquo;ll see it move here as soon as they finish. Need something from them? Write them a comment.
                   </p>
@@ -163,7 +177,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                       <div className="label">Where are you with it?</div>
                       <ProgressPicker stage={cur} />
                     </div>
-                    <HandOffPanel item={item} stageId={cur.id} from={cur.kind} people={pickPeople} canDeadline={may.deadline} />
+                    <HandOffPanel item={item} stageId={cur.id} from={cur.kind} people={pickPeople} rights={{ deadline: may.deadline, assign: may.assign, review: may.review }} />
                   </div>
                 )}
                 <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-line pt-4">
@@ -201,6 +215,24 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                 <div className="text-[13px] text-muted">Finished {formatDateTime(item.completedAt)}</div>
               </div>
               {backTargets.length > 0 && <SendBack itemId={item.id} targets={backTargets} label={item.context === "project" ? "Client wants changes" : "Reopen / send back"} />}
+            </section>
+          )}
+
+          {/* ---------------- Versions of finished steps ---------------- */}
+          {item.versions.some((v) => !cur || v.kind !== cur.kind) && (
+            <section className="card p-5">
+              <h2 className="mb-1 font-display text-[15px] font-bold">Versions</h2>
+              {(["media", "design"] as const)
+                .filter((k) => item.versions.some((v) => v.kind === k) && (!cur || cur.kind !== k))
+                .map((k) => {
+                  const st = item.stages.find((s) => s.kind === k);
+                  return st ? (
+                    <div key={k} className="mt-2">
+                      <div className="text-[12.5px] font-semibold text-muted">{STAGE_META[k].label}</div>
+                      <VersionPanel item={item} stage={st} canDo={false} canReview={false} readOnly />
+                    </div>
+                  ) : null;
+                })}
             </section>
           )}
 
@@ -258,7 +290,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
             <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
               <MessageSquare className="size-4 text-electric" /> Comments
             </h2>
-            <Comments itemId={item.id} comments={comments} people={people.map((p) => ({ id: p.id, name: p.name }))} meId={me.id} isAdmin={me.isAdmin} />
+            <Comments itemId={item.id} comments={comments} people={people.map((p) => ({ id: p.id, name: p.name }))} meId={me.id} isAdmin={isManager(me)} />
           </section>
           <details className="card group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">

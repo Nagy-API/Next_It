@@ -6,7 +6,7 @@ import { brands, clients, platforms, projects, sessions, users, type Team, TEAMS
 import { TEAM_META } from "@/domain/workflow";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
-import { can } from "@/domain/permissions";
+import { can, isManager } from "@/domain/permissions";
 
 const ADMIN_ONLY = "Only an admin (Shahenda or IT) can change settings.";
 
@@ -62,6 +62,7 @@ export async function updateBrand(
   input: {
     name?: string;
     defaultCreatorId?: string | null;
+    defaultShootId?: string | null;
     defaultMediaId?: string | null;
     defaultDesignId?: string | null;
     defaultSocialId?: string | null;
@@ -86,7 +87,8 @@ export async function updateBrand(
     const nm = (id: string | null) => names.find((u) => u.id === id)?.name ?? null;
     const DEFAULT_FIELDS = [
       ["defaultCreatorId", "content creator"],
-      ["defaultMediaId", "media person"],
+      ["defaultShootId", "shooting (pre-production) person"],
+      ["defaultMediaId", "editor (post-production)"],
       ["defaultDesignId", "graphic designer"],
       ["defaultSocialId", "social media person"],
     ] as const;
@@ -148,20 +150,30 @@ export async function findOrCreateClient(actor: Actor, name: string) {
   });
 }
 
-export async function createProject(actor: Actor, input: { clientId: string; name: string; notes?: string | null }) {
+export async function createProject(actor: Actor, input: { clientId: string; name: string; notes?: string | null; ownerId?: string | null }) {
   assert(can.manageProjects(actor), "Only the Content team or managers can create projects.");
   const name = input.name.trim();
   assert(name, "Project name is required.");
   return db.transaction(async (tx) => {
     const [c] = await tx.select().from(clients).where(eq(clients.id, input.clientId));
     assert(c, "Client not found.");
-    const [p] = await tx.insert(projects).values({ clientId: c.id, name, notes: input.notes?.trim() || null, createdById: actor.id }).returning();
-    await logActivity(tx, actor, { action: "project_created", clientId: c.id, projectId: p.id, summary: `${actor.name} created the project “${name}” for ${c.name}.` });
+    const [p] = await tx
+      .insert(projects)
+      .values({ clientId: c.id, name, notes: input.notes?.trim() || null, ownerId: input.ownerId || null, createdById: actor.id })
+      .returning();
+    const [owner] = input.ownerId ? await tx.select({ name: users.name }).from(users).where(eq(users.id, input.ownerId)) : [];
+    await logActivity(tx, actor, {
+      action: "project_created",
+      clientId: c.id,
+      projectId: p.id,
+      subjectUserId: input.ownerId || null,
+      summary: `${actor.name} created the project “${name}” for ${c.name}${owner ? `, assigned to ${owner.name}` : ""}.`,
+    });
     return p;
   });
 }
 
-export async function updateProject(actor: Actor, projectId: string, input: { name?: string; notes?: string | null }) {
+export async function updateProject(actor: Actor, projectId: string, input: { name?: string; notes?: string | null; ownerId?: string | null }) {
   assert(can.manageProjects(actor), "Only the Content team or managers can edit projects.");
   return db.transaction(async (tx) => {
     const [p] = await tx.select().from(projects).where(eq(projects.id, projectId));
@@ -170,10 +182,39 @@ export async function updateProject(actor: Actor, projectId: string, input: { na
       await tx.update(projects).set({ name: input.name.trim() }).where(eq(projects.id, projectId));
       await logActivity(tx, actor, { action: "project_updated", clientId: p.clientId, projectId, field: "name", oldValue: p.name, newValue: input.name.trim(), summary: `${actor.name} renamed the project “${p.name}” to “${input.name.trim()}”.` });
     }
+    if (input.ownerId !== undefined && (input.ownerId || null) !== p.ownerId) {
+      const [owner] = input.ownerId ? await tx.select({ name: users.name }).from(users).where(eq(users.id, input.ownerId)) : [];
+      await tx.update(projects).set({ ownerId: input.ownerId || null }).where(eq(projects.id, projectId));
+      await logActivity(tx, actor, {
+        action: "project_updated",
+        clientId: p.clientId,
+        projectId,
+        field: "owner",
+        subjectUserId: input.ownerId || null,
+        summary: `${actor.name} assigned the project “${p.name}” to ${owner?.name ?? "nobody"}.`,
+      });
+    }
     if (input.notes !== undefined && (input.notes?.trim() || null) !== p.notes) {
       await tx.update(projects).set({ notes: input.notes?.trim() || null }).where(eq(projects.id, projectId));
       await logActivity(tx, actor, { action: "project_updated", clientId: p.clientId, projectId, field: "notes", summary: `${actor.name} updated the notes on “${p.name}”.` });
     }
+  });
+}
+
+/** Delete a project (hidden with all its items; history is kept). Managers, or whoever created it. */
+export async function setProjectDeleted(actor: Actor, projectId: string, deleted: boolean) {
+  return db.transaction(async (tx) => {
+    const [p] = await tx.select().from(projects).where(eq(projects.id, projectId));
+    assert(p, "Project not found.");
+    assert(isManager(actor) || p.createdById === actor.id, "Only managers or the person who created it can delete a project.");
+    if (!!p.deletedAt === deleted) return;
+    await tx.update(projects).set({ deletedAt: deleted ? new Date() : null }).where(eq(projects.id, projectId));
+    await logActivity(tx, actor, {
+      action: deleted ? "project_deleted" : "project_restored",
+      clientId: p.clientId,
+      projectId,
+      summary: `${actor.name} ${deleted ? "deleted" : "restored"} the project “${p.name}”.`,
+    });
   });
 }
 
@@ -232,7 +273,7 @@ function cleanTeams(teams: string[] | undefined): Team[] {
 
 export async function createUser(
   actor: Actor,
-  input: { username: string; name: string; title?: string | null; teams?: string[]; isAdmin?: boolean; password: string },
+  input: { username: string; name: string; title?: string | null; teams?: string[]; isAdmin?: boolean; isManager?: boolean; password: string },
 ) {
   const username = input.username.trim().toLowerCase();
   assert(USERNAME_RE.test(username), "Usernames use 2–32 lowercase letters, numbers, dots, dashes or underscores.");
@@ -246,7 +287,7 @@ export async function createUser(
   return db.transaction(async (tx) => {
     const [u] = await tx
       .insert(users)
-      .values({ username, name, title: input.title?.trim() || null, teams, isAdmin: !!input.isAdmin, passwordHash })
+      .values({ username, name, title: input.title?.trim() || null, teams, isAdmin: !!input.isAdmin, isManager: !!input.isManager, passwordHash })
       .returning();
     await logActivity(tx, actor, {
       action: "user_created",
@@ -260,7 +301,7 @@ export async function createUser(
 export async function updateUser(
   actor: Actor,
   userId: string,
-  input: { name?: string; title?: string | null; teams?: string[]; isAdmin?: boolean },
+  input: { name?: string; title?: string | null; teams?: string[]; isAdmin?: boolean; isManager?: boolean },
 ) {
   return db.transaction(async (tx) => {
     const [u] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
@@ -286,6 +327,10 @@ export async function updateUser(
       if (!input.isAdmin) await assertAnotherAdmin(userId);
       set.isAdmin = input.isAdmin;
       changes.push(input.isAdmin ? "granted account administration" : "removed account administration");
+    }
+    if (input.isManager !== undefined && input.isManager !== u.isManager) {
+      set.isManager = input.isManager;
+      changes.push(input.isManager ? "made a manager" : "no longer a manager");
     }
     if (!changes.length) return;
     await tx.update(users).set(set).where(eq(users.id, userId));
@@ -314,6 +359,25 @@ export async function setUserActive(actor: Actor, userId: string, active: boolea
       action: active ? "user_reactivated" : "user_deactivated",
       subjectUserId: userId,
       summary: active ? `${actor.name} reactivated ${u.name}'s account.` : `${actor.name} deactivated ${u.name}'s account. Their work history is kept.`,
+    });
+  });
+}
+
+/** Profile photo: a small image data URL (the browser resizes it before upload). null removes it. */
+export async function setAvatar(actor: Actor, userId: string, dataUrl: string | null) {
+  assert(actor.id === userId || actor.isAdmin, "You can only change your own photo.");
+  if (dataUrl) {
+    assert(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(dataUrl), "That file isn't a photo (use JPG or PNG).");
+    assert(dataUrl.length < 400_000, "That photo is too big — pick a smaller one.");
+  }
+  return db.transaction(async (tx) => {
+    const [u] = await tx.select({ name: users.name }).from(users).where(eq(users.id, userId));
+    assert(u, "User not found.");
+    await tx.update(users).set({ avatar: dataUrl, avatarUpdatedAt: dataUrl ? new Date() : null }).where(eq(users.id, userId));
+    await logActivity(tx, actor, {
+      action: "user_updated",
+      subjectUserId: userId,
+      summary: `${actor.name} ${dataUrl ? "updated" : "removed"} ${actor.id === userId ? "their" : `${u.name}'s`} profile photo.`,
     });
   });
 }

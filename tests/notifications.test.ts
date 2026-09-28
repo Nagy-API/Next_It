@@ -6,7 +6,7 @@ import { addComment, createItems, setPlanLinks } from "@/server/items";
 import { handOff, returnToStage, setStageDeadline, setStageProgress } from "@/server/workflow";
 import { getNotifications, markNotificationsRead } from "@/server/stats";
 import { slideLink } from "@/server/queries";
-import { makeBrand, makeUser } from "./helpers";
+import { makeBrand, makeManager, makeUser } from "./helpers";
 
 afterAll(async () => {
   await closeDb();
@@ -60,7 +60,7 @@ describe("Notifications for the things people wait on", () => {
   it("sent back → the person is told and the step shows Adjusting; deadlines and comments notify too", async () => {
     const king = await makeUser("King", ["content"]);
     const ayman = await makeUser("Ayman", ["media"]);
-    const assem = await makeUser("Assem", ["account"]);
+    const assem = await makeManager("Assem", ["account"]);
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 11 }, [{ title: "Hook", type: "reel" }], { contentReady: true });
     const media = (await stagesOf(id))[1];

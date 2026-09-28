@@ -21,14 +21,14 @@ export async function createSession(userId: string) {
   return { token, expiresAt };
 }
 
-export type SessionUser = Pick<User, "id" | "username" | "name" | "title" | "teams" | "isAdmin">;
+export type SessionUser = Pick<User, "id" | "username" | "name" | "title" | "teams" | "isAdmin" | "isManager"> & { hasAvatar: boolean };
 
 export async function validateSession(token: string): Promise<{ user: SessionUser; renewedExpiry: Date | null } | null> {
   const id = hashToken(token);
   const [row] = await db
     .select({
       expiresAt: sessions.expiresAt,
-      user: { id: users.id, username: users.username, name: users.name, title: users.title, teams: users.teams, isAdmin: users.isAdmin, isActive: users.isActive },
+      user: { id: users.id, username: users.username, name: users.name, title: users.title, teams: users.teams, isAdmin: users.isAdmin, isManager: users.isManager, isActive: users.isActive, avatarUpdatedAt: users.avatarUpdatedAt },
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
@@ -40,7 +40,7 @@ export async function validateSession(token: string): Promise<{ user: SessionUse
     await db.update(sessions).set({ expiresAt: renewedExpiry }).where(eq(sessions.id, id));
   }
   const u = row.user;
-  return { user: { id: u.id, username: u.username, name: u.name, title: u.title, teams: u.teams, isAdmin: u.isAdmin }, renewedExpiry };
+  return { user: { id: u.id, username: u.username, name: u.name, title: u.title, teams: u.teams, isAdmin: u.isAdmin, isManager: u.isManager, hasAvatar: !!u.avatarUpdatedAt }, renewedExpiry };
 }
 
 export async function deleteSession(token: string) {

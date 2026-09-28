@@ -19,7 +19,8 @@ import { STAGE_META, TYPE_META, routeFor } from "@/domain/workflow";
 import { formatDay, isValidISODate, isValidTime, monthLabel, plural } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
-import { NOT_ALLOWED, can } from "@/domain/permissions";
+import { NOT_ALLOWED, can, isManager } from "@/domain/permissions";
+import { findMentions } from "./chat";
 import { notify, stageAudience } from "./notify";
 import {
   defaultAssigneeTx,
@@ -112,19 +113,20 @@ export async function createItems(
       where = `${brand.name} · ${monthLabel(target.year, target.month)}`;
     } else {
       const [p] = await tx
-        .select({ id: projects.id, name: projects.name, clientName: clients.name, clientId: clients.id })
+        .select({ id: projects.id, name: projects.name, clientName: clients.name, clientId: clients.id, ownerId: projects.ownerId })
         .from(projects)
         .innerJoin(clients, eq(clients.id, projects.clientId))
         .where(eq(projects.id, target.projectId));
       assert(p, "Project not found.");
       projectId = p.id;
       clientId = p.clientId;
+      defaultCreator = p.ownerId;
       where = `${p.clientName} · ${p.name}`;
     }
     const contentAssignee = options.contentAssigneeId !== undefined ? options.contentAssigneeId : defaultCreator;
     // Default people per team for this brand (or the team's only member) — work goes straight to them.
     const defaults: Partial<Record<StageKind, string | null>> = { content: contentAssignee };
-    for (const k of ["media", "design", "social", "delivery"] as StageKind[]) defaults[k] = await defaultAssigneeTx(tx, brandId, k);
+    for (const k of ["shooting", "media", "design", "social", "delivery"] as StageKind[]) defaults[k] = await defaultAssigneeTx(tx, brandId, k);
     // Slide numbers continue after the last one already in this month's Canva presentation.
     let nextSlide = 1;
     if (planId) {
@@ -376,6 +378,12 @@ export async function addComment(
       assert(to, "That person doesn't exist.");
     }
     await tx.insert(comments).values({ itemId, authorId: actor.id, body: text, parentId: parent?.id ?? null, mentionUserId: to?.id ?? null });
+    // @Name anywhere in the text notifies that person too.
+    const people = await tx.select({ id: users.id, name: users.name }).from(users).where(eq(users.isActive, true));
+    const tagged = findMentions(text, people).filter((id) => id !== to?.id && id !== parent?.authorId && id !== parent?.mentionUserId);
+    if (tagged.length) {
+      await notify(tx, actor, tagged, { kind: "mention", title: `${actor.name} mentioned you on ${ctx.item.title}`, body: truncate(text, 140), itemId });
+    }
     if (parent) {
       await notify(tx, actor, [parent.authorId, parent.mentionUserId], {
         kind: "reply",
@@ -400,6 +408,25 @@ export async function addComment(
       summary: parent
         ? `${actor.name} replied: “${truncate(text, 140)}”`
         : `${actor.name} ${to ? `wrote to ${to.name}` : "commented"}: “${truncate(text, 140)}”`,
+    });
+  });
+}
+
+/** Delete your own comment (managers can delete any). Kept in the activity log. */
+export async function deleteComment(actor: Actor, commentId: string) {
+  return db.transaction(async (tx) => {
+    const [c] = await tx.select().from(comments).where(eq(comments.id, commentId));
+    assert(c && !c.deletedAt, "Comment not found.");
+    assert(c.authorId === actor.id || isManager(actor), "You can only delete your own comments.");
+    await tx.update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, commentId));
+    const ctx = await loadItemCtx(tx, c.itemId, false);
+    await logActivity(tx, actor, {
+      itemId: c.itemId,
+      brandId: ctx.brandId,
+      projectId: ctx.projectId,
+      clientId: ctx.clientId,
+      action: "comment_deleted",
+      summary: `${actor.name} deleted a comment: “${truncate(c.body, 80)}”`,
     });
   });
 }
