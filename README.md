@@ -1,5 +1,8 @@
 # NEXORA Ops
 
+> **Developers & AI tools:** start with [AGENTS.md](AGENTS.md) (full system guide). Security: [docs/SECURITY.md](docs/SECURITY.md).
+> Hosting: [docs/DEPLOY-HOSTINGER.md](docs/DEPLOY-HOSTINGER.md). Branding: [`src/config/brand.ts`](src/config/brand.ts).
+
 NEXORA's internal content operations system — replaces the Excel content tracker.
 
 Every Reel, Static, Carousel and Story moves through a fixed cycle that the system knows from its type:
@@ -23,7 +26,7 @@ Every change is written to an append-only history that the database refuses to e
    folder (nothing is installed on the computer). Mac/Linux: install Node.js LTS, then run `npm install && npm run local`.
 
 The first start installs and builds (a few minutes), then opens **http://localhost:3000** — sign in as
-`shahenda` / `Nexora@2026`. Keep the window open while using it; close it (or Ctrl+C) to stop.
+`shahenda` / `Nexora@2026` — you'll be asked to choose your own password. Keep the window open while using it; close it (or Ctrl+C) to stop.
 Data is saved in the `local-data` folder next to the app, using a built-in PostgreSQL engine (PGlite).
 Other devices on the office network can use `http://<this-computer's-IP>:3000`.
 For a shared server, use Docker or a real PostgreSQL server (below).
@@ -66,8 +69,9 @@ Other devices on the office network can use `http://<this-computer's-IP>:3000`.
 
 ## Use it for another company
 
-Name, colours and logo change from **Settings → Company & branding** (no code). A clean install for a new company
-(admin account only, no NEXORA data) starts with `SEED_DEMO=0`. See [WHITE-LABEL.md](WHITE-LABEL.md).
+Name, colours and logos live in one file: **`src/config/brand.ts`** (plus the images in `public/brand/`).
+A clean install for a new company (admin account only, no NEXORA data) starts with `SEED_DEMO=0`.
+See [WHITE-LABEL.md](WHITE-LABEL.md).
 
 ## Stack
 
@@ -126,8 +130,8 @@ Browser acceptance tests change data, so run them against a throwaway database:
 ```bash
 createdb nexora_e2e
 DATABASE_URL=postgres://…/nexora_e2e npm run db:migrate
-DATABASE_URL=postgres://…/nexora_e2e npm run db:seed
-npm run build && DATABASE_URL=postgres://…/nexora_e2e npm start -- -p 3001
+DATABASE_URL=postgres://…/nexora_e2e SEED_FORCE_PASSWORD_CHANGE=0 npm run db:seed
+npm run build && DATABASE_URL=postgres://…/nexora_e2e npx next start -p 3001
 E2E_BASE_URL=http://localhost:3001 npm run test:e2e
 ```
 

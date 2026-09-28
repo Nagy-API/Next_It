@@ -12,6 +12,7 @@ import { eq, isNull, sql } from "drizzle-orm";
 import { closeDb, db } from "../src/db";
 import { activityLog, brands, platforms, users, type Team } from "../src/db/schema";
 import { createItems, type NewItemRow } from "../src/server/items";
+import { verify } from "@node-rs/argon2";
 import { hashPassword, slugify } from "../src/server/admin";
 import { logActivity } from "../src/server/activity";
 import { guessTypeFromTitle } from "../src/domain/workflow";
@@ -19,12 +20,13 @@ import { guessTypeFromTitle } from "../src/domain/workflow";
 const PASSWORD = process.env.SEED_DEFAULT_PASSWORD || "Nexora@2026";
 
 /** Managers: Shahenda (CEO), Ammar, Ayman and Assem. Gannah (design) and Jana (editing) are in the Media Production department. */
-const MANAGERS = ["shahenda", "ammar", "ayman", "assem"];
+const MANAGERS = ["shahenda", "ammar", "ayman", "assem", "king"];
 const TEAM: { username: string; name: string; title: string; teams: Team[]; isAdmin?: boolean }[] = [
   { username: "shahenda", name: "Shahenda", title: "CEO", teams: ["leadership", "social"], isAdmin: true },
   { username: "assem", name: "Assem", title: "Account Manager", teams: ["account"] },
   { username: "ammar", name: "Ammar", title: "Content Lead", teams: ["content"] },
-  { username: "king", name: "King", title: "Content Creator", teams: ["content"] },
+  // King is also IT: full access (admin + manager), same position.
+  { username: "king", name: "King", title: "Content Creator", teams: ["content"], isAdmin: true },
   { username: "kemo", name: "Kemo", title: "Content Creator", teams: ["content"] },
   { username: "ayman", name: "Ayman", title: "Media Production Lead", teams: ["media"] },
   { username: "jana", name: "Jana", title: "Video Editor · Media Production", teams: ["media"] },
@@ -116,6 +118,35 @@ async function fillTeamDefaults() {
  * Installs from before managers / pre-production: mark the managers, set Gannah's and Jana's titles,
  * and give every brand Ayman for shooting and Jana for editing. Once only (never overwrites later choices).
  */
+/** King is IT: full access (admin + manager) on existing installs too, keeping his title and team. Once only. */
+async function kingFullAccess() {
+  const [done] = await db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.action, "king_full_access")).limit(1);
+  if (done) return;
+  const [king] = await db.select({ id: users.id }).from(users).where(eq(users.username, "king"));
+  if (!king) return;
+  await db.update(users).set({ isAdmin: true, isManager: true }).where(eq(users.id, king.id));
+  await logActivity(db, null, { action: "king_full_access", subjectUserId: king.id, summary: "King (IT) now has full access: admin and manager." });
+  console.log("✓ King has full access (admin + manager)");
+}
+
+/**
+ * Anyone still using the shared starting password must pick their own at the next sign-in. Checked once
+ * per start (cheap: a handful of accounts), so it also covers people an admin creates with a temporary one.
+ */
+async function forceOwnPasswords() {
+  if (process.env.SEED_FORCE_PASSWORD_CHANGE === "0") return;
+  const all = await db.select({ id: users.id, hash: users.passwordHash, must: users.mustChangePassword, changed: users.passwordChangedAt }).from(users);
+  let n = 0;
+  for (const u of all) {
+    if (u.must || u.changed) continue;
+    if (await verify(u.hash, PASSWORD).catch(() => false)) {
+      await db.update(users).set({ mustChangePassword: true }).where(eq(users.id, u.id));
+      n++;
+    }
+  }
+  if (n) console.log(`✓ ${n} account(s) still on the starting password will be asked to choose their own at sign-in`);
+}
+
 async function managersAndMediaDefaults() {
   const [done] = await db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.action, "managers_media_defaults")).limit(1);
   if (done) return;
@@ -144,14 +175,25 @@ export async function seed() {
       await fixDesignTeam();
       await fillTeamDefaults();
       await managersAndMediaDefaults();
+      await kingFullAccess();
     }
+    await forceOwnPasswords();
     return;
   }
   if (process.env.SEED_DEMO === "0") return seedEmpty();
   const passwordHash = await hashPassword(PASSWORD);
   const created = await db
     .insert(users)
-    .values(TEAM.map((u) => ({ ...u, isAdmin: !!u.isAdmin, isManager: MANAGERS.includes(u.username), passwordHash, createdAt: new Date("2026-09-01T07:00:00Z") })))
+    .values(
+      TEAM.map((u) => ({
+        ...u,
+        isAdmin: !!u.isAdmin,
+        isManager: MANAGERS.includes(u.username),
+        passwordHash,
+        mustChangePassword: process.env.SEED_FORCE_PASSWORD_CHANGE !== "0",
+        createdAt: new Date("2026-09-01T07:00:00Z"),
+      })),
+    )
     .returning();
   const byUsername = new Map(created.map((u) => [u.username, u]));
   const ceo = byUsername.get("shahenda")!;
@@ -200,6 +242,7 @@ export async function seed() {
   console.log(`  Every account's initial password: ${PASSWORD}`);
   await logActivity(db, null, { action: "brand_team_defaults", summary: "Brand defaults set: Graphic Design → Gannah, Social → Esraa." });
   await logActivity(db, null, { action: "managers_media_defaults", summary: "Managers: Shahenda, Ammar, Ayman, Assem. Shooting → Ayman, Editing → Jana." });
+  await logActivity(db, null, { action: "king_full_access", summary: "King (IT) has full access: admin and manager." });
 }
 
 /**
@@ -211,7 +254,7 @@ async function seedEmpty() {
   const name = process.env.ADMIN_NAME || "Admin";
   const [admin] = await db
     .insert(users)
-    .values({ username, name, title: "Admin", teams: ["leadership"], isAdmin: true, isManager: true, passwordHash: await hashPassword(PASSWORD) })
+    .values({ username, name, title: "Admin", teams: ["leadership"], isAdmin: true, isManager: true, mustChangePassword: true, passwordHash: await hashPassword(PASSWORD) })
     .returning();
   await db.insert(platforms).values(PLATFORMS.map((p, i) => ({ name: p, slug: slugify(p), sortOrder: i })));
   await logActivity(db, null, { action: "system_seeded", subjectUserId: admin.id, summary: `Workspace created with the admin account ${name}.` });

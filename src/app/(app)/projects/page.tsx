@@ -6,7 +6,7 @@ import { formatDay, cairoDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
 import { getClientsWithProjects } from "@/server/queries";
 import { getActivePeople } from "@/server/cached";
-import { getBranding } from "@/server/branding";
+import { BRAND } from "@/config/brand";
 import { Avatar } from "@/components/ui";
 import { NewProject } from "./new-project";
 
@@ -21,7 +21,7 @@ export default async function ProjectsPage() {
     <div>
       <PageHeader
         title="One-off projects"
-        subtitle={`Clients who hire ${(await getBranding()).name} for a specific job. We produce and deliver the files — no publishing stage.`}
+        subtitle={`Clients who hire ${BRAND.name} for a specific job. We produce and deliver the files — no publishing stage.`}
         actions={canCreate ? <NewProject clients={clients.map((c) => c.name)} creators={creators} /> : undefined}
       />
       {clients.length === 0 ? (

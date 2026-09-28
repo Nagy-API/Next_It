@@ -185,8 +185,9 @@ export function NewUserForm() {
           <input id="nu-title" name="title" className="field" placeholder="e.g. Video Editor" />
         </div>
         <div>
-          <label className="label" htmlFor="nu-password">Temporary password (8+ characters)</label>
-          <input id="nu-password" name="password" type="text" required minLength={8} className="field" autoComplete="off" />
+          <label className="label" htmlFor="nu-password">Temporary password (10+ characters)</label>
+          <input id="nu-password" name="password" type="text" required minLength={10} className="field" autoComplete="off" />
+          <p className="mt-1 text-[12px] text-muted">They&rsquo;ll be asked to choose their own at first sign-in.</p>
         </div>
       </div>
       <div>
@@ -249,8 +250,8 @@ export function ResetPassword({ userId, name }: { userId: string; name: string }
         <ActionForm action={resetPasswordAction} onSuccess={close} className="space-y-3">
           <input type="hidden" name="userId" value={userId} />
           <label className="label">New password for {name}</label>
-          <input name="password" type="text" minLength={8} required className="field" autoComplete="off" />
-          <p className="text-[12px] text-muted">They&rsquo;ll be signed out everywhere.</p>
+          <input name="password" type="text" minLength={10} required className="field" autoComplete="off" />
+          <p className="text-[12px] text-muted">A temporary password: they&rsquo;re signed out everywhere and choose their own at next sign-in.</p>
           <Submit className="w-full">Reset password</Submit>
         </ActionForm>
       )}
@@ -276,16 +277,23 @@ export function ChangePasswordForm() {
   return (
     <ActionForm action={changeOwnPasswordAction} resetOnSuccess className="card max-w-md space-y-3 p-5">
       <div>
-        <label className="label">Current password</label>
-        <input name="current" type="password" required autoComplete="current-password" className="field" />
+        <label className="label" htmlFor="pw-current">
+          Current password
+        </label>
+        <input id="pw-current" name="current" type="password" required autoComplete="current-password" className="field" />
       </div>
       <div>
-        <label className="label">New password (8+ characters)</label>
-        <input name="password" type="password" required minLength={8} autoComplete="new-password" className="field" />
+        <label className="label" htmlFor="pw-new">
+          New password
+        </label>
+        <input id="pw-new" name="password" type="password" required minLength={10} autoComplete="new-password" className="field" />
+        <p className="mt-1 text-[12px] text-muted">At least 10 characters, letters mixed with numbers or symbols. Not your username.</p>
       </div>
       <div>
-        <label className="label">Repeat new password</label>
-        <input name="confirm" type="password" required minLength={8} autoComplete="new-password" className="field" />
+        <label className="label" htmlFor="pw-confirm">
+          Repeat new password
+        </label>
+        <input id="pw-confirm" name="confirm" type="password" required minLength={10} autoComplete="new-password" className="field" />
       </div>
       <Submit>Change password</Submit>
     </ActionForm>

@@ -55,6 +55,12 @@ export const db: DB = new Proxy({} as DB, {
   },
 });
 
+/** The built-in (PGlite) database, when that's what's running — used for in-app backups. */
+export function localClient(): PGlite | null {
+  getDb();
+  return globalForDb.__nexoraPglite ?? null;
+}
+
 export async function closeDb() {
   await globalForDb.__nexoraPool?.end();
   await globalForDb.__nexoraPglite?.close();

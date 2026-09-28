@@ -12,7 +12,6 @@ import {
   createUser,
   findOrCreateClient,
   setAvatar,
-  updateCompany,
   setBrandActive,
   setProjectDeleted,
   setUserActive,
@@ -27,7 +26,8 @@ import { UserError } from "@/server/errors";
 import { createTasks, deleteTask, setTaskDone } from "@/server/tasks";
 import { deleteChatMessage, markChatRead, postChatMessage } from "@/server/chat";
 import { addComment, bulkStageAction, createItems, deleteComment, resolveComment, setItemCancelled, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
-import { checkCredentials } from "@/server/sessions";
+import { checkCredentials, deleteAllSessions } from "@/server/sessions";
+import { LOCK, clientIp, isLockedOut, recordAttempt, safeNext } from "@/server/security";
 import { markNotificationsRead } from "@/server/stats";
 import { reviewVersion, setShootDetails, submitVersion } from "@/server/workflow";
 import { assignStage, completeStage, handOff, setStageProgress, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
@@ -43,6 +43,8 @@ const opt = (fd: FormData, k: string) => (fd.has(k) ? str(fd, k).trim() || null 
 async function run(fn: (actor: Actor) => Promise<string | void>, admin = false): Promise<ActionResult> {
   const actor = admin ? await requireAdmin().catch(() => null) : await requireActor();
   if (!actor) return { ok: false, error: "Only account administrators can do that.", at: Date.now() };
+  // Someone on a temporary password can't do anything until they choose their own.
+  if (actor.user.mustChangePassword) return { ok: false, error: "Choose your own password first (My account).", at: Date.now() };
   try {
     const message = await fn(actor);
     revalidatePath("/", "layout");
@@ -57,14 +59,18 @@ async function run(fn: (actor: Actor) => Promise<string | void>, admin = false):
 /* ------------------------------ Auth ------------------------------ */
 
 export async function loginAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
-  const username = str(fd, "username");
+  const username = str(fd, "username").trim().toLowerCase().slice(0, 64);
   const password = str(fd, "password");
   if (!username || !password) return { ok: false, error: "Enter your username and password.", at: Date.now() };
+  const ip = await clientIp();
+  if (await isLockedOut(username, ip)) {
+    return { ok: false, error: `Too many wrong attempts. Wait ${LOCK.windowMinutes} minutes and try again, or ask an admin.`, at: Date.now() };
+  }
   const user = await checkCredentials(username, password);
+  await recordAttempt(username, ip, !!user);
   if (!user) return { ok: false, error: "Wrong username or password.", at: Date.now() };
   await startSession(user.id);
-  const next = str(fd, "next");
-  redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/");
+  redirect(user.mustChangePassword ? "/settings/account?first=1" : safeNext(str(fd, "next")));
 }
 
 export async function logoutAction() {
@@ -79,6 +85,7 @@ export async function changeOwnPasswordAction(_: ActionResult, fd: FormData): Pr
   const ok = await checkCredentials(actor.user.username, current);
   if (!ok) return { ok: false, error: "Your current password is not correct.", at: Date.now() };
   if (next !== str(fd, "confirm")) return { ok: false, error: "The new passwords don't match.", at: Date.now() };
+  if (next === current) return { ok: false, error: "Choose a password different from the current one.", at: Date.now() };
   try {
     await setUserPassword(actor, actor.id, next);
   } catch (e) {
@@ -86,7 +93,17 @@ export async function changeOwnPasswordAction(_: ActionResult, fd: FormData): Pr
     throw e;
   }
   await startSession(actor.id); // other devices are signed out; keep this one signed in
-  return { ok: true, message: "Password changed.", at: Date.now() };
+  revalidatePath("/", "layout");
+  if (actor.user.mustChangePassword) redirect("/my-work");
+  return { ok: true, message: "Password changed. You were signed out on your other devices.", at: Date.now() };
+}
+
+/** Sign out on every device (lost phone, shared computer…). */
+export async function signOutEverywhereAction() {
+  const actor = await requireActor();
+  await deleteAllSessions(actor.id);
+  await endSession();
+  redirect("/login");
 }
 
 /* ---------------------------- Workflow ---------------------------- */
@@ -486,27 +503,5 @@ export async function resetPasswordAction(_: ActionResult, fd: FormData): Promis
   return run(async (actor) => {
     await setUserPassword(actor, str(fd, "userId"), str(fd, "password"));
     return "Password reset. Share the new password with them privately.";
-  }, true);
-}
-
-/* ----------------------------- Company ------------------------------ */
-
-export async function companyAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
-  return run(async (actor) => {
-    const img = (k: string) => (fd.has(k) ? str(fd, k) || null : undefined);
-    if (str(fd, "reset") === "1") {
-      await updateCompany(actor, { name: null, appName: null, adminContact: null, primaryColor: null, darkColor: null, logo: null, mark: null });
-      return "Back to the default branding.";
-    }
-    await updateCompany(actor, {
-      name: fd.has("name") ? str(fd, "name") : undefined,
-      appName: fd.has("appName") ? str(fd, "appName") : undefined,
-      adminContact: fd.has("adminContact") ? str(fd, "adminContact") : undefined,
-      primaryColor: fd.has("primaryColor") ? str(fd, "primaryColor") : undefined,
-      darkColor: fd.has("darkColor") ? str(fd, "darkColor") : undefined,
-      logo: img("logo"),
-      mark: img("mark"),
-    });
-    return "Branding saved.";
   }, true);
 }

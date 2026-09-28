@@ -8,7 +8,6 @@ const TABS = [
   { href: "/settings/brands", label: "Brands" },
   { href: "/settings/people", label: "People" },
   { href: "/settings/platforms", label: "Platforms" },
-  { href: "/settings/company", label: "Company & branding" },
   { href: "/settings/account", label: "My account" },
 ];
 

@@ -14,4 +14,4 @@ WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 COPY --from=build /app ./
 EXPOSE 3000
-CMD ["sh", "-c", "npm run db:migrate && npm run db:seed && npx next start -p ${PORT}"]
+CMD ["npm", "start"]
