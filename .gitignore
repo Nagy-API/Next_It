@@ -47,3 +47,6 @@ next-env.d.ts
 
 # built-in local database (npm run local)
 /local-data/
+
+# portable Node.js downloaded by start-nexora.bat
+/.node/

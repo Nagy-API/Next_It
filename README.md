@@ -18,9 +18,9 @@ Every change is written to an append-only history that the database refuses to e
 
 ## Easiest: run it on one computer (no Docker, no database install)
 
-1. Install **Node.js LTS** from https://nodejs.org (next, next, finish).
-2. Download this repository as a ZIP (GitHub → **Code → Download ZIP**) and extract it.
-3. Windows: double-click **`start-nexora.bat`**. Mac/Linux: run `npm install && npm run local` in the folder.
+1. Download this repository as a ZIP (GitHub → **Code → Download ZIP**) and extract it.
+2. Windows: double-click **`start-nexora.bat`**. If Node.js isn't installed it downloads its own private copy into the
+   folder (nothing is installed on the computer). Mac/Linux: install Node.js LTS, then run `npm install && npm run local`.
 
 The first start installs and builds (a few minutes), then opens **http://localhost:3000** — sign in as
 `shahenda` / `Nexora@2026`. Keep the window open while using it; close it (or Ctrl+C) to stop.
