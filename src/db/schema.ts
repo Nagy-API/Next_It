@@ -66,6 +66,9 @@ export const users = pgTable("users", {
   chatReadAt: ts("chat_read_at"),
   isActive: boolean("is_active").notNull().default(true),
   passwordHash: text("password_hash").notNull(),
+  /** Set for new accounts and admin resets: the person must choose their own password before doing anything else. */
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
+  passwordChangedAt: ts("password_changed_at"),
   createdAt: ts("created_at").notNull().defaultNow(),
   deactivatedAt: ts("deactivated_at"),
 });
@@ -82,6 +85,19 @@ export const sessions = pgTable(
     createdAt: ts("created_at").notNull().defaultNow(),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
+);
+
+/** Every sign-in attempt (for lock-outs after repeated failures, and for the security record). */
+export const loginAttempts = pgTable(
+  "login_attempts",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    username: text("username").notNull(),
+    ip: text("ip"),
+    success: boolean("success").notNull(),
+    at: ts("at").notNull().defaultNow(),
+  },
+  (t) => [index("login_attempts_user_idx").on(t.username, t.at), index("login_attempts_ip_idx").on(t.ip, t.at)],
 );
 
 /* ------------------------------------------------------------------ */
@@ -472,24 +488,6 @@ export const chatMessages = pgTable(
   },
   (t) => [index("chat_created_idx").on(t.createdAt)],
 );
-
-/* ------------------------------------------------------------------ */
-/* Company branding (one row) — makes the system reusable for any company */
-/* ------------------------------------------------------------------ */
-
-export const companySettings = pgTable("company_settings", {
-  id: integer("id").primaryKey().default(1),
-  name: text("name"),
-  appName: text("app_name"),
-  adminContact: text("admin_contact"),
-  primaryColor: text("primary_color"),
-  darkColor: text("dark_color"),
-  /** Logo for dark backgrounds (sidebar, login), as a data URL. */
-  logo: text("logo"),
-  /** Square icon / mark, as a data URL. */
-  mark: text("mark"),
-  updatedAt: ts("updated_at").notNull().defaultNow(),
-});
 
 export type User = typeof users.$inferSelect;
 export type Brand = typeof brands.$inferSelect;

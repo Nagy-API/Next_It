@@ -7,11 +7,13 @@ import { getMyMessages, getPeople, tasksFor } from "@/server/queries";
 import { getTasksFor } from "@/server/tasks";
 import { unreadChatCount } from "@/server/chat";
 import { can, isManager } from "@/domain/permissions";
-import { getBranding } from "@/server/branding";
+import { FirstPassword } from "./first-password";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const [brands, open, messages, everyone, active, myTasks, chatUnread, branding] = await Promise.all([
+  // Temporary password (new account / admin reset): nothing else until they choose their own.
+  if (user.mustChangePassword) return <FirstPassword name={user.name} />;
+  const [brands, open, messages, everyone, active, myTasks, chatUnread] = await Promise.all([
     getAllBrands(),
     getOpenItems(),
     getMyMessages(user.id),
@@ -19,7 +21,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     getActivePeople(),
     getTasksFor(user.id),
     unreadChatCount(user.id),
-    getBranding(),
   ]);
   const navBrands = brands
     .filter((b) => b.isActive)
@@ -33,7 +34,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <AvatarProvider people={everyone.map((p) => ({ id: p.id, name: p.name, v: p.avatarUpdatedAt?.getTime() ?? null, manager: p.isManager || p.isAdmin }))}>
         <Shell
           user={{ ...user, manager: isManager(user) }}
-          branding={branding}
           brands={navBrands}
           myCount={myCount}
           chatUnread={chatUnread}

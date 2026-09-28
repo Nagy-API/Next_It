@@ -1,47 +1,34 @@
 # Using this system for another company
 
-Everything that makes it "NEXORA" can be changed **without touching code**.
+Branding lives **in the code, in one file** — so a person or an AI coding tool can change it safely
+without touching anything else.
 
-## 1. From the app (easiest, any time)
+## The files to change
 
-Sign in as an admin → **Settings → Company & branding**:
-
-| Setting | Where it shows |
+| What | File |
 | --- | --- |
-| Company name | Sign-in page, chat, reports, Excel file names |
-| System name | Browser tab title |
-| Who to ask for an account | Sign-in page ("No account? Ask …") |
-| Main colour | Buttons, links, highlights, charts' accents |
-| Dark colour | Sidebar, headers, text |
-| Logo (light version) | Sidebar and sign-in page (dark background) |
-| Icon / symbol | Next to the logo, watermark, browser tab icon |
+| Company name, system name, tagline, who to ask for an account | `src/config/brand.ts` → `BRAND.name`, `appName`, `tagline`, `adminContact` |
+| The two brand colours (everything else is mixed from them) | `src/config/brand.ts` → `BRAND.colors.primary`, `BRAND.colors.dark` |
+| Logos | `public/brand/` (replace the PNGs, keep the names) — or change the paths in `BRAND.logos` |
+| Browser tab icons | `src/app/icon.png`, `src/app/apple-icon.png` |
+| The full palette (status colours, greys…) — rarely needed | `src/app/globals.css` → `@theme` |
+| Chart colours (optional) | `src/components/charts.tsx` → `STAGE_RAMP` |
+| Timezone ("today", deadlines) | `src/lib/dates.ts` → `TIMEZONE` (default `Africa/Cairo`) |
 
-**Reset to default** brings back the original look. Every change is written to the Activity log.
+After changing them: `npm run typecheck && npm run build`, then restart.
 
-## 2. A brand-new company (empty system)
+## Starting empty (no NEXORA team, brands or demo content)
 
-Start it once with `SEED_DEMO=0` and it creates **only an admin account** (no NEXORA team, brands or demo content):
+Run the first start with `SEED_DEMO=0`. It creates **one admin account** and the usual platforms:
 
 ```bash
-SEED_DEMO=0 ADMIN_USERNAME=admin ADMIN_NAME="Mona" SEED_DEFAULT_PASSWORD="choose-a-strong-one" \
-COMPANY_NAME="Acme Studio" BRAND_PRIMARY="#E11D48" BRAND_DARK="#1F1B2E" npm run local
+SEED_DEMO=0 ADMIN_USERNAME=admin ADMIN_NAME="Mona" SEED_DEFAULT_PASSWORD="a-long-temporary-password" npm run local
 ```
 
-Then sign in, set the logo in Settings → Company & branding, add people (Settings → People — tick
-*Manager* for the leads), brands (Settings → Brands, with the default person for each step) and platforms.
-
-On Windows, put the same variables in a `.env` file next to `package.json` (one `NAME=value` per line)
-and double-click `start-nexora.bat`.
-
-## 3. Defaults in code (optional)
-
-- `src/config/brand.ts` — default name, colours and logo files.
-- `public/brand/` — the default logo images (replace the files, keep the names).
-- `src/app/icon.png` / `src/app/apple-icon.png` — default browser icons.
-- `src/app/globals.css` — the full colour palette (`@theme`), if you want to change more than the two brand colours.
+The admin must change that password on first sign-in. Then add people (Settings → People — tick *Manager*
+for the leads), brands (Settings → Brands, with the default person per step) and platforms.
 
 ## What stays the same for every company
 
 The workflow (Content → Pre-production → Post-production / Design → Social → Published, or → Delivered for
-one-off projects), versions and approvals, deadlines, tasks, chat, notifications, dashboard and Excel reports.
-Dates and "today" use Cairo time (`src/lib/dates.ts`, `TIMEZONE`).
+one-off projects), versions and approvals, deadlines, tasks, chat, notifications, dashboard, Excel reports and security.

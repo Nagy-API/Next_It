@@ -7,12 +7,12 @@ import { contentPlans, users } from "@/db/schema";
 import { STAGE_META, TEAM_META, TYPE_META, finalLabel } from "@/domain/workflow";
 import { cairoDate, formatDateTime, monthLabel, monthRange, todayISO } from "@/lib/dates";
 import { getDashboard, personPerMonth } from "./stats";
-import { getBranding } from "./branding";
+import { BRAND as brand } from "@/config/brand";
 import { getPersonCompletions, getPersonWork, getWorkItems, type WorkItem } from "./queries";
 
-const NAVY = "FF0B1639";
+const NAVY = `FF${brand.colors.dark.slice(1).toUpperCase()}`;
 const fileSafe = (s: string) => s.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "report";
-const BLUE = "FF3B82F6";
+const BLUE = `FF${brand.colors.primary.slice(1).toUpperCase()}`;
 const SOFT = "FFEFF5FF";
 
 function sheet(wb: ExcelJS.Workbook, name: string, columns: { header: string; key: string; width: number }[]) {
@@ -112,7 +112,6 @@ export async function dashboardWorkbook(year: number, month: number) {
   const d = await getDashboard(year, month);
   const plans = await db.select({ id: contentPlans.id }).from(contentPlans).where(and(eq(contentPlans.year, year), eq(contentPlans.month, month)));
   const items = await getWorkItems({ planIds: plans.map((p) => p.id), includeDone: true });
-  const brand = await getBranding();
   const wb = new ExcelJS.Workbook();
   wb.creator = brand.appName;
   wb.created = new Date();
@@ -217,7 +216,6 @@ export async function personWorkbook(username: string) {
   const m = Number(today.slice(5, 7));
   const from = monthRange(...(m > 5 ? ([y, m - 5] as const) : ([y - 1, m + 7] as const))).start;
   const [months, completions, work] = await Promise.all([personPerMonth(u.id, y, m, 6), getPersonCompletions(u.id, from, today), getPersonWork(u.id, today)]);
-  const brand = await getBranding();
   const wb = new ExcelJS.Workbook();
   wb.creator = brand.appName;
 

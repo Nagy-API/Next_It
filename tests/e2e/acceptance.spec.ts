@@ -69,6 +69,7 @@ test.describe.serial("NEXORA acceptance", () => {
 
     // King (content creator) asks for changes, Jana sends v2, King approves → Social.
     await login(page, "king");
+    await page.goto("/my-work"); // King is a manager too: he lands on the overview
     const review = page.locator("article.card", { has: page.getByRole("link", { name: "The Ampoule", exact: true }) }).first();
     await review.getByRole("button", { name: "Request changes" }).click();
     await review.getByLabel(/What should change in v1/).fill("Make the logo bigger at the end");
@@ -82,6 +83,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await toast(page, "v2 sent for approval.");
 
     await login(page, "king");
+    await page.goto("/my-work");
     await expect(page.getByText("Waiting for your approval")).toBeVisible();
     await page.getByRole("button", { name: /Approve v2 — send to Esraa/ }).click();
     await toast(page, "Approved and sent to Esraa.");
@@ -158,10 +160,10 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.getByText("More details").click();
     await expect(page.getByText("Waiting on previous stage — not late")).toBeVisible();
     await expect(page.getByText("3 days late").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mark as exception" })).toHaveCount(0); // admins only
 
     await login(page, "king");
     await openItem(page, "vanilla-roza", "Late Reel", "2026-11");
-    await expect(page.getByRole("button", { name: "Mark as exception" })).toHaveCount(0);
     await page.getByLabel(/Canva link to this content/).fill("https://canva.link/late-reel");
     await page.getByRole("button", { name: /Done — send to Ayman/ }).click();
     await toast(page, "Sent to Ayman (Pre-production).");
@@ -253,6 +255,8 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.getByLabel("Title").first().fill("Cover Reel");
     await page.getByRole("button", { name: "Add 1 item" }).click();
     await expect(page).toHaveURL(/m=2026-12/);
+    // Kemo (content creator, not a manager) sends it on.
+    await login(page, "kemo");
     await openItem(page, "vanilla-roza", "Cover Reel", "2026-12");
     await page.getByLabel(/Canva link to this content/).fill("https://canva.link/cover-reel");
     await page.getByRole("radio", { name: /Graphic Design/ }).click();
@@ -372,7 +376,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await expect(page.getByLabel("Calendar color")).toBeInViewport();
     await page.keyboard.press("Escape");
 
-    await login(page, "king");
+    await login(page, "esraa");
     await page.goto("/settings/brands");
     await expect(page).toHaveURL(/\/settings\/account/);
   });
@@ -383,7 +387,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.getByRole("button", { name: "New account" }).click();
     await page.getByLabel("Name", { exact: true }).fill("Nour");
     await page.getByLabel("Username (for signing in)").fill("nour");
-    await page.getByLabel(/Temporary password/).fill("welcome-nour-1");
+    await page.getByLabel(/Temporary password/).fill("Welcome-Team-51");
     await page.locator("form label", { hasText: "Social Media" }).click();
     await page.getByRole("button", { name: "Create account" }).click();
     await toast(page, /Account created for Nour/);
@@ -391,9 +395,22 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.context().clearCookies();
     await page.goto("/login");
     await page.fill("#username", "nour");
-    await page.fill("#password", "welcome-nour-1");
+    await page.fill("#password", "Welcome-Team-51");
     await page.click("button[type=submit]");
+    // The password from the admin is temporary: nothing else until she picks her own.
+    await expect(page.getByRole("heading", { name: "Welcome, Nour" })).toBeVisible();
+    await page.goto("/my-work");
+    await expect(page.getByRole("heading", { name: "Welcome, Nour" })).toBeVisible();
+    await page.getByLabel("Current password").fill("Welcome-Team-51");
+    await page.getByLabel("New password", { exact: true }).fill("short");
+    await page.getByLabel("Repeat new password").fill("short");
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page.getByLabel("New password", { exact: true })).toBeVisible(); // browser/server refuse a weak one
+    await page.getByLabel("New password", { exact: true }).fill("Nour-Own-Pass-7");
+    await page.getByLabel("Repeat new password").fill("Nour-Own-Pass-7");
+    await page.getByRole("button", { name: "Change password" }).click();
     await expect(page.getByRole("heading", { name: /Nour/ })).toBeVisible();
+    await expect(page).toHaveURL(/\/my-work/);
   });
 
   test("Delete from the list (with a confirmation), restore it, and edit straight from the row", async ({ page }) => {
@@ -438,28 +455,40 @@ test.describe.serial("NEXORA acceptance", () => {
     expect((await mine).suggestedFilename()).toMatch(/^NEXORA-gannah-/);
   });
 
-  test("White-label: an admin changes the company name and colours without code, then resets", async ({ page }) => {
-    await login(page, "shahenda");
-    await page.goto("/settings/company");
-    await page.getByLabel("Company name").fill("Acme Studio");
-    await page.getByLabel("System name (browser tab)").fill("Acme Ops");
-    await page.getByLabel(/Main colour/).fill("#e11d48");
-    await page.getByRole("button", { name: "Save branding" }).click();
-    await toast(page, "Branding saved.");
-    await page.goto("/my-work");
-    await expect(page).toHaveTitle(/Acme Ops/);
-    const primary = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--color-electric").trim());
-    expect(primary).toBe("#e11d48");
-    await page.context().clearCookies();
-    await page.goto("/login");
-    await expect(page.getByText("Acme Studio · Internal Operations")).toBeVisible();
+  test("Security: headers, public privacy page, sign-in lock-out; King (IT) has full access", async ({ page, request }) => {
+    const res = await request.get("/login");
+    const h = res.headers();
+    expect(h["content-security-policy"]).toMatch(/script-src 'self' 'nonce-[^']+' 'strict-dynamic'/);
+    expect(h["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(h["x-frame-options"]).toBe("DENY");
+    expect(h["x-content-type-options"]).toBe("nosniff");
+    expect(h["x-powered-by"]).toBeUndefined();
+    expect((await request.get("/api/notifications")).status()).toBe(401);
+    expect((await request.get("/api/backup")).status()).toBe(401);
 
-    await login(page, "shahenda");
-    await page.goto("/settings/company");
-    await page.getByRole("button", { name: "Reset to default" }).click();
-    await toast(page, "Back to the default branding.");
-    await page.goto("/my-work");
-    await expect(page).toHaveTitle(/NEXORA Ops/);
+    await page.context().clearCookies();
+    await page.goto("/privacy");
+    await expect(page.getByRole("heading", { name: /privacy & security/i })).toBeVisible();
+
+    // 5 wrong passwords → locked, even with the right one.
+    for (let i = 0; i < 5; i++) {
+      await page.goto("/login");
+      await page.fill("#username", "jana");
+      await page.fill("#password", `wrong-${i}`);
+      await page.click("button[type=submit]");
+      await expect(page.getByText("Wrong username or password.")).toBeVisible();
+    }
+    await page.fill("#username", "jana");
+    await page.fill("#password", PASSWORD);
+    await page.click("button[type=submit]");
+    await expect(page.getByText(/Too many wrong attempts/)).toBeVisible();
+
+    await login(page, "king");
+    await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Give a task" })).toBeVisible();
+    await page.goto("/settings/people");
+    await expect(page.getByRole("button", { name: "New account" })).toBeVisible();
+    await expect(page.getByText("Content Creator").first()).toBeVisible(); // same position
   });
 
   test("Search and the activity log reflect the work", async ({ page }) => {

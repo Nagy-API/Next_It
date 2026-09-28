@@ -3,6 +3,10 @@ import { Avatar, ManagerChip } from "@/components/ui";
 import { PhotoPicker } from "@/components/photo";
 import { isManager } from "@/domain/permissions";
 import { ChangePasswordForm } from "../forms";
+import { signOutEverywhereAction } from "@/app/actions";
+import { btn } from "@/components/ui";
+import { Download, LogOut, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
 export const metadata = { title: "My account" };
 
@@ -26,6 +30,28 @@ export default async function AccountPage() {
         </div>
       </section>
       <ChangePasswordForm />
+      <section className="card max-w-md space-y-3 p-5">
+        <div className="flex items-center gap-2 font-display text-[15px] font-bold">
+          <ShieldCheck className="size-4 text-electric" /> Security
+        </div>
+        <p className="text-[13px] text-muted">Lost a phone or used a shared computer? Sign out everywhere — you&rsquo;ll need your password again on every device.</p>
+        <form action={signOutEverywhereAction}>
+          <button className={btn("secondary", "sm")}>
+            <LogOut className="size-3.5" /> Sign out on all devices
+          </button>
+        </form>
+        {me.isAdmin && (
+          <div className="border-t border-line pt-3">
+            <p className="mb-2 text-[13px] text-muted">Admins: download a full backup of everything (keep it somewhere safe — it contains all the company&rsquo;s data).</p>
+            <a href="/api/backup" className={btn("secondary", "sm")}>
+              <Download className="size-3.5" /> Download a backup
+            </a>
+          </div>
+        )}
+        <Link href="/privacy" className="inline-block text-[13px] font-medium text-electric hover:underline">
+          Privacy & security policy →
+        </Link>
+      </section>
     </div>
   );
 }

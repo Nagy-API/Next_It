@@ -2,11 +2,12 @@
 import { and, eq, ilike, ne, sql } from "drizzle-orm";
 import { hash } from "@node-rs/argon2";
 import { db } from "@/db";
-import { brands, clients, companySettings, platforms, projects, sessions, users, type Team, TEAMS } from "@/db/schema";
+import { brands, clients, platforms, projects, sessions, users, type Team, TEAMS } from "@/db/schema";
 import { TEAM_META } from "@/domain/workflow";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
 import { can, isManager } from "@/domain/permissions";
+import { passwordProblem } from "@/lib/passwords";
 
 const ADMIN_ONLY = "Only an admin can change settings.";
 
@@ -258,9 +259,9 @@ export async function updatePlatform(actor: Actor, platformId: string, input: { 
 
 const USERNAME_RE = /^[a-z0-9._-]{2,32}$/;
 
-export function validatePassword(pw: string) {
-  assert(pw.length >= 8, "Passwords need at least 8 characters.");
-  assert(pw.length <= 200, "That password is too long.");
+export function validatePassword(pw: string, ctx: { username?: string } = {}) {
+  const problem = passwordProblem(pw, ctx);
+  if (problem) throw new UserError(problem);
 }
 
 export async function hashPassword(pw: string) {
@@ -275,11 +276,12 @@ export async function createUser(
   actor: Actor,
   input: { username: string; name: string; title?: string | null; teams?: string[]; isAdmin?: boolean; isManager?: boolean; password: string },
 ) {
+  assert(can.managePeople(actor), ADMIN_ONLY);
   const username = input.username.trim().toLowerCase();
   assert(USERNAME_RE.test(username), "Usernames use 2–32 lowercase letters, numbers, dots, dashes or underscores.");
   const name = input.name.trim();
   assert(name, "Name is required.");
-  validatePassword(input.password);
+  validatePassword(input.password, { username });
   const [dupe] = await db.select({ id: users.id }).from(users).where(eq(users.username, username));
   assert(!dupe, `The username “${username}” is taken.`);
   const passwordHash = await hashPassword(input.password);
@@ -287,7 +289,8 @@ export async function createUser(
   return db.transaction(async (tx) => {
     const [u] = await tx
       .insert(users)
-      .values({ username, name, title: input.title?.trim() || null, teams, isAdmin: !!input.isAdmin, isManager: !!input.isManager, passwordHash })
+      // A temporary password from an admin: the person picks their own at first sign-in.
+      .values({ username, name, title: input.title?.trim() || null, teams, isAdmin: !!input.isAdmin, isManager: !!input.isManager, passwordHash, mustChangePassword: true })
       .returning();
     await logActivity(tx, actor, {
       action: "user_created",
@@ -303,6 +306,7 @@ export async function updateUser(
   userId: string,
   input: { name?: string; title?: string | null; teams?: string[]; isAdmin?: boolean; isManager?: boolean },
 ) {
+  assert(can.managePeople(actor), ADMIN_ONLY);
   return db.transaction(async (tx) => {
     const [u] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
     assert(u, "User not found.");
@@ -347,6 +351,7 @@ async function assertAnotherAdmin(userId: string) {
 }
 
 export async function setUserActive(actor: Actor, userId: string, active: boolean) {
+  assert(can.managePeople(actor), ADMIN_ONLY);
   assert(!(userId === actor.id && !active), "You can't deactivate your own account.");
   return db.transaction(async (tx) => {
     const [u] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
@@ -383,12 +388,16 @@ export async function setAvatar(actor: Actor, userId: string, dataUrl: string | 
 }
 
 export async function setUserPassword(actor: Actor, userId: string, password: string) {
-  validatePassword(password);
+  const self = actor.id === userId;
+  assert(self || actor.isAdmin, "Only an admin can reset someone else's password.");
+  const [target] = await db.select({ username: users.username }).from(users).where(eq(users.id, userId));
+  validatePassword(password, { username: target?.username });
   const passwordHash = await hashPassword(password);
   return db.transaction(async (tx) => {
     const [u] = await tx.select().from(users).where(eq(users.id, userId));
     assert(u, "User not found.");
-    await tx.update(users).set({ passwordHash }).where(eq(users.id, userId));
+    // An admin reset is a temporary password: the person must choose their own next time.
+    await tx.update(users).set({ passwordHash, mustChangePassword: !self, passwordChangedAt: self ? new Date() : null }).where(eq(users.id, userId));
     // Sign the person out everywhere else.
     await tx.delete(sessions).where(eq(sessions.userId, userId));
     await logActivity(tx, actor, {
@@ -396,47 +405,5 @@ export async function setUserPassword(actor: Actor, userId: string, password: st
       subjectUserId: userId,
       summary: actor.id === userId ? `${actor.name} changed their password.` : `${actor.name} reset ${u.name}'s password.`,
     });
-  });
-}
-
-/* ------------------------------ Company ------------------------------ */
-
-const IMG = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
-
-/** Name, colours and logos of the company using this system (Settings → Company). `null` resets a field to the default. */
-export async function updateCompany(
-  actor: Actor,
-  input: { name?: string | null; appName?: string | null; adminContact?: string | null; primaryColor?: string | null; darkColor?: string | null; logo?: string | null; mark?: string | null },
-) {
-  assert(!!actor.isAdmin, ADMIN_ONLY);
-  for (const k of ["primaryColor", "darkColor"] as const) {
-    const v = input[k];
-    if (v) assert(/^#[0-9a-fA-F]{6}$/.test(v), "Colours look like #3B82F6.");
-  }
-  for (const k of ["logo", "mark"] as const) {
-    const v = input[k];
-    if (v) {
-      assert(IMG.test(v), "Logos must be PNG, JPG or WEBP images.");
-      assert(v.length < 1_500_000, "That logo is too big — use one under 1 MB.");
-    }
-  }
-  const clean = (v: string | null | undefined) => (v === undefined ? undefined : v?.trim() || null);
-  const set = {
-    name: clean(input.name),
-    appName: clean(input.appName),
-    adminContact: clean(input.adminContact),
-    primaryColor: clean(input.primaryColor),
-    darkColor: clean(input.darkColor),
-    logo: input.logo,
-    mark: input.mark,
-  };
-  const values = Object.fromEntries(Object.entries(set).filter(([, v]) => v !== undefined));
-  return db.transaction(async (tx) => {
-    await tx
-      .insert(companySettings)
-      .values({ id: 1, ...values, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: companySettings.id, set: { ...values, updatedAt: new Date() } });
-    const changed = Object.keys(values).map((k) => ({ name: "name", appName: "app name", adminContact: "admin contact", primaryColor: "main colour", darkColor: "dark colour", logo: "logo", mark: "icon" })[k]);
-    await logActivity(tx, actor, { action: "company_updated", summary: `${actor.name} updated the company branding: ${changed.join(", ")}.` });
   });
 }

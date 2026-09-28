@@ -5,8 +5,9 @@ import { hash, verify } from "@node-rs/argon2";
 import { db } from "@/db";
 import { sessions, users, type User } from "@/db/schema";
 
-export const SESSION_DAYS = 30;
-const RENEW_WHEN_DAYS_LEFT = 15;
+/** Sessions last 14 days and renew while in use; signing out or changing a password ends them. */
+export const SESSION_DAYS = 14;
+const RENEW_WHEN_DAYS_LEFT = 7;
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -21,14 +22,14 @@ export async function createSession(userId: string) {
   return { token, expiresAt };
 }
 
-export type SessionUser = Pick<User, "id" | "username" | "name" | "title" | "teams" | "isAdmin" | "isManager"> & { hasAvatar: boolean };
+export type SessionUser = Pick<User, "id" | "username" | "name" | "title" | "teams" | "isAdmin" | "isManager" | "mustChangePassword"> & { hasAvatar: boolean };
 
 export async function validateSession(token: string): Promise<{ user: SessionUser; renewedExpiry: Date | null } | null> {
   const id = hashToken(token);
   const [row] = await db
     .select({
       expiresAt: sessions.expiresAt,
-      user: { id: users.id, username: users.username, name: users.name, title: users.title, teams: users.teams, isAdmin: users.isAdmin, isManager: users.isManager, isActive: users.isActive, avatarUpdatedAt: users.avatarUpdatedAt },
+      user: { id: users.id, username: users.username, name: users.name, title: users.title, teams: users.teams, isAdmin: users.isAdmin, isManager: users.isManager, isActive: users.isActive, avatarUpdatedAt: users.avatarUpdatedAt, mustChangePassword: users.mustChangePassword },
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
@@ -40,7 +41,12 @@ export async function validateSession(token: string): Promise<{ user: SessionUse
     await db.update(sessions).set({ expiresAt: renewedExpiry }).where(eq(sessions.id, id));
   }
   const u = row.user;
-  return { user: { id: u.id, username: u.username, name: u.name, title: u.title, teams: u.teams, isAdmin: u.isAdmin, isManager: u.isManager, hasAvatar: !!u.avatarUpdatedAt }, renewedExpiry };
+  return { user: { id: u.id, username: u.username, name: u.name, title: u.title, teams: u.teams, isAdmin: u.isAdmin, isManager: u.isManager, mustChangePassword: u.mustChangePassword, hasAvatar: !!u.avatarUpdatedAt }, renewedExpiry };
+}
+
+/** Sign a person out on every device (e.g. a lost phone). */
+export async function deleteAllSessions(userId: string) {
+  await db.delete(sessions).where(eq(sessions.userId, userId));
 }
 
 export async function deleteSession(token: string) {

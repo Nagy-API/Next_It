@@ -12,7 +12,7 @@ import { requireUser } from "@/server/auth";
 import { getActivePeople, getOpenItems } from "@/server/cached";
 import { getMyMessages, getPersonCompletions, getPersonWork, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
 import { getTasksFor, getTasksGivenBy } from "@/server/tasks";
-import { getBranding } from "@/server/branding";
+import { BRAND } from "@/config/brand";
 
 export const metadata = { title: "My tasks" };
 
@@ -42,7 +42,6 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const sp = await searchParams;
   const today = todayISO();
   const manager = isManager(user);
-  const brand = await getBranding();
   const [{ next }, recent, open, people, messages, myTasks, given] = await Promise.all([
     getPersonWork(user.id, today),
     getPersonCompletions(user.id, addDays(today, -13), today),
@@ -97,7 +96,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
       <header className="relative overflow-hidden rounded-2xl bg-navy-900 px-6 py-6 text-white">
         <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_200px_at_85%_0%,rgba(59,130,246,0.35),transparent_70%)]" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={brand.markUrl} alt="" aria-hidden className="pointer-events-none absolute -right-10 -top-12 size-56 object-contain opacity-[0.08] drop-shadow-[0_10px_25px_rgba(96,165,250,0.6)]" />
+        <img src={BRAND.logos.markOnDark} alt="" aria-hidden className="pointer-events-none absolute -right-10 -top-12 size-56 object-contain opacity-[0.08] drop-shadow-[0_10px_25px_rgba(96,165,250,0.6)]" />
         <div className="relative">
           <div className="flex items-center gap-3">
             <Avatar name={user.name} size={46} ring />
