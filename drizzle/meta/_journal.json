@@ -36,6 +36,13 @@
       "when": 1790601019296,
       "tag": "0004_managers_workflow_tasks_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790612098879,
+      "tag": "0005_company_settings",
+      "breakpoints": true
     }
   ]
 }

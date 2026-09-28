@@ -24,7 +24,7 @@ export default async function PeopleSettings() {
           <NewUserForm />
         </div>
       ) : (
-        <p className="rounded-lg bg-wait-soft px-3 py-2 text-[13px] text-ink-2">Only Shahenda or IT can create or change accounts.</p>
+        <p className="rounded-lg bg-wait-soft px-3 py-2 text-[13px] text-ink-2">Only an admin can create or change accounts.</p>
       )}
       <div className="card divide-y divide-line">
         {sorted.map((p) => (

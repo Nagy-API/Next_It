@@ -138,11 +138,16 @@ export async function seed() {
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(users);
   if (count > 0) {
     console.log("Database already has users — skipping the initial seed.");
-    await fixDesignTeam();
-    await fillTeamDefaults();
-    await managersAndMediaDefaults();
+    // One-time upgrades for NEXORA's own install only (never for another company's).
+    const [nexora] = await db.select({ id: users.id }).from(users).where(eq(users.username, "shahenda"));
+    if (nexora) {
+      await fixDesignTeam();
+      await fillTeamDefaults();
+      await managersAndMediaDefaults();
+    }
     return;
   }
+  if (process.env.SEED_DEMO === "0") return seedEmpty();
   const passwordHash = await hashPassword(PASSWORD);
   const created = await db
     .insert(users)
@@ -195,6 +200,22 @@ export async function seed() {
   console.log(`  Every account's initial password: ${PASSWORD}`);
   await logActivity(db, null, { action: "brand_team_defaults", summary: "Brand defaults set: Graphic Design → Gannah, Social → Esraa." });
   await logActivity(db, null, { action: "managers_media_defaults", summary: "Managers: Shahenda, Ammar, Ayman, Assem. Shooting → Ayman, Editing → Jana." });
+}
+
+/**
+ * A clean start for another company (SEED_DEMO=0): one admin account and the usual platforms.
+ * Name, colours and logo come from Settings → Company & branding (or COMPANY_NAME / BRAND_* env vars).
+ */
+async function seedEmpty() {
+  const username = (process.env.ADMIN_USERNAME || "admin").toLowerCase();
+  const name = process.env.ADMIN_NAME || "Admin";
+  const [admin] = await db
+    .insert(users)
+    .values({ username, name, title: "Admin", teams: ["leadership"], isAdmin: true, isManager: true, passwordHash: await hashPassword(PASSWORD) })
+    .returning();
+  await db.insert(platforms).values(PLATFORMS.map((p, i) => ({ name: p, slug: slugify(p), sortOrder: i })));
+  await logActivity(db, null, { action: "system_seeded", subjectUserId: admin.id, summary: `Workspace created with the admin account ${name}.` });
+  console.log(`✓ Empty workspace ready. Sign in as ${username} / ${PASSWORD} and add brands and people in Settings.`);
 }
 
 if (process.argv[1]?.endsWith("seed.ts")) {
