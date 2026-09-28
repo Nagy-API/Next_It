@@ -87,4 +87,4 @@ export const can = {
   },
 };
 
-export const NOT_ALLOWED = "You don't have permission to do that. Ask a manager (Shahenda, Ammar, Ayman or Assem).";
+export const NOT_ALLOWED = "You don't have permission to do that. Ask one of the managers.";

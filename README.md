@@ -64,6 +64,11 @@ Other devices on the office network can use `http://<this-computer's-IP>:3000`.
 - **Profile photos**: Settings → My account → Upload a photo.
 - **Delete** is available on items, projects, tasks, comments and chat messages; history is always kept.
 
+## Use it for another company
+
+Name, colours and logo change from **Settings → Company & branding** (no code). A clean install for a new company
+(admin account only, no NEXORA data) starts with `SEED_DEMO=0`. See [WHITE-LABEL.md](WHITE-LABEL.md).
+
 ## Stack
 
 - Next.js 16 (App Router, Server Actions) · React 19 · TypeScript · Tailwind CSS 4

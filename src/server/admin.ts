@@ -2,13 +2,13 @@
 import { and, eq, ilike, ne, sql } from "drizzle-orm";
 import { hash } from "@node-rs/argon2";
 import { db } from "@/db";
-import { brands, clients, platforms, projects, sessions, users, type Team, TEAMS } from "@/db/schema";
+import { brands, clients, companySettings, platforms, projects, sessions, users, type Team, TEAMS } from "@/db/schema";
 import { TEAM_META } from "@/domain/workflow";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
 import { can, isManager } from "@/domain/permissions";
 
-const ADMIN_ONLY = "Only an admin (Shahenda or IT) can change settings.";
+const ADMIN_ONLY = "Only an admin can change settings.";
 
 export function slugify(s: string) {
   return (
@@ -396,5 +396,47 @@ export async function setUserPassword(actor: Actor, userId: string, password: st
       subjectUserId: userId,
       summary: actor.id === userId ? `${actor.name} changed their password.` : `${actor.name} reset ${u.name}'s password.`,
     });
+  });
+}
+
+/* ------------------------------ Company ------------------------------ */
+
+const IMG = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+
+/** Name, colours and logos of the company using this system (Settings → Company). `null` resets a field to the default. */
+export async function updateCompany(
+  actor: Actor,
+  input: { name?: string | null; appName?: string | null; adminContact?: string | null; primaryColor?: string | null; darkColor?: string | null; logo?: string | null; mark?: string | null },
+) {
+  assert(!!actor.isAdmin, ADMIN_ONLY);
+  for (const k of ["primaryColor", "darkColor"] as const) {
+    const v = input[k];
+    if (v) assert(/^#[0-9a-fA-F]{6}$/.test(v), "Colours look like #3B82F6.");
+  }
+  for (const k of ["logo", "mark"] as const) {
+    const v = input[k];
+    if (v) {
+      assert(IMG.test(v), "Logos must be PNG, JPG or WEBP images.");
+      assert(v.length < 1_500_000, "That logo is too big — use one under 1 MB.");
+    }
+  }
+  const clean = (v: string | null | undefined) => (v === undefined ? undefined : v?.trim() || null);
+  const set = {
+    name: clean(input.name),
+    appName: clean(input.appName),
+    adminContact: clean(input.adminContact),
+    primaryColor: clean(input.primaryColor),
+    darkColor: clean(input.darkColor),
+    logo: input.logo,
+    mark: input.mark,
+  };
+  const values = Object.fromEntries(Object.entries(set).filter(([, v]) => v !== undefined));
+  return db.transaction(async (tx) => {
+    await tx
+      .insert(companySettings)
+      .values({ id: 1, ...values, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: companySettings.id, set: { ...values, updatedAt: new Date() } });
+    const changed = Object.keys(values).map((k) => ({ name: "name", appName: "app name", adminContact: "admin contact", primaryColor: "main colour", darkColor: "dark colour", logo: "logo", mark: "icon" })[k]);
+    await logActivity(tx, actor, { action: "company_updated", summary: `${actor.name} updated the company branding: ${changed.join(", ")}.` });
   });
 }

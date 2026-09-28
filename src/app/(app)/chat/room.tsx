@@ -53,7 +53,7 @@ function Body({ text, people, meName }: { text: string; people: P[]; meName: str
   );
 }
 
-export function ChatRoom({ me, initial, people }: { me: { id: string; name: string; manager: boolean }; initial: Msg[]; people: P[] }) {
+export function ChatRoom({ me, initial, people, company }: { me: { id: string; name: string; manager: boolean }; initial: Msg[]; people: P[]; company: string }) {
   const [msgs, setMsgs] = useState<Msg[]>(initial);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -149,7 +149,7 @@ export function ChatRoom({ me, initial, people }: { me: { id: string; name: stri
             <MessagesSquare className="size-6 text-electric" /> Team chat
           </h1>
           <p className="text-[13.5px] text-muted">
-            Everyone at NEXORA. Type <b className="text-ink-2">@</b> to mention someone — they get a notification.
+            Everyone at {company}. Type <b className="text-ink-2">@</b> to mention someone — they get a notification.
           </p>
         </div>
         <div className="hidden -space-x-2 sm:flex">

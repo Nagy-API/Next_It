@@ -1,4 +1,4 @@
-/** Excel reports (Dashboard for a month, one person's numbers). Built with exceljs, styled like NEXORA. */
+/** Excel reports (Dashboard for a month, one person's numbers). Built with exceljs, styled with the company name. */
 import "server-only";
 import ExcelJS from "exceljs";
 import { and, eq } from "drizzle-orm";
@@ -7,9 +7,11 @@ import { contentPlans, users } from "@/db/schema";
 import { STAGE_META, TEAM_META, TYPE_META, finalLabel } from "@/domain/workflow";
 import { cairoDate, formatDateTime, monthLabel, monthRange, todayISO } from "@/lib/dates";
 import { getDashboard, personPerMonth } from "./stats";
+import { getBranding } from "./branding";
 import { getPersonCompletions, getPersonWork, getWorkItems, type WorkItem } from "./queries";
 
 const NAVY = "FF0B1639";
+const fileSafe = (s: string) => s.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "report";
 const BLUE = "FF3B82F6";
 const SOFT = "FFEFF5FF";
 
@@ -110,12 +112,13 @@ export async function dashboardWorkbook(year: number, month: number) {
   const d = await getDashboard(year, month);
   const plans = await db.select({ id: contentPlans.id }).from(contentPlans).where(and(eq(contentPlans.year, year), eq(contentPlans.month, month)));
   const items = await getWorkItems({ planIds: plans.map((p) => p.id), includeDone: true });
+  const brand = await getBranding();
   const wb = new ExcelJS.Workbook();
-  wb.creator = "NEXORA Ops";
+  wb.creator = brand.appName;
   wb.created = new Date();
 
   const sum = sheet(wb, "Summary", [
-    { header: `NEXORA · ${d.label}`, key: "k", width: 34 },
+    { header: `${brand.name} · ${d.label}`, key: "k", width: 34 },
     { header: "This month", key: "v", width: 14 },
     { header: d.prevLabel, key: "p", width: 14 },
   ]);
@@ -203,7 +206,7 @@ export async function dashboardWorkbook(year: number, month: number) {
   styleItemSheet(its);
   zebra(its);
 
-  return { wb, filename: `NEXORA-dashboard-${year}-${String(month).padStart(2, "0")}.xlsx` };
+  return { wb, filename: `${fileSafe(brand.name)}-dashboard-${year}-${String(month).padStart(2, "0")}.xlsx` };
 }
 
 export async function personWorkbook(username: string) {
@@ -214,8 +217,9 @@ export async function personWorkbook(username: string) {
   const m = Number(today.slice(5, 7));
   const from = monthRange(...(m > 5 ? ([y, m - 5] as const) : ([y - 1, m + 7] as const))).start;
   const [months, completions, work] = await Promise.all([personPerMonth(u.id, y, m, 6), getPersonCompletions(u.id, from, today), getPersonWork(u.id, today)]);
+  const brand = await getBranding();
   const wb = new ExcelJS.Workbook();
-  wb.creator = "NEXORA Ops";
+  wb.creator = brand.appName;
 
   const mm = sheet(wb, "Month by month", [
     { header: "Month", key: "month", width: 18 },
@@ -256,7 +260,7 @@ export async function personWorkbook(username: string) {
   styleItemSheet(open);
   zebra(open);
 
-  return { wb, filename: `NEXORA-${u.username}-${cairoDate(new Date())}.xlsx`, name: u.name };
+  return { wb, filename: `${fileSafe(brand.name)}-${u.username}-${cairoDate(new Date())}.xlsx`, name: u.name };
 }
 
 export async function workbookResponse(wb: ExcelJS.Workbook, filename: string) {

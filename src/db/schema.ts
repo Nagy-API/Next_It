@@ -473,6 +473,24 @@ export const chatMessages = pgTable(
   (t) => [index("chat_created_idx").on(t.createdAt)],
 );
 
+/* ------------------------------------------------------------------ */
+/* Company branding (one row) — makes the system reusable for any company */
+/* ------------------------------------------------------------------ */
+
+export const companySettings = pgTable("company_settings", {
+  id: integer("id").primaryKey().default(1),
+  name: text("name"),
+  appName: text("app_name"),
+  adminContact: text("admin_contact"),
+  primaryColor: text("primary_color"),
+  darkColor: text("dark_color"),
+  /** Logo for dark backgrounds (sidebar, login), as a data URL. */
+  logo: text("logo"),
+  /** Square icon / mark, as a data URL. */
+  mark: text("mark"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type Brand = typeof brands.$inferSelect;
 export type ContentItem = typeof contentItems.$inferSelect;

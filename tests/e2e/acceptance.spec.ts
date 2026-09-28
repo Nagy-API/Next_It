@@ -438,6 +438,30 @@ test.describe.serial("NEXORA acceptance", () => {
     expect((await mine).suggestedFilename()).toMatch(/^NEXORA-gannah-/);
   });
 
+  test("White-label: an admin changes the company name and colours without code, then resets", async ({ page }) => {
+    await login(page, "shahenda");
+    await page.goto("/settings/company");
+    await page.getByLabel("Company name").fill("Acme Studio");
+    await page.getByLabel("System name (browser tab)").fill("Acme Ops");
+    await page.getByLabel(/Main colour/).fill("#e11d48");
+    await page.getByRole("button", { name: "Save branding" }).click();
+    await toast(page, "Branding saved.");
+    await page.goto("/my-work");
+    await expect(page).toHaveTitle(/Acme Ops/);
+    const primary = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--color-electric").trim());
+    expect(primary).toBe("#e11d48");
+    await page.context().clearCookies();
+    await page.goto("/login");
+    await expect(page.getByText("Acme Studio · Internal Operations")).toBeVisible();
+
+    await login(page, "shahenda");
+    await page.goto("/settings/company");
+    await page.getByRole("button", { name: "Reset to default" }).click();
+    await toast(page, "Back to the default branding.");
+    await page.goto("/my-work");
+    await expect(page).toHaveTitle(/NEXORA Ops/);
+  });
+
   test("Search and the activity log reflect the work", async ({ page }) => {
     await login(page, "shahenda");
     await page.getByPlaceholder(/Search content/).fill("ampoule");

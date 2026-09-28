@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -8,6 +7,7 @@ import clsx from "clsx";
 import { BarChart3, Briefcase, Camera, History, Home, KeyRound, LogOut, Menu, MessagesSquare, Plus, Search, Settings, Tags, UserRound, Users, X } from "lucide-react";
 import { GiveTaskButton } from "./tasks";
 import { ManagerChip } from "./avatar";
+import type { Branding } from "@/config/brand";
 import { logoutAction } from "@/app/actions";
 import { NotificationBell } from "./bell";
 import { Avatar, btn } from "./ui";
@@ -22,8 +22,10 @@ export function Shell({
   canAdd,
   taskPeople,
   taskBrands,
+  branding,
   children,
 }: {
+  branding: Branding;
   user: { name: string; title: string | null; isAdmin: boolean; username: string; manager: boolean };
   brands: NavBrand[];
   myCount: number;
@@ -49,9 +51,11 @@ export function Shell({
         )}
       >
         <div className="relative flex h-16 items-center px-5">
-          <Link href="/" className="flex items-center gap-2.5" aria-label="NEXORA">
-            <Image src="/brand/nexora-mark-white.png" alt="" width={566} height={565} priority className="size-7 drop-shadow-[0_2px_6px_rgba(96,165,250,0.45)]" />
-            <Image src="/brand/nexora-wordmark-white.png" alt="NEXORA" width={777} height={153} priority className="h-[18px] w-auto" />
+          <Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label={branding.name}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={branding.markUrl} alt="" className="size-7 shrink-0 object-contain drop-shadow-[0_2px_6px_rgba(96,165,250,0.45)]" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={branding.logoUrl} alt={branding.name} className="h-[18px] w-auto max-w-[130px] object-contain" />
           </Link>
           <span className="ml-2 mt-0.5 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-electric-bright">Ops</span>
           <button className="ml-auto rounded-md p-1 text-white/60 hover:text-white lg:hidden" onClick={() => setMobileOpen(false)} aria-label="Close menu">
@@ -130,9 +134,10 @@ export function Shell({
         </div>
       </div>
 
-      {/* The NEXORA sun, very faint, with a soft shadow — brand presence without noise. */}
+      {/* The company's mark, very faint, with a soft shadow — brand presence without noise. */}
       <div aria-hidden className="pointer-events-none fixed -right-24 top-24 -z-0 hidden size-[420px] opacity-[0.045] lg:block">
-        <Image src="/brand/nexora-mark-navy.png" alt="" fill sizes="420px" className="object-contain drop-shadow-[0_18px_30px_rgba(11,22,57,0.5)]" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={branding.markDarkUrl} alt="" className={clsx("size-full object-contain drop-shadow-[0_18px_30px_rgba(11,22,57,0.5)]", branding.customMark && "brightness-0")} />
       </div>
       <main className="relative z-[1] mx-auto max-w-[1320px] px-4 pb-16 pt-6 sm:px-6 lg:px-8">{children}</main>
     </div>

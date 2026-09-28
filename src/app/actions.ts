@@ -12,6 +12,7 @@ import {
   createUser,
   findOrCreateClient,
   setAvatar,
+  updateCompany,
   setBrandActive,
   setProjectDeleted,
   setUserActive,
@@ -485,5 +486,27 @@ export async function resetPasswordAction(_: ActionResult, fd: FormData): Promis
   return run(async (actor) => {
     await setUserPassword(actor, str(fd, "userId"), str(fd, "password"));
     return "Password reset. Share the new password with them privately.";
+  }, true);
+}
+
+/* ----------------------------- Company ------------------------------ */
+
+export async function companyAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const img = (k: string) => (fd.has(k) ? str(fd, k) || null : undefined);
+    if (str(fd, "reset") === "1") {
+      await updateCompany(actor, { name: null, appName: null, adminContact: null, primaryColor: null, darkColor: null, logo: null, mark: null });
+      return "Back to the default branding.";
+    }
+    await updateCompany(actor, {
+      name: fd.has("name") ? str(fd, "name") : undefined,
+      appName: fd.has("appName") ? str(fd, "appName") : undefined,
+      adminContact: fd.has("adminContact") ? str(fd, "adminContact") : undefined,
+      primaryColor: fd.has("primaryColor") ? str(fd, "primaryColor") : undefined,
+      darkColor: fd.has("darkColor") ? str(fd, "darkColor") : undefined,
+      logo: img("logo"),
+      mark: img("mark"),
+    });
+    return "Branding saved.";
   }, true);
 }
