@@ -4,7 +4,7 @@
  * Uses the built-in database in ./local-data unless DATABASE_URL points to a PostgreSQL server.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const PORT = process.env.PORT || "3000";
 const shell = process.platform === "win32";
@@ -14,6 +14,19 @@ function run(cmd, args, extraEnv = {}) {
   if (r.status !== 0) {
     console.error(`\n✗ "${cmd} ${args.join(" ")}" failed. Scroll up for the reason.`);
     process.exit(r.status ?? 1);
+  }
+}
+
+// Make sure every package is really installed (an interrupted install or an antivirus can leave gaps).
+const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+const missing = () => Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter((d) => !existsSync(`node_modules/${d}/package.json`));
+if (missing().length) {
+  console.log(`\n▶ Installing missing packages: ${missing().join(", ")}…`);
+  run("npm", ["install", "--no-audit", "--no-fund"]);
+  if (missing().length) {
+    console.error(`\n✗ Still missing: ${missing().join(", ")}.`);
+    console.error("  Delete the node_modules folder, check your internet connection (and that the antivirus isn't blocking it), then start again.");
+    process.exit(1);
   }
 }
 
