@@ -71,7 +71,9 @@ the app, so data survives every deploy. Migrations run by themselves on start.
 ## If something goes wrong
 
 - Build failed → hPanel build logs. Reproduce locally with the same conditions: `NODE_ENV=production npm ci && npm run build`.
-  (A past failure — Turbopack crashing on `globals.css` — was caused by build tools not being installed; they are now regular dependencies.)
+  Two past failures, both fixed in the code: (1) build tools weren't installed because of `NODE_ENV=production` (now regular dependencies);
+  (2) Turbopack crashing on `globals.css` with "node process exited before we could connect" — the build now uses webpack in a single process.
+  If a build still fails, copy the **whole** log (especially the last 30 lines).
 - App starts but shows an error → runtime logs; most often a missing/incorrect `DATABASE_URL`.
 - Roll back → redeploy the previous commit from hPanel (or revert the merge on GitHub).
 

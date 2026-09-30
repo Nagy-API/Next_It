@@ -292,6 +292,11 @@ people made in Settings.
 
 ## 14. Gotchas
 
+- **`npm run build` uses webpack (`next build --webpack`), on purpose.** On Hostinger the Turbopack build crashed on `globals.css`
+  ("node process exited before we could connect to it") — the host restricts the child processes Turbopack starts for PostCSS.
+  Webpack handles the CSS in-process, and `next.config.ts` builds with one process (`experimental.cpus: 1, workerThreads: true`).
+  Local `npm run dev` still uses Turbopack. Don't switch the build back without testing on Hostinger.
+
 - **Build tools must stay in `dependencies`** (`tailwindcss`, `@tailwindcss/postcss`, `typescript`, `@types/*`): hosts that install with
   `NODE_ENV=production` skip devDependencies, and the build then dies (Turbopack "PostCSS" crash). Keep test/lint tools (`vitest`,
   `playwright`, `eslint`, `drizzle-kit`) in devDependencies, and keep `tests/`, `scripts/` and tool configs excluded from `tsconfig.json`.

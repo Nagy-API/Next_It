@@ -17,6 +17,8 @@ const nextConfig: NextConfig = {
   // The built-in local database ships WebAssembly files that must be loaded from node_modules at runtime.
   serverExternalPackages: ["@electric-sql/pglite"],
   poweredByHeader: false,
+  // Shared hosting limits how many processes a build may start: build in one process, with worker threads.
+  experimental: { cpus: 1, workerThreads: true, webpackBuildWorker: false },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
