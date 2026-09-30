@@ -46,7 +46,7 @@ npm run local          # easiest: built-in database (PGlite) in ./local-data, bu
 npm run dev            # dev server (needs DATABASE_URL, or uses ./local-data)
 npm run build          # production build
 npm start              # production: migrate → seed (idempotent) → next start   (scripts/production.mjs)
-npm run lint && npm run typecheck
+npm run lint && npm run typecheck   # typecheck uses tsconfig.check.json (includes tests/scripts); the build's tsconfig.json excludes them
 npm test               # unit/integration tests (vitest) — needs TEST_DATABASE_URL (PostgreSQL)
 npm run test:e2e       # browser tests (Playwright) — run against a FRESH seeded database, see §11
 npm run db:generate    # after editing src/db/schema.ts → creates a new SQL migration in drizzle/
@@ -291,6 +291,11 @@ people made in Settings.
   `node scripts/restore.mjs`.
 
 ## 14. Gotchas
+
+- **Build tools must stay in `dependencies`** (`tailwindcss`, `@tailwindcss/postcss`, `typescript`, `@types/*`): hosts that install with
+  `NODE_ENV=production` skip devDependencies, and the build then dies (Turbopack "PostCSS" crash). Keep test/lint tools (`vitest`,
+  `playwright`, `eslint`, `drizzle-kit`) in devDependencies, and keep `tests/`, `scripts/` and tool configs excluded from `tsconfig.json`.
+  Verify with `NODE_ENV=production npm ci && npm run build`.
 
 - This is **Next.js 16**: `src/proxy.ts` (not middleware), async `params`/`searchParams`, route types from `next typegen`.
   Read `node_modules/next/dist/docs/` before using an API you're unsure about.
