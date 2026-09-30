@@ -28,17 +28,23 @@ domain you already own. The main website `nexoraaagency.com` is a separate app a
    | Package manager | npm |
    | Build command | `npm run build` |
    | Start command | `npm start` (runs `scripts/production.mjs`: migrate → first-time seed → server) |
+   | Install | `npm install` (default) |
    | Output directory | `.next` |
 
-4. **Environment variables** (hPanel → the app → Environment variables):
+4. **Environment variables** (hPanel → the app → Environment variables). Only **one** is required:
 
    | Name | Value | Why |
    | --- | --- | --- |
-   | `NODE_ENV` | `production` | secure cookies, production mode |
-   | `DATABASE_URL` | `file:/home/<your-hpanel-username>/nexora-ops-data` | the built-in database, **outside** the app folder so redeploys never touch it |
-   | `SEED_DEFAULT_PASSWORD` | a long temporary password you choose | first password for every account — each person must change it at first sign-in |
+   | `SEED_DEFAULT_PASSWORD` | a long, private, hard-to-guess temporary password (12+ chars, letters + numbers + symbols; not a variation of the company name/year) | first password for every account — each person must change it at first sign-in |
 
-   Never put these in the repository. (`PORT` is set by Hostinger automatically.)
+   Notes:
+   - **Do not set `NODE_ENV`.** Next.js sets it itself (`production` for build and start). Setting it during the build makes npm skip
+     dev tools and can break installs on some hosts (we made the build tools regular dependencies so it works either way).
+   - **`DATABASE_URL` is optional.** Leave it unset: in production the app stores its built-in database in `~/nexora-ops-data`
+     (your hosting account's home folder — outside the app folder, so redeploys never touch it). Only set it to use a PostgreSQL
+     server (`postgres://…`) or another absolute folder (`file:/home/<user>/some-folder`). Never leave a placeholder like `YOURUSER` in it.
+   - `PORT` is set by Hostinger automatically.
+   - Never put these in the repository.
 5. **Deploy** → watch the build log → open `https://ops.nexoraaagency.com`.
 6. **SSL**: Hostinger issues a free certificate for the subdomain; make sure it shows as active (the app sends HSTS, so
    browsers will then always use HTTPS).
@@ -64,7 +70,8 @@ the app, so data survives every deploy. Migrations run by themselves on start.
 
 ## If something goes wrong
 
-- Build failed → hPanel build logs. Run `npm ci && npm run build` locally to reproduce.
+- Build failed → hPanel build logs. Reproduce locally with the same conditions: `NODE_ENV=production npm ci && npm run build`.
+  (A past failure — Turbopack crashing on `globals.css` — was caused by build tools not being installed; they are now regular dependencies.)
 - App starts but shows an error → runtime logs; most often a missing/incorrect `DATABASE_URL`.
 - Roll back → redeploy the previous commit from hPanel (or revert the merge on GitHub).
 
