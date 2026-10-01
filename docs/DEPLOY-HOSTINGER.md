@@ -27,7 +27,7 @@ domain you already own. The main website `nexoraaagency.com` is a separate app a
    | Root directory | `.` (repository root) |
    | Package manager | npm |
    | Build command | `npm run build` |
-   | Start command | `npm start` (runs `scripts/production.mjs`: migrate → first-time seed → server) |
+   | Start command | `npm start` — or leave Hostinger's default (`next start`): either way the server migrates the database and creates the accounts itself on start (`src/instrumentation.ts`) |
    | Install | `npm install` (default) |
    | Output directory | `.next` |
 
