@@ -1,12 +1,13 @@
 /**
- * Production start (Hostinger Node.js hosting, a VPS, Docker…):  npm start
- *   1. applies database migrations, 2. seeds on the very first start (safe to repeat), 3. starts the server.
+ * Production start (a VPS, Docker…):  npm start  → next start on $PORT.
+ * Migrations and the first seed run inside the server itself (src/instrumentation.ts), so hosts that run
+ * `next start` directly (Hostinger) get exactly the same result.
  *
  * Database: DATABASE_URL=postgres://… for a PostgreSQL server, or DATABASE_URL=file:/abs/folder for the
  * built-in database. If nothing is set in production, the built-in database goes to ~/nexora-ops-data —
  * OUTSIDE the app folder, so redeploys (which replace the app folder) never touch the data.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
@@ -17,14 +18,6 @@ if (!env.DATABASE_URL) {
 }
 const PORT = env.PORT || "3000";
 const shell = process.platform === "win32";
-
-for (const script of ["scripts/migrate.ts", "scripts/seed.ts"]) {
-  const r = spawnSync("npx", ["tsx", script], { stdio: "inherit", shell, env });
-  if (r.status !== 0) {
-    console.error(`✗ ${script} failed — not starting.`);
-    process.exit(r.status ?? 1);
-  }
-}
 
 const server = spawn("npx", ["next", "start", "-p", PORT], { stdio: "inherit", shell, env });
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => server.kill(sig));

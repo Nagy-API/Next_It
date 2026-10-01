@@ -5,8 +5,11 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 const PORT = process.env.PORT || "3000";
+// Same folder for the setup scripts and the (production-mode) server.
+process.env.DATABASE_URL ||= `file:${path.resolve("local-data")}`;
 const shell = process.platform === "win32";
 
 function run(cmd, args, extraEnv = {}) {

@@ -21,7 +21,7 @@ Excel "content tracker". Every piece of content (Reel, Static post, Carousel, St
 steps; each step belongs to a team; finishing a step hands the work to the next team automatically, with the time
 and the person recorded. Nothing is anonymous and history cannot be rewritten.
 
-People and roles (seeded in `scripts/seed.ts`, managed in Settings → People):
+People and roles (seeded in `src/server/seed.ts`, managed in Settings → People):
 
 | Person | Team(s) | Role |
 | --- | --- | --- |
@@ -45,7 +45,7 @@ npm install
 npm run local          # easiest: built-in database (PGlite) in ./local-data, builds once, opens http://localhost:3000
 npm run dev            # dev server (needs DATABASE_URL, or uses ./local-data)
 npm run build          # production build
-npm start              # production: migrate → seed (idempotent) → next start   (scripts/production.mjs)
+npm start              # production: next start (scripts/production.mjs); the server migrates + seeds itself on start
 npm run lint && npm run typecheck   # typecheck uses tsconfig.check.json (includes tests/scripts); the build's tsconfig.json excludes them
 npm test               # unit/integration tests (vitest) — needs TEST_DATABASE_URL (PostgreSQL)
 npm run test:e2e       # browser tests (Playwright) — run against a FRESH seeded database, see §11
@@ -128,7 +128,7 @@ src/
   db/schema.ts           ← ALL tables (Drizzle). db/index.ts = PostgreSQL or PGlite connection
   lib/                   ← dates (Cairo timezone), paste parser, ranges, passwords
 drizzle/                 ← SQL migrations, in order. Never edit an applied migration — add a new one.
-scripts/                 ← migrate, seed (+ one-time upgrades), local.mjs, production.mjs, restore.mjs
+scripts/                 ← migrate, seed (thin wrapper), local.mjs, production.mjs, restore.mjs
 tests/                   ← *.test.ts (vitest, real PostgreSQL) and e2e/acceptance.spec.ts (Playwright)
 docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
 ```
@@ -250,7 +250,7 @@ scripts/CDNs (the CSP will block them anyway — don't loosen it).
   ```bash
   createdb nexora_e2e && export DATABASE_URL=postgres://…/nexora_e2e
   npm run db:migrate && SEED_FORCE_PASSWORD_CHANGE=0 npm run db:seed
-  npm run build && npx next start -p 3001 &
+  npm run build && SEED_FORCE_PASSWORD_CHANGE=0 npx next start -p 3001 &
   E2E_BASE_URL=http://localhost:3001 npm run test:e2e
   ```
 - Before every commit: `npm run lint && npm run typecheck && npm test`, and the e2e suite for UI changes.
@@ -274,7 +274,7 @@ column on brands if needed + `defaultAssigneeTx` → UI panel in `handoff.tsx` (
 **Add a notification type** → extend `NotificationKind` (notify.ts) → call `notify(tx, actor, userIds, {...})` inside
 the same transaction → icon in `bell.tsx`.
 
-**Change people / defaults for a fresh install** → `scripts/seed.ts` (TEAM, MANAGERS, BRANDS). For EXISTING installs
+**Change people / defaults for a fresh install** → `src/server/seed.ts` (TEAM, MANAGERS, BRANDS). For EXISTING installs
 add a one-time upgrade function guarded by an activity-log marker (see `kingFullAccess`) — never overwrite choices
 people made in Settings.
 
@@ -287,7 +287,7 @@ people made in Settings.
 - Hostinger (Node.js web app on `ops.nexoraaagency.com`): step-by-step in **docs/DEPLOY-HOSTINGER.md**.
 - Docker: `docker compose up -d --build` (PostgreSQL + app). Any VPS: `npm ci && npm run build && npm start`.
 - Data safety: the built-in database folder must live OUTSIDE the app folder in production
-  (`scripts/production.mjs` defaults to `~/nexora-ops-data`). Admins download backups in My account; restore with
+  (`src/db/index.ts` defaults to `~/nexora-ops-data` when the server runs in production without `DATABASE_URL`). Admins download backups in My account; restore with
   `node scripts/restore.mjs`.
 
 ## 14. Gotchas
@@ -302,6 +302,10 @@ people made in Settings.
   `playwright`, `eslint`, `drizzle-kit`) in devDependencies, and keep `tests/`, `scripts/` and tool configs excluded from `tsconfig.json`.
   Verify with `NODE_ENV=production npm ci && npm run build`.
 
+- **The server prepares its own database.** `src/instrumentation.ts` → `prepareDatabase()` (`src/server/setup.ts`) runs the
+  migrations (`./drizzle`, from the working directory) and `seed()` before the first request. Hostinger runs plain `next start`
+  (not `npm start`), so never move this back into a start script only. If it fails the server refuses to start — read the runtime log.
+  `.env` is loaded by Next too: a local `.env` with a PostgreSQL `DATABASE_URL` wins over the built-in database.
 - This is **Next.js 16**: `src/proxy.ts` (not middleware), async `params`/`searchParams`, route types from `next typegen`.
   Read `node_modules/next/dist/docs/` before using an API you're unsure about.
 - PGlite is single-process: never open the same data folder from two processes (don't run scripts against it while the app runs).
