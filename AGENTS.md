@@ -49,7 +49,7 @@ npm start              # production: next start (scripts/production.mjs); the se
 npm run lint && npm run typecheck   # typecheck uses tsconfig.check.json (includes tests/scripts); the build's tsconfig.json excludes them
 npm test               # unit/integration tests (vitest) — needs TEST_DATABASE_URL (PostgreSQL)
 npm run test:e2e       # browser tests (Playwright) — run against a FRESH seeded database, see §11
-npm run db:generate    # after editing src/db/schema.ts → creates a new SQL migration in drizzle/
+npm run db:generate    # after editing src/db/schema.ts → new SQL migration in drizzle/ (+ embeds it in src/db/migrations.generated.ts)
 npm run db:migrate     # apply migrations
 npm run db:seed        # first-time data (safe to repeat; only one-time upgrades run later)
 node scripts/restore.mjs <backup.tar.gz> [folder]   # restore a built-in-database backup (app stopped)
@@ -127,7 +127,7 @@ src/
     export.ts            ← Excel workbooks
   db/schema.ts           ← ALL tables (Drizzle). db/index.ts = PostgreSQL or PGlite connection
   lib/                   ← dates (Cairo timezone), paste parser, ranges, passwords
-drizzle/                 ← SQL migrations, in order. Never edit an applied migration — add a new one.
+drizzle/                 ← SQL migrations, in order. Never edit an applied migration — add a new one. Embedded in src/db/migrations.generated.ts.
 scripts/                 ← migrate, seed (thin wrapper), local.mjs, production.mjs, restore.mjs
 tests/                   ← *.test.ts (vitest, real PostgreSQL) and e2e/acceptance.spec.ts (Playwright)
 docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
@@ -303,7 +303,9 @@ people made in Settings.
   Verify with `NODE_ENV=production npm ci && npm run build`.
 
 - **The server prepares its own database.** `src/instrumentation.ts` → `prepareDatabase()` (`src/server/setup.ts`) runs the
-  migrations (`./drizzle`, from the working directory) and `seed()` before the first request. Hostinger runs plain `next start`
+  migrations and `seed()` before the first request. Hostinger deploys only `.next`, `node_modules`, `public` and `package.json`
+  (no `drizzle/` folder), so the migrations are embedded in `src/db/migrations.generated.ts` by `scripts/embed-migrations.mjs`
+  (runs in `npm run build` and `npm run db:generate`; a test fails if it's stale). Hostinger runs plain `next start`
   (not `npm start`), so never move this back into a start script only. If it fails the server refuses to start — read the runtime log.
   `.env` is loaded by Next too: a local `.env` with a PostgreSQL `DATABASE_URL` wins over the built-in database.
 - This is **Next.js 16**: `src/proxy.ts` (not middleware), async `params`/`searchParams`, route types from `next typegen`.
