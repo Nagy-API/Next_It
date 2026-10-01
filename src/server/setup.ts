@@ -1,22 +1,26 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator";
-import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
-import type { PgliteDatabase } from "drizzle-orm/pglite";
 import { databaseMode, db } from "@/db";
+import { MIGRATIONS } from "@/db/migrations.generated";
 import { seed } from "./seed";
 
+type Migrator = { dialect: { migrate(m: typeof MIGRATIONS, session: unknown, config: { migrationsFolder: string }): Promise<void> }; session: unknown };
+
 /**
- * Makes the database ready: applies migrations (drizzle/*.sql), then seeds an empty database and runs the
- * one-time upgrades. Safe to repeat. Called by src/instrumentation.ts before the server takes requests, so
- * the app works however the host starts it (`npm start`, plain `next start`, Hostinger's runner…).
+ * Applies the migrations (drizzle/*.sql, embedded in the code by scripts/embed-migrations.mjs so no folder is
+ * needed at runtime). Same bookkeeping table as drizzle's migrate(), so it's safe on databases migrated either way.
+ */
+export async function migrateDatabase() {
+  const real = db as unknown as Migrator;
+  await real.dialect.migrate(MIGRATIONS, real.session, { migrationsFolder: "" });
+  const mode = databaseMode();
+  console.log(`✓ Database ready${mode.kind === "local" ? ` (built-in database in ${mode.dir})` : ""}`);
+}
+
+/**
+ * Makes the database ready: migrations, then seeding an empty database and the one-time upgrades. Safe to repeat.
+ * Called by src/instrumentation.ts before the server takes requests, so the app works however the host starts it
+ * (`npm start`, plain `next start`, Hostinger's runner…).
  */
 export async function prepareDatabase() {
-  const migrationsFolder = path.join(process.cwd(), "drizzle");
-  if (!existsSync(migrationsFolder)) throw new Error(`Migrations folder not found: ${migrationsFolder} — start the app from the project folder.`);
-  const mode = databaseMode();
-  if (mode.kind === "postgres") await migratePg(db, { migrationsFolder });
-  else await migratePglite(db as unknown as PgliteDatabase, { migrationsFolder });
-  console.log(`✓ Database ready${mode.kind === "local" ? ` (built-in database in ${mode.dir})` : ""}`);
+  await migrateDatabase();
   await seed();
 }
