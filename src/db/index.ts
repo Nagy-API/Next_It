@@ -5,6 +5,7 @@ import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-post
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { Pool } from "pg";
 import * as schema from "./schema";
+import { acquireLock, keepLock, lockOwner, openWithRecovery, releaseLock, scheduleBackups, tryLock } from "./local";
 
 /**
  * Two ways to run the database:
@@ -28,7 +29,17 @@ export function databaseMode(): { kind: "postgres"; url: string } | { kind: "loc
   return { kind: "local", dir: path.resolve(process.cwd(), dir) };
 }
 
-const globalForDb = globalThis as unknown as { __nexoraPool?: Pool; __nexoraPglite?: PGlite; __nexoraDb?: DB };
+const globalForDb = globalThis as unknown as {
+  __nexoraPool?: Pool;
+  __nexoraPglite?: PGlite;
+  __nexoraDb?: DB;
+  __nexoraStop?: (() => void)[];
+};
+
+function adoptLocal(client: PGlite, dir: string) {
+  globalForDb.__nexoraPglite = client;
+  globalForDb.__nexoraStop = [keepLock(dir, () => client.close())];
+}
 
 function create(): DB {
   const mode = databaseMode();
@@ -37,9 +48,14 @@ function create(): DB {
     globalForDb.__nexoraPool = pool;
     return drizzlePg({ client: pool, schema });
   }
-  const client = globalForDb.__nexoraPglite ?? new PGlite(mode.dir);
-  globalForDb.__nexoraPglite = client;
-  return drizzlePglite({ client, schema }) as unknown as DB;
+  if (!globalForDb.__nexoraPglite) {
+    // Scripts (migrate, seed) open it directly; the server opens it in openDatabase() (waits for the lock + recovery).
+    if (!tryLock(mode.dir)) {
+      throw new Error(`The built-in database ${mode.dir} is open in another process (pid ${lockOwner(mode.dir)?.pid}). Stop it first — two processes corrupt it.`);
+    }
+    adoptLocal(new PGlite(mode.dir), mode.dir);
+  }
+  return drizzlePglite({ client: globalForDb.__nexoraPglite!, schema }) as unknown as DB;
 }
 
 function getDb(): DB {
@@ -58,6 +74,24 @@ export const db: DB = new Proxy({} as DB, {
   },
 });
 
+/**
+ * Server start (src/instrumentation.ts): for the built-in database, wait until no other process has the folder open,
+ * open it (restoring the newest backup if it's corrupted) and start the automatic backups. See src/db/local.ts.
+ */
+export async function openDatabase() {
+  const mode = databaseMode();
+  if (mode.kind !== "local" || globalForDb.__nexoraPglite) return;
+  await acquireLock(mode.dir);
+  const client = await openWithRecovery(mode.dir);
+  adoptLocal(client, mode.dir);
+}
+
+export function startAutomaticBackups() {
+  const mode = databaseMode();
+  const client = globalForDb.__nexoraPglite;
+  if (mode.kind === "local" && client) (globalForDb.__nexoraStop ??= []).push(scheduleBackups(client, mode.dir));
+}
+
 /** The built-in (PGlite) database, when that's what's running — used for in-app backups. */
 export function localClient(): PGlite | null {
   getDb();
@@ -66,7 +100,13 @@ export function localClient(): PGlite | null {
 
 export async function closeDb() {
   await globalForDb.__nexoraPool?.end();
-  await globalForDb.__nexoraPglite?.close();
+  globalForDb.__nexoraStop?.forEach((stop) => stop());
+  globalForDb.__nexoraStop = undefined;
+  if (globalForDb.__nexoraPglite) {
+    await globalForDb.__nexoraPglite.close();
+    const mode = databaseMode();
+    if (mode.kind === "local") releaseLock(mode.dir);
+  }
   globalForDb.__nexoraPool = undefined;
   globalForDb.__nexoraPglite = undefined;
   globalForDb.__nexoraDb = undefined;

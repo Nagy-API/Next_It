@@ -20,7 +20,7 @@ Plain-language version for staff: `/privacy` in the app. This file is the techni
 | Audit trail | Append-only activity log (database trigger rejects edits/deletes) | `drizzle/0001_activity_log_immutable.sql` |
 | Privacy | No analytics/trackers/ads; one first-party cookie; fonts self-hosted; staff numbers visible to self + managers only | `/privacy` |
 | Dependencies | `npm audit` clean (uuid pinned via `overrides`) | `package.json` |
-| Backups | Admin download (consistent, in-process) + restore script | `src/app/api/backup`, `scripts/restore.mjs` |
+| Backups | Automatic every 10 min when changed (`~/nexora-ops-data-backups`, outside the web folder, last 30) + admin download + restore script; corrupted folder → restored automatically | `src/db/local.ts`, `src/app/api/backup`, `scripts/restore.mjs` |
 | Secrets | Only environment variables; `.env` is git-ignored | `.env.example` |
 
 ## Checklist before going live
