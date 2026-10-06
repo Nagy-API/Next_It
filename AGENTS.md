@@ -128,7 +128,7 @@ src/
   db/schema.ts           ← ALL tables (Drizzle). db/index.ts = PostgreSQL or PGlite connection; db/local.ts = PGlite lock, backups, self-healing
   lib/                   ← dates (Cairo timezone), paste parser, ranges, passwords
 drizzle/                 ← SQL migrations, in order. Never edit an applied migration — add a new one. Embedded in src/db/migrations.generated.ts.
-scripts/                 ← migrate, seed (thin wrapper), local.mjs, production.mjs, restore.mjs
+scripts/                 ← migrate, seed (thin wrapper), local.mjs, production.mjs, restore.mjs, tracker-to-seed.mjs (Excel → import data)
 tests/                   ← *.test.ts (vitest, real PostgreSQL) and e2e/acceptance.spec.ts (Playwright)
 docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
 ```
@@ -249,8 +249,8 @@ scripts/CDNs (the CSP will block them anyway — don't loosen it).
   with `SEED_FORCE_PASSWORD_CHANGE=0`, a production build and `E2E_BASE_URL`:
   ```bash
   createdb nexora_e2e && export DATABASE_URL=postgres://…/nexora_e2e
-  npm run db:migrate && SEED_FORCE_PASSWORD_CHANGE=0 npm run db:seed
-  npm run build && SEED_FORCE_PASSWORD_CHANGE=0 npx next start -p 3001 &
+  npm run db:migrate && SEED_TRACKER=0 SEED_FORCE_PASSWORD_CHANGE=0 npm run db:seed
+  npm run build && SEED_TRACKER=0 SEED_FORCE_PASSWORD_CHANGE=0 npx next start -p 3001 &
   E2E_BASE_URL=http://localhost:3001 npm run test:e2e
   ```
 - Before every commit: `npm run lint && npm run typecheck && npm test`, and the e2e suite for UI changes.
@@ -273,6 +273,13 @@ column on brands if needed + `defaultAssigneeTx` → UI panel in `handoff.tsx` (
 
 **Add a notification type** → extend `NotificationKind` (notify.ts) → call `notify(tx, actor, userIds, {...})` inside
 the same transaction → icon in `bell.tsx`.
+
+**Import an Excel content tracker** (one tab per brand, same columns as the old tracker) →
+`node scripts/tracker-to-seed.mjs "Content tracker.xlsx"` regenerates `src/server/seed-data/tracker.generated.ts`; the server
+imports it once on start (`src/server/tracker-import.ts`): items go into each brand's month plan and are brought to their
+real step through the normal workflow, as the right people, on the sheet's dates (shoot, versions, approvals, live links).
+Existing items (same title + posting date) aren't duplicated. For a new import, change `MARKER` in tracker-import.ts.
+`SEED_TRACKER=0` skips it (the e2e suite runs without it).
 
 **Change people / defaults for a fresh install** → `src/server/seed.ts` (TEAM, MANAGERS, BRANDS). For EXISTING installs
 add a one-time upgrade function guarded by an activity-log marker (see `kingFullAccess`) — never overwrite choices
