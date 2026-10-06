@@ -16,6 +16,7 @@ import { verify } from "@node-rs/argon2";
 import { hashPassword, slugify } from "./admin";
 import { logActivity } from "./activity";
 import { guessTypeFromTitle } from "@/domain/workflow";
+import { importTracker } from "./tracker-import";
 
 const PASSWORD = process.env.SEED_DEFAULT_PASSWORD || "Nexora@2026";
 
@@ -176,6 +177,7 @@ export async function seed() {
       await fillTeamDefaults();
       await managersAndMediaDefaults();
       await kingFullAccess();
+      if (process.env.SEED_TRACKER !== "0") await importTracker();
     }
     await forceOwnPasswords();
     return;
@@ -243,6 +245,8 @@ export async function seed() {
   await logActivity(db, null, { action: "brand_team_defaults", summary: "Brand defaults set: Graphic Design → Gannah, Social → Esraa." });
   await logActivity(db, null, { action: "managers_media_defaults", summary: "Managers: Shahenda, Ammar, Ayman, Assem. Shooting → Ayman, Editing → Jana." });
   await logActivity(db, null, { action: "king_full_access", summary: "King (IT) has full access: admin and manager." });
+  // Every brand's plan from the Excel tracker, each item at its real step (once; SEED_TRACKER=0 skips it).
+  if (process.env.SEED_TRACKER !== "0") await importTracker();
 }
 
 /**
