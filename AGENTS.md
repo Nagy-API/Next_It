@@ -125,7 +125,7 @@ src/
     auth.ts, sessions.ts ← sign-in cookie, sessions (hashed tokens), current user
     security.ts          ← sign-in lock-outs, client IP; lib/passwords.ts = password rules, safe redirects
     export.ts            ← Excel workbooks
-  db/schema.ts           ← ALL tables (Drizzle). db/index.ts = PostgreSQL or PGlite connection
+  db/schema.ts           ← ALL tables (Drizzle). db/index.ts = PostgreSQL or PGlite connection; db/local.ts = PGlite lock, backups, self-healing
   lib/                   ← dates (Cairo timezone), paste parser, ranges, passwords
 drizzle/                 ← SQL migrations, in order. Never edit an applied migration — add a new one. Embedded in src/db/migrations.generated.ts.
 scripts/                 ← migrate, seed (thin wrapper), local.mjs, production.mjs, restore.mjs
@@ -287,7 +287,7 @@ people made in Settings.
 - Hostinger (Node.js web app on `ops.nexoraaagency.com`): step-by-step in **docs/DEPLOY-HOSTINGER.md**.
 - Docker: `docker compose up -d --build` (PostgreSQL + app). Any VPS: `npm ci && npm run build && npm start`.
 - Data safety: the built-in database folder must live OUTSIDE the app folder in production
-  (`src/db/index.ts` defaults to `~/nexora-ops-data` when the server runs in production without `DATABASE_URL`). Admins download backups in My account; restore with
+  (`src/db/index.ts` defaults to `~/nexora-ops-data` when the server runs in production without `DATABASE_URL`). Automatic backups go to `~/nexora-ops-data-backups`; admins can also download one in My account; restore by hand with
   `node scripts/restore.mjs`.
 
 ## 14. Gotchas
@@ -310,7 +310,12 @@ people made in Settings.
   `.env` is loaded by Next too: a local `.env` with a PostgreSQL `DATABASE_URL` wins over the built-in database.
 - This is **Next.js 16**: `src/proxy.ts` (not middleware), async `params`/`searchParams`, route types from `next typegen`.
   Read `node_modules/next/dist/docs/` before using an API you're unsure about.
-- PGlite is single-process: never open the same data folder from two processes (don't run scripts against it while the app runs).
+- **PGlite is single-process — two processes on one folder corrupt it for good** ("PANIC: could not locate a valid checkpoint
+  record" → `Aborted()`). It happened on Hostinger, which starts the new server before the old one stops. `src/db/local.ts`
+  guards it: a lock file `<folder>.lock` (one owner; a newer process asks the older one to hand over after 10 s, and the older one
+  closes cleanly and exits), automatic backups every 10 min when the work changed (`<folder>-backups`, last 30), and self-healing
+  at start (a folder that won't open is renamed `<folder>.broken-<time>` — never deleted — and the newest backup is restored).
+  Never open the folder with `new PGlite(...)` anywhere else, and don't run scripts against it while the app runs (they refuse).
 - `revalidatePath("/", "layout")` after writes is done by `run()`.
 - UI text is English (the team asked for it). Egyptian-Arabic is only used when talking to the owner.
 - Popovers and modals render in a portal (client.tsx) so containers never clip them — keep it that way.

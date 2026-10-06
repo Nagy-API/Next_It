@@ -1,4 +1,4 @@
-import { databaseMode, db } from "@/db";
+import { databaseMode, db, openDatabase, startAutomaticBackups } from "@/db";
 import { MIGRATIONS } from "@/db/migrations.generated";
 import { seed } from "./seed";
 
@@ -21,6 +21,8 @@ export async function migrateDatabase() {
  * (`npm start`, plain `next start`, Hostinger's runner…).
  */
 export async function prepareDatabase() {
+  await openDatabase();
   await migrateDatabase();
   await seed();
+  startAutomaticBackups();
 }

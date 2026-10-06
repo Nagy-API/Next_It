@@ -64,7 +64,10 @@ the app, so data survives every deploy. Migrations run by themselves on start.
 
 ## Backups
 
-- In the app: an admin downloads a full backup from **My account** (weekly is a good habit; store it privately).
+- **Automatic:** the server saves a backup every 10 minutes when something changed, in `~/nexora-ops-data-backups`
+  (the last 30 are kept). If the database folder ever can't be opened, the server moves it aside
+  (`~/nexora-ops-data.broken-<time>`, kept) and restores the newest backup by itself — check the runtime log for "Restored".
+- In the app: an admin downloads a full backup from **My account** (weekly is a good habit; store it privately, off the server).
 - Hostinger also keeps its own account backups (hPanel → Backups).
 - Restore: stop the app → `node scripts/restore.mjs <file> <folder>` → start.
 
