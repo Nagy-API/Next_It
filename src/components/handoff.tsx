@@ -33,7 +33,7 @@ import { formatDateTime, formatDay, formatRelative } from "@/lib/dates";
 import type { StageView, VersionView, WorkItem } from "@/server/queries";
 import { ActionForm, Submit } from "./client";
 import { Avatar } from "./avatar";
-import { BrandDot, ExtraBadge, TypeIcon, btn } from "./ui";
+import { BrandDot, ExtraBadge, StageChip, TypeIcon, btn } from "./ui";
 
 export type PickPerson = { id: string; name: string; teams: string[] };
 
@@ -631,6 +631,8 @@ export function TaskCard({
 
   return (
     <article
+      // The brand's colour as a stripe on the left: you see whose work it is before reading.
+      style={item.brand ? { boxShadow: `inset 4px 0 0 ${item.brand.color}` } : undefined}
       className={clsx(
         "card overflow-hidden transition-shadow duration-150 hover:shadow-pop",
         late ? "border-bad/50" : item.hot ? "border-[#ff8a1f]/60 ring-2 ring-[#ff8a1f]/15" : returned && "border-back/50",
@@ -651,7 +653,7 @@ export function TaskCard({
               fresh && <span className="rounded-full bg-electric px-2 py-0.5 text-[11px] font-semibold text-white">NEW</span>
             )}
             {item.extra && <ExtraBadge by={item.extra.by?.name} />}
-            <span className="rounded-full bg-canvas px-2 py-0.5 text-[11.5px] font-semibold text-ink-2">{STAGE_META[cur.kind].label}</span>
+            <StageChip kind={cur.kind} />
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-muted">
             {item.brand && <BrandDot color={item.brand.color} />}

@@ -1,7 +1,7 @@
 /** Numbers for the Dashboard, personal stats and the notification bell. */
 import { and, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { contentItems, contentPlans, notifications, stageCompletions, users, type StageKind } from "@/db/schema";
+import { activityLog, contentItems, contentPlans, notifications, stageCompletions, users, versions, type StageKind } from "@/db/schema";
 import { STAGE_META } from "@/domain/workflow";
 import { addDays, diffDays, formatDay, monthLabel, monthName, monthRange, shiftMonth, startOfCairoDay, todayISO } from "@/lib/dates";
 import { getBrands, getPeople, getWorkItems, tasksFor, type WorkItem } from "./queries";
@@ -66,6 +66,9 @@ export type BrandRow = {
   published: number;
   extra: number;
   extraDone: number;
+  /** Quality this month: versions sent back for changes, and work returned to an earlier step. */
+  changes: number;
+  sentBack: number;
   social: number;
   production: number;
   content: number;
@@ -80,8 +83,40 @@ function dept(items: WorkItem[], kind: StageKind): DeptCell {
   return { tasks: withStage.length, done: withStage.filter((i) => i.stages.find((s) => s.kind === kind)!.status === "done").length };
 }
 
+/** Quality of the month's work: how often versions needed changes, and whether changes repeat on the same item. */
+async function qualityFor(year: number, month: number) {
+  const start = startOfCairoDay(monthRange(year, month).start);
+  const end = startOfCairoDay(addDays(monthRange(year, month).end, 1));
+  const [reviewed, returns] = await Promise.all([
+    db
+      .select({ itemId: versions.itemId, by: versions.submittedById, status: versions.status, number: versions.number, brandId: contentPlans.brandId })
+      .from(versions)
+      .innerJoin(contentItems, eq(contentItems.id, versions.itemId))
+      .leftJoin(contentPlans, eq(contentPlans.id, contentItems.planId))
+      .where(and(gte(versions.reviewedAt, start), lt(versions.reviewedAt, end), inArray(versions.status, ["approved", "changes"]))),
+    db
+      .select({ itemId: activityLog.itemId, brandId: activityLog.brandId })
+      .from(activityLog)
+      .where(and(eq(activityLog.action, "stage_returned"), gte(activityLog.at, start), lt(activityLog.at, end))),
+  ]);
+  const changes = reviewed.filter((v) => v.status === "changes");
+  const approved = reviewed.filter((v) => v.status === "approved");
+  const perItem = new Map<string, number>();
+  for (const c of changes) perItem.set(c.itemId, (perItem.get(c.itemId) ?? 0) + 1);
+  return {
+    changes,
+    approved,
+    returns,
+    /** Items that needed changes more than once this month — a repeating problem. */
+    repeatedItems: [...perItem.values()].filter((n) => n > 1).length,
+    itemsWithChanges: perItem.size,
+    firstTimeRate: approved.length ? Math.round((approved.filter((v) => v.number === 1).length / approved.length) * 100) : null,
+  };
+}
+
 export async function getDashboard(year: number, month: number) {
   const today = todayISO();
+  const quality = await qualityFor(year, month);
   const plans = await db.select({ id: contentPlans.id, brandId: contentPlans.brandId }).from(contentPlans).where(and(eq(contentPlans.year, year), eq(contentPlans.month, month)));
   const prev = shiftMonth(year, month, -1);
   const prevPlans = await db.select({ id: contentPlans.id }).from(contentPlans).where(and(eq(contentPlans.year, prev.year), eq(contentPlans.month, prev.month)));
@@ -104,6 +139,8 @@ export async function getDashboard(year: number, month: number) {
         published: planned.filter((i) => i.completedAt).length,
         extra: mine.length - planned.length,
         extraDone: mine.filter((i) => i.extra && i.completedAt).length,
+        changes: quality.changes.filter((c) => c.brandId === b.id).length,
+        sentBack: quality.returns.filter((r) => r.brandId === b.id).length,
         social: mine.filter((i) => i.current?.kind === "social").length,
         production: mine.filter((i) => i.current && (i.current.kind === "shooting" || i.current.kind === "media" || i.current.kind === "design")).length,
         content: mine.filter((i) => i.current?.kind === "content").length,
@@ -121,6 +158,13 @@ export async function getDashboard(year: number, month: number) {
     extra: items.length - planned.length,
     inProgress: items.filter((i) => !i.completedAt).length,
     late: open.filter((i) => i.attention === "overdue").length,
+    left: planned.filter((i) => !i.completedAt).length,
+    extraDone: items.filter((i) => i.extra && i.completedAt).length,
+    changes: quality.changes.length,
+    itemsWithChanges: quality.itemsWithChanges,
+    repeatedItems: quality.repeatedItems,
+    firstTimeRate: quality.firstTimeRate,
+    sentBack: quality.returns.length,
     prevTotal: prevItems.filter((i) => !i.extra).length,
     prevPublished: prevItems.filter((i) => !i.extra && i.completedAt).length,
   };
@@ -143,8 +187,11 @@ export async function getDashboard(year: number, month: number) {
       const withDeadline = now.filter((c) => c.deadline && c.round === 1);
       const late = withDeadline.filter((c) => c.lateDays > 0 && !c.excused).length;
       const tasks = tasksFor(open, p);
+      const mineApproved = quality.approved.filter((v) => v.by === p.id);
       return {
         person: p,
+        changesAsked: quality.changes.filter((v) => v.by === p.id).length,
+        firstTimeRate: mineApproved.length ? Math.round((mineApproved.filter((v) => v.number === 1).length / mineApproved.length) * 100) : null,
         done: now.length,
         donePrev: before.length,
         late,
@@ -155,7 +202,18 @@ export async function getDashboard(year: number, month: number) {
     })
     .filter((r) => r.done || r.donePrev || r.openNow);
 
-  return { label: monthLabel(year, month), prevLabel: monthLabel(prev.year, prev.month), rows, totals, departments, people: peopleRows };
+  // Steps finished this month after their deadline (first round, not excused) — the same rule as each person's "Late".
+  const finishedLate = comps.filter(
+    (c) => c.completedAt.getTime() >= thisStart && c.completedAt.getTime() < thisEnd && c.deadline && c.round === 1 && c.lateDays > 0 && !c.excused,
+  ).length;
+  return {
+    label: monthLabel(year, month),
+    prevLabel: monthLabel(prev.year, prev.month),
+    rows,
+    totals: { ...totals, finishedLate },
+    departments,
+    people: peopleRows,
+  };
 }
 
 /* ------------------------------------------------------------------ */

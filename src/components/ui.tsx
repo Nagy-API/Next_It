@@ -1,8 +1,8 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { Clapperboard, GalleryHorizontalEnd, Image as ImageIcon, CircleDashed, type LucideIcon } from "lucide-react";
-import type { ContentType } from "@/db/schema";
-import { TYPE_META } from "@/domain/workflow";
+import type { ContentType, StageKind } from "@/db/schema";
+import { STAGE_COLOR, STAGE_META, TYPE_META } from "@/domain/workflow";
 
 export { clsx as cx };
 
@@ -196,6 +196,19 @@ export function ExtraBadge({ by, className }: { by?: string | null; className?: 
       className={clsx("inline-flex shrink-0 items-center rounded-full bg-[#fff1dc] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#b45309]", className)}
     >
       Extra{by ? ` · ${by}` : ""}
+    </span>
+  );
+}
+
+/* ------------------------------ Steps ------------------------------ */
+
+/** The step's name in its own colour — the same colour for that step everywhere. */
+export function StageChip({ kind, short, className }: { kind: StageKind; short?: boolean; className?: string }) {
+  const c = STAGE_COLOR[kind];
+  return (
+    <span className={clsx("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-semibold", className)} style={{ color: c.fg, backgroundColor: c.bg }}>
+      <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: c.fg }} />
+      {short ? STAGE_META[kind].short : STAGE_META[kind].label}
     </span>
   );
 }

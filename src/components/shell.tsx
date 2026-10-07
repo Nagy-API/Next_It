@@ -239,7 +239,8 @@ function SearchBox() {
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (e.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) {
+      // "/" or Ctrl/⌘+K jumps to search from anywhere.
+      if ((e.key === "k" && (e.ctrlKey || e.metaKey)) || (e.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) && !t.isContentEditable)) {
         e.preventDefault();
         ref.current?.focus();
       }
