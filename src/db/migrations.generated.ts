@@ -198,5 +198,15 @@ export const MIGRATIONS: { sql: string[]; bps: boolean; folderMillis: number; ha
     "bps": true,
     "folderMillis": 1791331005159,
     "hash": "b26c9ef555c11d5ac8df19e0b61307fdb23f0cb39e988b72a0f5765cd3d69602"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"tasks\" ADD COLUMN \"status\" text DEFAULT 'todo' NOT NULL;",
+      "\nALTER TABLE \"tasks\" ADD COLUMN \"scheduled_date\" date;",
+      "\nALTER TABLE \"tasks\" ADD COLUMN \"status_at\" timestamp with time zone;"
+    ],
+    "bps": true,
+    "folderMillis": 1791335092971,
+    "hash": "d8cdc6e08856dc033e71264d1bbacdd693deb3c332524d9b9647a528f5c8530b"
   }
 ];

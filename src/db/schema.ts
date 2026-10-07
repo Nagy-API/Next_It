@@ -441,6 +441,10 @@ export const versions = pgTable(
 /* Tasks managers give to anyone (one-off or repeating)                  */
 /* ------------------------------------------------------------------ */
 
+/** What someone is doing with a task they were given (done is tasks.doneAt). */
+export const TASK_STATUSES = ["todo", "in_progress", "scheduled", "waiting"] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
 export const RECURRENCES = ["none", "daily", "weekly", "monthly"] as const;
 
 export const tasks = pgTable(
@@ -462,6 +466,11 @@ export const tasks = pgTable(
     recurrence: text("recurrence").notNull().default("none"),
     /** All occurrences of a repeating task share the first one's id. */
     seriesId: uuid("series_id"),
+    /** What the person is doing with it: todo | in_progress | scheduled | waiting (done = doneAt). */
+    status: text("status").notNull().default("todo"),
+    /** When they plan to do it (status "scheduled"). */
+    scheduledDate: date("scheduled_date", { mode: "string" }),
+    statusAt: ts("status_at"),
     doneAt: ts("done_at"),
     doneById: uuid("done_by_id").references(() => users.id),
     createdAt: ts("created_at").notNull().defaultNow(),

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { CONTENT_TYPES, PLATFORM_STATUSES, RECURRENCES, STAGE_KINDS, STAGE_PROGRESS, type Recurrence, type StageProgress, type ContentType, type PlatformStatus, type StageKind } from "@/db/schema";
+import { CONTENT_TYPES, PLATFORM_STATUSES, RECURRENCES, TASK_STATUSES, type TaskStatus, STAGE_KINDS, STAGE_PROGRESS, type Recurrence, type StageProgress, type ContentType, type PlatformStatus, type StageKind } from "@/db/schema";
 import { STAGE_META } from "@/domain/workflow";
 import type { Actor } from "@/server/activity";
 import {
@@ -23,7 +23,7 @@ import {
 } from "@/server/admin";
 import { endSession, requireActor, requireAdmin, startSession } from "@/server/auth";
 import { UserError } from "@/server/errors";
-import { createTasks, deleteTask, setTaskDone } from "@/server/tasks";
+import { createTasks, deleteTask, setTaskDone, setTaskStatus, TASK_STATUS_LABEL } from "@/server/tasks";
 import { deleteChatMessage, markChatRead, postChatMessage } from "@/server/chat";
 import { addComment, bulkStageAction, createExtraTasks, createItems, deleteComment, resolveComment, setItemCancelled, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
 import { checkCredentials, deleteAllSessions } from "@/server/sessions";
@@ -423,6 +423,15 @@ export async function taskDoneAction(_: ActionResult, fd: FormData): Promise<Act
     const done = str(fd, "done") !== "0";
     const next = await setTaskDone(actor, str(fd, "taskId"), done);
     return done ? (next ? "Done! The next one is already scheduled." : "Done — nice work.") : "Reopened.";
+  });
+}
+
+export async function taskStatusAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const status = str(fd, "status");
+    if (!(TASK_STATUSES as readonly string[]).includes(status)) throw new UserError("Unknown status.");
+    await setTaskStatus(actor, str(fd, "taskId"), status as TaskStatus, { scheduledDate: opt(fd, "scheduledDate") });
+    return `Status: ${TASK_STATUS_LABEL[status as TaskStatus]}.`;
   });
 }
 

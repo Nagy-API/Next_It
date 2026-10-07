@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { CalendarClock, Check, ClipboardPlus, Repeat, Trash2 } from "lucide-react";
-import { createTaskAction, deleteTaskAction, taskDoneAction } from "@/app/actions";
+import { CalendarCheck, CalendarClock, Check, CircleDashed, ClipboardPlus, Hourglass, Loader, Repeat, Trash2, type LucideIcon } from "lucide-react";
+import { createTaskAction, deleteTaskAction, taskDoneAction, taskStatusAction } from "@/app/actions";
 import { ActionForm, Modal, Submit } from "./client";
 import { Avatar } from "./avatar";
 import { BrandDot, btn } from "./ui";
@@ -242,7 +242,83 @@ export type TaskRowData = {
   brandName: string | null;
   brandColor: string | null;
   createdAt: Date;
+  status: string;
+  scheduledDate: string | null;
 };
+
+/** What the person is doing with a task. Done is the round check button. */
+const TASK_STATUS: { v: string; label: string; icon: LucideIcon; on: string }[] = [
+  { v: "todo", label: "Not started", icon: CircleDashed, on: "bg-[#eef1f7] text-ink-2 ring-line-strong" },
+  { v: "in_progress", label: "In progress", icon: Loader, on: "bg-electric-soft text-[#1d5fd1] ring-electric/40" },
+  { v: "scheduled", label: "Scheduled", icon: CalendarCheck, on: "bg-[#f1e8fd] text-[#6d28d9] ring-[#6d28d9]/30" },
+  { v: "waiting", label: "Waiting", icon: Hourglass, on: "bg-warn-soft text-warn ring-warn/30" },
+];
+
+function StatusPill({ t }: { t: Pick<TaskRowData, "status" | "scheduledDate"> }) {
+  const st = TASK_STATUS.find((x) => x.v === t.status) ?? TASK_STATUS[0];
+  const Icon = st.icon;
+  return (
+    <span className={clsx("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-semibold ring-1", st.on)}>
+      <Icon className="size-3" strokeWidth={2.4} /> {st.label}
+      {t.status === "scheduled" && t.scheduledDate && <> · {formatDay(t.scheduledDate)}</>}
+    </span>
+  );
+}
+
+/** The person picks what's happening: not started, in progress, scheduled for a day, or waiting on someone. */
+function StatusPicker({ t, today }: { t: TaskRowData; today: string }) {
+  const [picking, setPicking] = useState(false);
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {TASK_STATUS.map((x) => {
+        const on = t.status === x.v;
+        const Icon = x.icon;
+        if (x.v === "scheduled")
+          return (
+            <button
+              key={x.v}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setPicking((p) => !p)}
+              className={clsx(
+                "inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium ring-1 transition-colors",
+                on ? x.on : "bg-white text-muted ring-line hover:text-ink hover:ring-line-strong",
+              )}
+            >
+              <Icon className="size-3.5" /> {x.label}
+              {on && t.scheduledDate && <> · {formatDay(t.scheduledDate)}</>}
+            </button>
+          );
+        return (
+          <ActionForm key={x.v} action={taskStatusAction} inlineError={false}>
+            <input type="hidden" name="taskId" value={t.id} />
+            <input type="hidden" name="status" value={x.v} />
+            <button
+              type="submit"
+              aria-pressed={on}
+              className={clsx(
+                "inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium ring-1 transition-colors",
+                on ? x.on : "bg-white text-muted ring-line hover:text-ink hover:ring-line-strong",
+              )}
+            >
+              <Icon className="size-3.5" /> {x.label}
+            </button>
+          </ActionForm>
+        );
+      })}
+      {picking && (
+        <ActionForm action={taskStatusAction} onSuccess={() => setPicking(false)} className="flex items-center gap-1.5">
+          <input type="hidden" name="taskId" value={t.id} />
+          <input type="hidden" name="status" value="scheduled" />
+          <input type="date" name="scheduledDate" required min={today} defaultValue={t.scheduledDate ?? ""} aria-label="Day you'll do it" className="field !h-8 !w-auto !py-0 text-[12.5px]" />
+          <Submit variant="secondary" className="!h-8 !px-3 text-[12.5px]">
+            Save
+          </Submit>
+        </ActionForm>
+      )}
+    </div>
+  );
+}
 
 /** One task with a big tick button. `mode="mine"` for the person doing it, `"given"` for the manager who gave it. */
 export function TaskRow({ t, today, mode, canDelete }: { t: TaskRowData; today: string; mode: "mine" | "given"; canDelete: boolean }) {
@@ -260,7 +336,7 @@ export function TaskRow({ t, today, mode, canDelete }: { t: TaskRowData; today: 
           aria-label={t.doneAt ? `Reopen ${t.title}` : `Done: ${t.title}`}
           className={clsx(
             "mt-0.5 flex size-6 cursor-pointer items-center justify-center rounded-full border-2 transition-colors",
-            t.doneAt ? "border-ok bg-ok text-white" : "border-line-strong bg-white text-transparent hover:border-ok hover:text-ok",
+            t.doneAt ? "animate-pop border-ok bg-ok text-white" : "border-line-strong bg-white text-transparent hover:border-ok hover:text-ok",
           )}
         >
           <Check className="size-3.5" strokeWidth={3.2} />
@@ -290,9 +366,10 @@ export function TaskRow({ t, today, mode, canDelete }: { t: TaskRowData; today: 
               {t.brandColor && <BrandDot color={t.brandColor} />} {t.brandName}
             </span>
           )}
-          {t.doneAt && <span className="text-ok">Done {formatRelative(t.doneAt)}</span>}
+          {t.doneAt ? <span className="text-ok">Done {formatRelative(t.doneAt)}</span> : mode === "given" && <StatusPill t={t} />}
         </div>
         {t.notes && <div className="mt-1 text-[13px] text-ink-2">{t.notes}</div>}
+        {mode === "mine" && !t.doneAt && <StatusPicker t={t} today={today} />}
       </div>
       {canDelete && (
         <>

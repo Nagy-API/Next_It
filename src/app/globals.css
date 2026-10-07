@@ -52,6 +52,18 @@
       transform: none;
     }
   }
+  --animate-pop: pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  @keyframes pop {
+    0% {
+      transform: scale(0.6);
+    }
+    60% {
+      transform: scale(1.18);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
   --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
   @keyframes pulse-dot {
     0%,
@@ -112,5 +124,16 @@
   }
   .link {
     @apply text-electric hover:underline underline-offset-2;
+  }
+}
+
+/* People who turn animations off on their device get none here either. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
   }
 }

@@ -5,7 +5,7 @@
 import { and, asc, desc, eq, gte, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { brands, RECURRENCES, tasks, users, type Recurrence } from "@/db/schema";
+import { brands, RECURRENCES, TASK_STATUSES, tasks, users, type Recurrence, type TaskStatus } from "@/db/schema";
 import { can, isManager } from "@/domain/permissions";
 import { addDays, addMonthsISO, formatDay, isValidISODate, isValidTime, todayISO } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
@@ -13,6 +13,7 @@ import { assert } from "./errors";
 import { notify } from "./notify";
 
 export const RECURRENCE_LABEL: Record<Recurrence, string> = { none: "Once", daily: "Every day", weekly: "Every week", monthly: "Every month" };
+export const TASK_STATUS_LABEL: Record<TaskStatus, string> = { todo: "Not started", in_progress: "In progress", scheduled: "Scheduled", waiting: "Waiting" };
 
 export type TaskInput = {
   title: string;
@@ -130,6 +131,39 @@ export async function setTaskDone(actor: Actor, taskId: string, done: boolean, o
   });
 }
 
+/**
+ * The person (or whoever gave it / a manager) says what's happening with a task: not started, in progress,
+ * scheduled for a day, or waiting on someone. Finishing it is setTaskDone.
+ */
+export async function setTaskStatus(actor: Actor, taskId: string, status: TaskStatus, opts: { scheduledDate?: string | null; now?: Date } = {}) {
+  assert(TASK_STATUSES.includes(status), "Unknown status.");
+  const scheduledDate = status === "scheduled" ? opts.scheduledDate || null : null;
+  if (status === "scheduled") {
+    assert(scheduledDate, "Pick the day you'll do it.");
+    assert(isValidISODate(scheduledDate), "Invalid date.");
+  }
+  const now = opts.now ?? new Date();
+  return db.transaction(async (tx) => {
+    const [t] = await tx.select().from(tasks).where(eq(tasks.id, taskId)).for("update");
+    assert(t && !t.deletedAt, "Task not found.");
+    assert(t.assigneeId === actor.id || t.createdById === actor.id || isManager(actor), "This task isn't yours.");
+    assert(!t.doneAt, "This task is already done — reopen it first.");
+    if (t.status === status && (t.scheduledDate ?? null) === scheduledDate) return false;
+    await tx.update(tasks).set({ status, scheduledDate, statusAt: now }).where(eq(tasks.id, t.id));
+    await logActivity(tx, actor, {
+      action: "task_status",
+      subjectUserId: t.assigneeId,
+      brandId: t.brandId,
+      field: "status",
+      oldValue: t.status,
+      newValue: status,
+      summary: `${actor.name} set the task “${t.title}” to ${TASK_STATUS_LABEL[status]}${scheduledDate ? ` for ${formatDay(scheduledDate)}` : ""}.`,
+      at: now,
+    });
+    return true;
+  });
+}
+
 /** Delete one task — or, for a repeating one, stop the whole series. Managers or whoever gave it. */
 export async function deleteTask(actor: Actor, taskId: string, opts: { series?: boolean } = {}) {
   return db.transaction(async (tx) => {
@@ -160,6 +194,8 @@ const taskCols = {
   dueDate: tasks.dueDate,
   dueTime: tasks.dueTime,
   recurrence: tasks.recurrence,
+  status: tasks.status,
+  scheduledDate: tasks.scheduledDate,
   doneAt: tasks.doneAt,
   createdAt: tasks.createdAt,
   assigneeId: tasks.assigneeId,

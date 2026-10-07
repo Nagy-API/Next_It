@@ -151,7 +151,8 @@ docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
 - **versions** — v1, v2… per media/design step: url, note, status (pending/approved/changes/replaced), reviewer.
 - **platforms / item_platforms** — per-platform publishing status, date, live link.
 - **comments** — threads (one level), `mentionUserId` (waits for their reply), `resolvedAt`, `deletedAt`.
-- **tasks** — manager-given tasks: assignee, due, `recurrence` (none/daily/weekly/monthly), `seriesId`, `doneAt`, `deletedAt`.
+- **tasks** — manager-given tasks: assignee, due, `recurrence` (none/daily/weekly/monthly), `seriesId`, `status`
+  (todo/in_progress/scheduled/waiting — the person picks it; `scheduledDate` for scheduled; done = `doneAt`), `deletedAt`.
 - **chat_messages** — Team chat, `mentions[]`, `deletedAt`.
 - **notifications** — per person; `kind`, `title`, `body`, `itemId` or `href`, `readAt`.
 - **activity_log** — IMMUTABLE history (a DB trigger in `drizzle/0001_activity_log_immutable.sql` rejects UPDATE/DELETE/TRUNCATE).
@@ -195,6 +196,7 @@ A task without a brand stays a simple to-do (tasks.ts, can repeat).
 **Order in My tasks**: new work first (`isNewWork`: reached the person in the last 3 days, not started; newest on top), then late,
 then posting/due within 48h, then sent back, then by deadline/posting date. Manager to-dos: new first, then by deadline.
 Every card shows when it was received (and from whom) and its deadline.
+Phones/tablets get a bottom tab bar (My tasks, Overview, Chat, Brands, More) in `shell.tsx`; toasts sit above it.
 
 ## 7. Permissions (src/domain/permissions.ts) — always enforced on the server
 
@@ -205,7 +207,7 @@ Every card shows when it was received (and from whom) and its deadline.
 | Do a step (`doStage`) | the assignee, the step's team, admin; delivery: account/content/managers |
 | Choose who does a step (`assign`) | managers (anyone can "take" unassigned work of their own team) |
 | Set a deadline | managers — change/remove a set one: admin only |
-| Approve versions (`review`) | **content team only** (+ admins) — managers outside Content (Ayman, Assem) can't approve or skip approval |
+| Approve versions (`review`) | managers + content team (each version is sent to the item's content creator; managers see all) |
 | Add/edit/delete content (`editContent`) | managers + content |
 | Posting date | managers + content + social |
 | Shoot plan | managers + media + content |

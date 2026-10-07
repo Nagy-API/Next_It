@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { closeDb, db } from "@/db";
 import { comments, notifications, stages, tasks } from "@/db/schema";
-import { createTasks, deleteTask, getTasksFor, setTaskDone } from "@/server/tasks";
+import { createTasks, deleteTask, getTasksFor, setTaskDone, setTaskStatus } from "@/server/tasks";
 import { findMentions, postChatMessage, unreadChatCount, markChatRead } from "@/server/chat";
 import { addComment, createItems, deleteComment } from "@/server/items";
 import { createProject, findOrCreateClient, setAvatar, setProjectDeleted } from "@/server/admin";
@@ -50,6 +50,27 @@ describe("Tasks managers give", () => {
     const [t] = await createTasks(shahenda, { title: "Invoice", assigneeIds: [assem.id], dueDate: "2027-01-31", recurrence: "monthly" });
     const next = await setTaskDone(assem, t.id, true);
     expect(next?.dueDate).toBe("2027-02-28");
+  });
+});
+
+describe("Task status", () => {
+  it("the person says what's happening: in progress, scheduled for a day, waiting; others can't", async () => {
+    const ammar = await makeManager("Ammar", ["content"]);
+    const esraa = await makeUser("Esraa", ["social"]);
+    const other = await makeUser("Other", ["design"]);
+    const [t] = await createTasks(ammar, { title: "Client report", assigneeIds: [esraa.id] });
+    expect(t.status).toBe("todo");
+    await setTaskStatus(esraa, t.id, "in_progress");
+    await expect(setTaskStatus(esraa, t.id, "scheduled")).rejects.toThrow(/Pick the day/);
+    await setTaskStatus(esraa, t.id, "scheduled", { scheduledDate: "2026-10-12" });
+    await expect(setTaskStatus(other, t.id, "waiting")).rejects.toThrow(/isn't yours/);
+    const [row] = (await getTasksFor(esraa.id, "2026-10-08")).filter((x) => x.id === t.id);
+    expect(row).toMatchObject({ status: "scheduled", scheduledDate: "2026-10-12" });
+    await setTaskStatus(esraa, t.id, "waiting");
+    const [row2] = (await getTasksFor(esraa.id, "2026-10-08")).filter((x) => x.id === t.id);
+    expect(row2).toMatchObject({ status: "waiting", scheduledDate: null });
+    await setTaskDone(esraa, t.id, true);
+    await expect(setTaskStatus(esraa, t.id, "in_progress")).rejects.toThrow(/already done/);
   });
 });
 

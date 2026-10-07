@@ -64,6 +64,13 @@
       "when": 1791331005159,
       "tag": "0008_clammy_khan",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791335092971,
+      "tag": "0009_friendly_iron_lad",
+      "breakpoints": true
     }
   ]
 }
