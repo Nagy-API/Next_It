@@ -197,6 +197,14 @@ A task without a brand stays a simple to-do (tasks.ts, can repeat).
 then posting/due within 48h, then sent back, then by deadline/posting date. Manager to-dos: new first, then by deadline.
 Every card shows when it was received (and from whom) and its deadline.
 Phones/tablets get a bottom tab bar (My tasks, Overview, Chat, Brands, More) in `shell.tsx`; toasts sit above it.
+Look: every step has one colour everywhere (`STAGE_COLOR` in domain/workflow.ts → `StageChip` in ui.tsx); cards and rows
+carry their brand's colour as a left stripe; `/` or Ctrl/⌘+K focuses search. `(app)/error.tsx` and `global-error.tsx`
+show a calm "Try again" page instead of a blank error (Next 16 passes `retry`, not `reset`).
+
+**Dashboard month report** (`getDashboard` → `qualityFor`, stats.ts): planned / done / not done (plan only), extra
+requested + done, changes requested (versions reviewed with "changes" that month), items that needed changes more than
+once ("repeated"), approved first time (v1 approved ÷ approved), sent back (`stage_returned` in the activity log),
+steps finished late. Per brand and per person too; all read-only from existing data.
 
 ## 7. Permissions (src/domain/permissions.ts) — always enforced on the server
 

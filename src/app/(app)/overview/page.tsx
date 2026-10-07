@@ -11,7 +11,7 @@ import { requireUser } from "@/server/auth";
 import { getOpenItems } from "@/server/cached";
 import { getActivity, getBrandMonthSummaries, getHomeData, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
 import { ItemRow } from "@/components/item-row";
-import { Avatar, BrandDot, Empty, ProgressBar, SectionTitle, TypeIcon } from "@/components/ui";
+import { Avatar, BrandDot, Empty, ProgressBar, SectionTitle, StageChip, TypeIcon } from "@/components/ui";
 
 export const metadata = { title: "Overview" };
 
@@ -89,7 +89,7 @@ export default async function HomePage() {
               <Link key={i.id} href={`/items/${i.id}`} className="card group flex flex-col gap-2 border-[#ff8a1f]/50 bg-gradient-to-br from-white to-[#fff6ee] p-4 ring-2 ring-[#ff8a1f]/10 transition-shadow hover:shadow-pop">
                 <div className="flex flex-wrap items-center gap-2">
                   <HotBadge item={i} today={today} />
-                  <span className="rounded-full bg-white px-2 py-0.5 text-[11.5px] font-semibold text-ink-2 ring-1 ring-line">{STAGE_META[i.current!.kind].label}</span>
+                  <StageChip kind={i.current!.kind} />
                 </div>
                 <div className="flex items-center gap-1.5 font-semibold group-hover:text-electric">
                   <TypeIcon type={i.type} /> <span className="truncate">{i.title}</span>

@@ -5,7 +5,7 @@ import { formatDateTime, formatDay, monthName } from "@/lib/dates";
 import { Check } from "lucide-react";
 import type { WorkItem } from "@/server/queries";
 import { FlowMini, ItemStatus } from "./flow";
-import { Avatar, BrandDot, ExtraBadge, TypeIcon } from "./ui";
+import { Avatar, BrandDot, ExtraBadge, StageChip, TypeIcon } from "./ui";
 
 export function itemContextLabel(item: WorkItem) {
   if (item.brand && item.plan) return `${item.brand.name} · ${monthName(item.plan.month, true)} ${item.plan.year}`;
@@ -19,7 +19,10 @@ export function ItemRow({ item, showContext = true, compact, leading, actions }:
   const holder = c?.assignee?.name ?? null;
   const last = item.stages.filter((s) => s.status === "done" && s.completedAt).at(-1);
   return (
-    <div className={clsx("group relative flex items-center gap-3 px-4 transition-colors hover:bg-[#f8faff]", compact ? "py-2.5" : "py-3", item.cancelledAt && "opacity-60")}>
+    <div
+      style={showContext && item.brand ? { boxShadow: `inset 3px 0 0 ${item.brand.color}` } : undefined}
+      className={clsx("group relative flex items-center gap-3 px-4 transition-colors hover:bg-[#f8faff]", compact ? "py-2.5" : "py-3", item.cancelledAt && "opacity-60")}
+    >
       {leading}
       <div className="flex w-[52px] shrink-0 flex-col items-center text-center leading-tight">
         {item.postingDate ? (
@@ -70,7 +73,7 @@ export function ItemRow({ item, showContext = true, compact, leading, actions }:
               <Avatar name={holder} size={24} />
               <div className="min-w-0 leading-tight">
                 <div className="truncate font-medium">{holder}</div>
-                <div className="truncate text-[12px] text-muted">{STAGE_META[c.kind].label}</div>
+                <div className="mt-0.5 truncate text-[12px]"><StageChip kind={c.kind} className="!px-1.5 !py-0 !text-[11px]" /></div>
               </div>
             </>
           ) : (

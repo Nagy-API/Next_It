@@ -246,3 +246,16 @@ export function isNewWork(i: { current: { activatedAt: Date | null; progress: st
 export function isNewTask(t: { doneAt: Date | null; createdAt: Date; status?: string }, now = Date.now()) {
   return !t.doneAt && (!t.status || t.status === "todo") && now - new Date(t.createdAt).getTime() < NEW_FOR_MS;
 }
+
+/* ------------------------------------------------------------------ */
+/* One colour per step, used everywhere (chips, rows, cards)              */
+/* ------------------------------------------------------------------ */
+
+export const STAGE_COLOR: Record<StageKind, { fg: string; bg: string }> = {
+  content: { fg: "#6d28d9", bg: "#f1e8fd" },
+  shooting: { fg: "#be185d", bg: "#fde7f1" },
+  media: { fg: "#1d5fd1", bg: "#e5effe" },
+  design: { fg: "#c2410c", bg: "#fff0e4" },
+  social: { fg: "#047857", bg: "#e3f6ee" },
+  delivery: { fg: "#0f766e", bg: "#e0f4f2" },
+};
