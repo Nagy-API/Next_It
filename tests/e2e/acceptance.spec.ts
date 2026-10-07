@@ -99,10 +99,10 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.goto("/my-work");
     await card(page, "The Ampoule").getByPlaceholder(/Instagram post link/).fill("https://www.instagram.com/p/ampoule");
     await card(page, "The Ampoule").getByRole("button", { name: "Published" }).first().click();
-    await toast(page, "Saved.");
+    await toast(page, "Published! ✨");
     await card(page, "The Ampoule").getByPlaceholder(/TikTok post link/).fill("https://www.tiktok.com/@vr/video/1");
     await card(page, "The Ampoule").getByRole("button", { name: "Published" }).click();
-    await toast(page, "Saved.");
+    await toast(page, /Published everywhere/);
 
     await openItem(page, "vanilla-roza", "The Ampoule");
     await expect(page.getByText("Published").first()).toBeVisible();
@@ -232,7 +232,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await login(page, "assem");
     await page.goto("/my-work");
     await card(page, "Reel 1").getByRole("button", { name: /Mark as delivered/ }).click();
-    await toast(page, "Done — nice work.");
+    await toast(page, /Done — nice work/);
 
     await login(page, "ammar");
     await page.goto("/projects");

@@ -634,7 +634,7 @@ export function TaskCard({
       // The brand's colour as a stripe on the left: you see whose work it is before reading.
       style={item.brand ? { boxShadow: `inset 4px 0 0 ${item.brand.color}` } : undefined}
       className={clsx(
-        "card overflow-hidden transition-shadow duration-150 hover:shadow-pop",
+        "card animate-rise overflow-hidden transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-pop",
         late ? "border-bad/50" : item.hot ? "border-[#ff8a1f]/60 ring-2 ring-[#ff8a1f]/15" : returned && "border-back/50",
       )}
     >

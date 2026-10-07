@@ -9,7 +9,7 @@ export { clsx as cx };
 /* ------------------------------ Buttons ------------------------------ */
 
 const btnBase =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-[background,color,box-shadow,border-color] disabled:opacity-50 disabled:pointer-events-none select-none";
+  "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-[background,color,box-shadow,border-color,transform] active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none select-none";
 const btnVariants = {
   primary: "bg-electric text-white hover:bg-[#2f74e6] shadow-[0_1px_0_rgb(255_255_255/0.2)_inset,0_1px_2px_rgb(11_22_57/0.2)]",
   dark: "bg-navy-900 text-white hover:bg-navy-800",

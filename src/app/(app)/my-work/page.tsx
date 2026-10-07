@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { ClipboardCheck, Coffee, Flame, Hourglass, MessageSquareText, ThumbsUp } from "lucide-react";
+import { AlarmClock, ClipboardCheck, Coffee, Flame, Hourglass, Inbox, MessageSquareText, ThumbsUp, Trophy, type LucideIcon } from "lucide-react";
 import { TaskCard } from "@/components/handoff";
 import { TaskRow } from "@/components/tasks";
 import { Avatar, Badge, BrandDot, SectionTitle, TypeIcon } from "@/components/ui";
@@ -13,6 +13,7 @@ import { getActivePeople, getOpenItems } from "@/server/cached";
 import { getMyMessages, getPersonCompletions, getPersonWork, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
 import { getTasksFor, getTasksGivenBy } from "@/server/tasks";
 import { BRAND } from "@/config/brand";
+import { dailyLine, teamEmoji } from "@/lib/cheer";
 
 export const metadata = { title: "My tasks" };
 
@@ -114,18 +115,19 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
             <Avatar name={user.name} size={46} ring />
             <div>
               <h1 className="font-display text-[21px] font-bold leading-tight tracking-[-0.01em] sm:text-[26px]">
-                {greeting()}, {user.name}
+                {greeting()}, {user.name} <span className="inline-block origin-bottom-right animate-wave">{teamEmoji(user.teams)}</span>
               </h1>
               <p className="text-[14px] text-white/65">
                 {total ? (hotCount ? `${hotCount} thing${hotCount > 1 ? "s" : ""} must move in the next 48 hours — they're at the top.` : "Here's everything on you, from every brand.") : "Nothing waiting for you right now — enjoy it ☕"}
               </p>
+              <p className="mt-1 hidden text-[13px] italic text-electric-bright/90 sm:block">{dailyLine(user.name, today)}</p>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-4 gap-2 sm:mt-5 sm:gap-3">
-            <HeroStat label="On you now" value={total} />
-            <HeroStat label="Late" value={lateCount} tone={lateCount ? "bad" : undefined} />
-            <HeroStat label="Within 48 hours" value={hotCount} tone={hotCount ? "warn" : undefined} />
-            <HeroStat label={`Done in ${monthName(thisMonth.month)}`} value={thisMonth.value} hint={deltaText(thisMonth.value, lastMonth.value, monthName(lastMonth.month, true))} />
+            <HeroStat icon={Inbox} label="On you now" value={total} />
+            <HeroStat icon={AlarmClock} label="Late" value={lateCount} tone={lateCount ? "bad" : undefined} />
+            <HeroStat icon={Flame} label="Within 48 hours" value={hotCount} tone={hotCount ? "warn" : undefined} />
+            <HeroStat icon={Trophy} label={`Done in ${monthName(thisMonth.month)}`} value={thisMonth.value} hint={deltaText(thisMonth.value, lastMonth.value, monthName(lastMonth.month, true))} />
           </div>
           <Link href={`/team/${user.username}`} className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-electric-bright hover:underline">
             My stats month by month →
@@ -310,10 +312,12 @@ function deltaText(now: number, before: number, beforeLabel: string) {
   return `${d > 0 ? "+" : ""}${d} vs ${beforeLabel} (${before})`;
 }
 
-function HeroStat({ label, value, tone, hint }: { label: string; value: number; tone?: "bad" | "warn"; hint?: string }) {
+function HeroStat({ icon: Icon, label, value, tone, hint }: { icon: LucideIcon; label: string; value: number; tone?: "bad" | "warn"; hint?: string }) {
   return (
-    <div className="rounded-xl bg-white/[0.07] px-2.5 py-2.5 ring-1 ring-white/10 sm:px-4 sm:py-3">
-      <div className="text-[10.5px] font-medium leading-tight text-white/60 sm:text-[12px]">{label}</div>
+    <div className="rounded-xl bg-white/[0.07] px-2.5 py-2.5 ring-1 ring-white/10 transition-colors hover:bg-white/[0.11] sm:px-4 sm:py-3">
+      <div className="flex items-center gap-1.5 text-[10.5px] font-medium leading-tight text-white/60 sm:text-[12px]">
+        <Icon className="hidden size-3.5 shrink-0 sm:block" strokeWidth={2.2} /> {label}
+      </div>
       <div className={clsx("mt-1 font-display text-[22px] font-bold leading-none sm:text-[30px]", tone === "bad" && "text-[#ff8a8a]", tone === "warn" && "text-[#ffc56b]")}>{value}</div>
       {hint && <div className="mt-1.5 hidden text-[11.5px] text-white/55 sm:block">{hint}</div>}
     </div>
