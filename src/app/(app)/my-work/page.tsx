@@ -105,7 +105,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
 
   return (
     <div className="mx-auto max-w-[980px] space-y-8">
-      <header className="relative overflow-hidden rounded-2xl bg-navy-900 px-6 py-6 text-white">
+      <header className="relative overflow-hidden rounded-2xl bg-navy-900 px-4 py-4 text-white sm:px-6 sm:py-6">
         <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_200px_at_85%_0%,rgba(59,130,246,0.35),transparent_70%)]" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={BRAND.logos.markOnDark} alt="" aria-hidden className="pointer-events-none absolute -right-10 -top-12 size-56 object-contain opacity-[0.08] drop-shadow-[0_10px_25px_rgba(96,165,250,0.6)]" />
@@ -113,7 +113,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
           <div className="flex items-center gap-3">
             <Avatar name={user.name} size={46} ring />
             <div>
-              <h1 className="font-display text-[26px] font-bold leading-tight tracking-[-0.01em]">
+              <h1 className="font-display text-[21px] font-bold leading-tight tracking-[-0.01em] sm:text-[26px]">
                 {greeting()}, {user.name}
               </h1>
               <p className="text-[14px] text-white/65">
@@ -121,7 +121,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
               </p>
             </div>
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-4 grid grid-cols-4 gap-2 sm:mt-5 sm:gap-3">
             <HeroStat label="On you now" value={total} />
             <HeroStat label="Late" value={lateCount} tone={lateCount ? "bad" : undefined} />
             <HeroStat label="Within 48 hours" value={hotCount} tone={hotCount ? "warn" : undefined} />
@@ -312,10 +312,10 @@ function deltaText(now: number, before: number, beforeLabel: string) {
 
 function HeroStat({ label, value, tone, hint }: { label: string; value: number; tone?: "bad" | "warn"; hint?: string }) {
   return (
-    <div className="rounded-xl bg-white/[0.07] px-4 py-3 ring-1 ring-white/10">
-      <div className="text-[12px] font-medium text-white/60">{label}</div>
-      <div className={clsx("mt-1 font-display text-[30px] font-bold leading-none", tone === "bad" && "text-[#ff8a8a]", tone === "warn" && "text-[#ffc56b]")}>{value}</div>
-      {hint && <div className="mt-1.5 text-[11.5px] text-white/55">{hint}</div>}
+    <div className="rounded-xl bg-white/[0.07] px-2.5 py-2.5 ring-1 ring-white/10 sm:px-4 sm:py-3">
+      <div className="text-[10.5px] font-medium leading-tight text-white/60 sm:text-[12px]">{label}</div>
+      <div className={clsx("mt-1 font-display text-[22px] font-bold leading-none sm:text-[30px]", tone === "bad" && "text-[#ff8a8a]", tone === "warn" && "text-[#ffc56b]")}>{value}</div>
+      {hint && <div className="mt-1.5 hidden text-[11.5px] text-white/55 sm:block">{hint}</div>}
     </div>
   );
 }

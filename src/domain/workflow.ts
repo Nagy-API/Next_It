@@ -242,7 +242,7 @@ export function isNewWork(i: { current: { activatedAt: Date | null; progress: st
   return !!c?.activatedAt && c.progress === "not_started" && now - new Date(c.activatedAt).getTime() < NEW_FOR_MS;
 }
 
-/** A manager's to-do given in the last 3 days and not done yet. */
-export function isNewTask(t: { doneAt: Date | null; createdAt: Date }, now = Date.now()) {
-  return !t.doneAt && now - new Date(t.createdAt).getTime() < NEW_FOR_MS;
+/** A manager's to-do given in the last 3 days that nobody has picked up yet (not started, not done). */
+export function isNewTask(t: { doneAt: Date | null; createdAt: Date; status?: string }, now = Date.now()) {
+  return !t.doneAt && (!t.status || t.status === "todo") && now - new Date(t.createdAt).getTime() < NEW_FOR_MS;
 }

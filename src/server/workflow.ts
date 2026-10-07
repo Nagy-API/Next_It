@@ -767,7 +767,7 @@ export async function handOff(actor: Actor, stageId: string, input: HandOffInput
 
 export const PROGRESS_LABEL: Record<StageProgress, string> = {
   not_started: "Not started",
-  processing: "Processing",
+  processing: "In progress",
   adjusting: "Adjusting",
   waiting_approval: "Waiting approval",
 };
@@ -802,7 +802,7 @@ export async function setStageProgress(actor: Actor, stageId: string, progress: 
 /* Versions: editors / designers send v1, v2… for approval               */
 /* ------------------------------------------------------------------ */
 
-const APPROVAL_NEEDED = "Send it as a version for approval — the content creator approves it.";
+const APPROVAL_NEEDED = "Send it as a version for approval — the content creator or a manager approves it.";
 
 /**
  * Who is asked to review a version: the item's content creator (or project owner), else the brand's default
@@ -880,7 +880,7 @@ export async function reviewVersion(actor: Actor, versionId: string, input: { ap
     assert(v, "Version not found.");
     const { ctx, all, stage } = await stageWithItem(tx, v.stageId);
     ensureOpen(ctx);
-    assert(can.review(actor), "Only the Content creators approve versions.");
+    assert(can.review(actor), "Only managers or the Content creators can approve versions.");
     assert(v.status === "pending", `v${v.number} was already ${v.status === "approved" ? "approved" : v.status === "changes" ? "sent back for changes" : "replaced by a newer version"}.`);
     assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current step.`);
     const note = input.note?.trim() || null;

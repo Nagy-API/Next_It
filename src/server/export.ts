@@ -57,7 +57,7 @@ function itemRow(i: WorkItem) {
     posting: i.postingDate ?? "",
     time: i.postingTime ?? "",
     status: i.cancelledAt ? "Deleted" : i.completedAt ? finalLabel(i.context) : cur ? STAGE_META[cur.kind].label : "",
-    progress: cur ? { not_started: "Not started", processing: "Processing", adjusting: "Adjusting", waiting_approval: "Waiting approval" }[cur.progress] : "",
+    progress: cur ? { not_started: "Not started", processing: "In progress", adjusting: "Adjusting", waiting_approval: "Waiting approval" }[cur.progress] : "",
     withWho: cur?.assignee?.name ?? (cur ? `${STAGE_META[cur.kind].label} team` : ""),
     deadline: cur?.deadline ?? "",
     late: cur?.health === "overdue" ? "LATE" : "",

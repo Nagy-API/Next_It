@@ -186,8 +186,8 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
       ) : (
         <>
           {/* Summary */}
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="card px-4 py-3.5 lg:col-span-2">
+          <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <div className="card col-span-2 px-4 py-3.5">
               <div className="flex items-baseline justify-between">
                 <div className="text-[12px] font-medium text-muted">Progress</div>
                 <div className="text-[12px] text-muted">{typeCounts.map(([t, n]) => `${n} ${n === 1 ? TYPE_META[t].label : TYPE_META[t].plural}`).join(" · ")}</div>

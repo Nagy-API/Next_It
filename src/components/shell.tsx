@@ -137,8 +137,38 @@ export function Shell({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={BRAND.logos.markOnLight} alt="" className="size-full object-contain drop-shadow-[0_18px_30px_rgba(11,22,57,0.5)]" />
       </div>
-      <main className="relative z-[1] mx-auto max-w-[1320px] px-4 pb-16 pt-6 sm:px-6 lg:px-8">{children}</main>
+      <main className="relative z-[1] mx-auto max-w-[1320px] px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-16">{children}</main>
+
+      {/* Phones & tablets: the main places one tap away, like an app. */}
+      <nav
+        aria-label="Quick navigation"
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_-12px_rgb(11_22_57/0.25)] backdrop-blur lg:hidden"
+      >
+        <div className="mx-auto grid max-w-[560px] grid-cols-5">
+          <TabItem href="/my-work" icon={UserRound} label="My tasks" active={pathname.startsWith("/my-work")} count={myCount} />
+          <TabItem href="/overview" icon={Home} label="Overview" active={pathname.startsWith("/overview") || pathname.startsWith("/work")} />
+          <TabItem href="/chat" icon={MessagesSquare} label="Chat" active={pathname.startsWith("/chat")} count={pathname.startsWith("/chat") ? 0 : chatUnread} />
+          <TabItem href="/brands" icon={Tags} label="Brands" active={pathname.startsWith("/brands")} />
+          <button type="button" onClick={() => setMobileOpen(true)} className="flex cursor-pointer flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-muted" aria-label="Open menu">
+            <Menu className="size-[22px]" strokeWidth={1.9} />
+            More
+          </button>
+        </div>
+      </nav>
     </div>
+  );
+}
+
+function TabItem({ href, icon: Icon, label, active, count }: { href: string; icon: typeof Home; label: string; active: boolean; count?: number }) {
+  return (
+    <Link href={href} aria-current={active ? "page" : undefined} className={clsx("relative flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition-colors", active ? "text-electric" : "text-muted hover:text-ink")}>
+      <span className="relative">
+        <Icon className="size-[22px]" strokeWidth={active ? 2.3 : 1.9} />
+        {!!count && <span className="absolute -right-2.5 -top-1.5 min-w-[18px] rounded-full bg-electric px-1 text-center text-[10.5px] font-bold leading-[18px] text-white ring-2 ring-white">{count > 99 ? "99+" : count}</span>}
+      </span>
+      {label}
+      {active && <span aria-hidden className="absolute inset-x-5 top-0 h-[3px] rounded-b-full bg-electric" />}
+    </Link>
   );
 }
 

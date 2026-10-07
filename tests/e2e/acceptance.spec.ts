@@ -276,8 +276,8 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.getByRole("button", { name: /Notifications, \d+ need attention/ }).click();
     await expect(page.getByText("New task: Cover Reel")).toBeVisible();
     await page.keyboard.press("Escape");
-    await card(page, "Cover Reel").getByRole("radio", { name: "Processing" }).click();
-    await expect(card(page, "Cover Reel").getByRole("radio", { name: "Processing" })).toHaveAttribute("aria-checked", "true");
+    await card(page, "Cover Reel").getByRole("radio", { name: "In progress" }).click();
+    await expect(card(page, "Cover Reel").getByRole("radio", { name: "In progress" })).toHaveAttribute("aria-checked", "true");
     await card(page, "Cover Reel").getByPlaceholder(/Google Drive link to v1/).fill("https://drive.google.com/cover-reel");
     await card(page, "Cover Reel").getByRole("button", { name: "Send v1 for approval" }).click();
     await toast(page, "v1 sent for approval.");

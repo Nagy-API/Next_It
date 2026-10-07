@@ -43,16 +43,16 @@ describe("Give a task for a brand → extra work in that brand", () => {
     const month = (await getBrandMonths(brand.id)).find((m) => m.year === 2026 && m.month === 10)!;
     expect(month).toMatchObject({ total: 0, extra: 1, extraDone: 0 });
 
-    // Normal flow: Jana sends v1; the brand's content creator approves it — a manager outside Content can't.
+    // Normal flow: Jana sends v1; it goes to the brand's content creator (managers can approve too); the editor can't.
     const v1 = await submitVersion(jana, all[0].id, { url: "https://drive.google.com/teaser-v1" });
     const [w] = await getWorkItems({ ids: [id] });
     expect(w.extra?.by?.id).toBe(shahenda.id);
     expect(w.reviewerId).toBe(ammar.id);
     expect(reviewsFor([w], ammar)).toHaveLength(1);
     const ayman = await makeManager("Ayman", ["media"]);
-    expect(reviewsFor([w], ayman)).toHaveLength(0);
-    await expect(reviewVersion(ayman, v1.id, { approve: true })).rejects.toThrow(/Content creators/);
-    await reviewVersion(ammar, v1.id, { approve: true });
+    expect(reviewsFor([w], ayman)).toHaveLength(1);
+    await expect(reviewVersion(jana, v1.id, { approve: true })).rejects.toThrow(/approve/);
+    await reviewVersion(ayman, v1.id, { approve: true });
     expect((await stagesOf(id)).map((s) => s.status)).toEqual(["done", "active"]);
   });
 

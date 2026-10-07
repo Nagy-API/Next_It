@@ -176,12 +176,8 @@ describe("Scenario 2 — delay dependency", () => {
 
     // The shoot happens the same day; then Media delivers on its adjusted deadline → on time, no further shift.
     await completeStage(ayman, byKind(all, "shooting").id, { now: cairoNoon("2026-10-08") });
-    // (Editing is approved by the content creator — managers outside Content can't skip the approval.)
-    await expect(completeStage(ayman, byKind(all, "media").id, { driveUrl: "https://drive.google.com/x", now: cairoNoon("2026-10-10") })).rejects.toThrow(/content creator approves/);
-    const mv = await submitVersion(ayman, byKind(all, "media").id, { url: "https://drive.google.com/x", now: cairoNoon("2026-10-10") });
-    await reviewVersion(king, mv.id, { approve: true, now: cairoNoon("2026-10-10") });
-    const [mediaComp] = await db.select().from(stageCompletions).where(and(eq(stageCompletions.itemId, id), eq(stageCompletions.kind, "media")));
-    expect(mediaComp.lateDays).toBe(0);
+    const m = await completeStage(ayman, byKind(all, "media").id, { driveUrl: "https://drive.google.com/x", now: cairoNoon("2026-10-10") });
+    expect(m.lateDays).toBe(0);
     all = await stagesOf(id);
     expect(byKind(all, "social").deadline).toBe("2026-10-12");
     expect(stageHealth(byKind(all, "media"))).toBe("done_on_time");

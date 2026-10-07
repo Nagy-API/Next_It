@@ -5,7 +5,7 @@ import { diffDays, formatDateTime, formatDay, plural, todayISO } from "@/lib/dat
 import type { StageView, WorkItem } from "@/server/queries";
 import { Avatar, Badge, type Tone } from "./ui";
 
-const PROGRESS_TEXT = { not_started: "Not started yet", processing: "Processing", adjusting: "Adjusting", waiting_approval: "Waiting approval" } as const;
+const PROGRESS_TEXT = { not_started: "Not started yet", processing: "In progress", adjusting: "Adjusting", waiting_approval: "Waiting approval" } as const;
 
 /* ------------------------------------------------------------------ */
 /* Health → words                                                       */

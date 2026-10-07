@@ -50,7 +50,7 @@ const TARGET_INFO: Partial<Record<StageKind, { icon: typeof Send; hint: string; 
 
 export const PROGRESS_STEPS: { key: StageProgress; label: string }[] = [
   { key: "not_started", label: "Not started" },
-  { key: "processing", label: "Processing" },
+  { key: "processing", label: "In progress" },
   { key: "adjusting", label: "Adjusting" },
   { key: "waiting_approval", label: "Waiting approval" },
 ];

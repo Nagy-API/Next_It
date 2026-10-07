@@ -754,15 +754,16 @@ export function tasksFor(open: WorkItem[], user: { id: string; teams: readonly s
 const STAGE_TEAM: Record<string, string> = { content: "content", shooting: "media", media: "media", design: "design", social: "social", delivery: "account" };
 
 /**
- * Versions waiting for this person's approval: the item's content creator reviews it
- * (the admins see every version that's waiting — they can approve anything).
+ * Versions waiting for this person's approval: the item's content creator reviews it;
+ * managers see every version that's waiting (they can approve anything).
  */
-export function reviewsFor(open: WorkItem[], user: { id: string; isAdmin?: boolean }) {
+export function reviewsFor(open: WorkItem[], user: { id: string; isAdmin?: boolean; isManager?: boolean }) {
+  const manager = !!user.isAdmin || !!user.isManager;
   return open.filter((i) => {
     const c = i.current;
     if (!c || (c.kind !== "media" && c.kind !== "design")) return false;
     const latest = i.versions.filter((v) => v.kind === c.kind).at(-1);
     if (latest?.status !== "pending") return false;
-    return i.reviewerId === user.id || !!user.isAdmin;
+    return i.reviewerId === user.id || manager;
   });
 }
