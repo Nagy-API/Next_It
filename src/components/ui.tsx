@@ -185,3 +185,17 @@ export function ProgressBar({ segments, className }: { segments: { value: number
     </div>
   );
 }
+
+/* ------------------------------ Extra work ------------------------------ */
+
+/** Work a manager gave as a task on top of the month's plan. */
+export function ExtraBadge({ by, className }: { by?: string | null; className?: string }) {
+  return (
+    <span
+      title={by ? `Extra task given by ${by} — on top of the month's plan` : "Extra task — on top of the month's plan"}
+      className={clsx("inline-flex shrink-0 items-center rounded-full bg-[#fff1dc] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#b45309]", className)}
+    >
+      Extra{by ? ` · ${by}` : ""}
+    </span>
+  );
+}

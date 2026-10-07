@@ -4,7 +4,7 @@
  *  - derives timestamps / completing user / next stage automatically,
  *  - writes immutable activity records for everything it changes.
  */
-import { and, asc, desc, eq, inArray, max } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import {
   brands,
@@ -802,9 +802,12 @@ export async function setStageProgress(actor: Actor, stageId: string, progress: 
 /* Versions: editors / designers send v1, v2… for approval               */
 /* ------------------------------------------------------------------ */
 
-const APPROVAL_NEEDED = "Send it as a version for approval — a manager or the content creator approves it.";
+const APPROVAL_NEEDED = "Send it as a version for approval — the content creator approves it.";
 
-/** Who is asked to review a version: the item's content creator (or project owner), else the managers. */
+/**
+ * Who is asked to review a version: the item's content creator (or project owner), else the brand's default
+ * content creator (extra tasks that start after Content), else the whole Content team.
+ */
 async function reviewersFor(tx: Tx, ctx: ItemCtx, all: Stage[]): Promise<string[]> {
   const content = all.find((s) => s.kind === "content");
   const ids = [content?.assigneeId ?? content?.completedById];
@@ -812,10 +815,14 @@ async function reviewersFor(tx: Tx, ctx: ItemCtx, all: Stage[]): Promise<string[
     const [p] = await tx.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, ctx.projectId));
     ids.push(p?.ownerId);
   }
+  if (!ids.some(Boolean) && ctx.brandId) {
+    const [b] = await tx.select({ creator: brands.defaultCreatorId }).from(brands).where(eq(brands.id, ctx.brandId));
+    ids.push(b?.creator);
+  }
   const people = ids.filter((x): x is string => !!x);
   if (people.length) return people;
-  const managers = await tx.select({ id: users.id }).from(users).where(and(eq(users.isActive, true), eq(users.isManager, true)));
-  return managers.map((m) => m.id);
+  const team = await tx.select({ id: users.id }).from(users).where(and(eq(users.isActive, true), sql`'content' = any(${users.teams})`));
+  return team.map((m) => m.id);
 }
 
 export async function submitVersion(actor: Actor, stageId: string, input: { url: string; note?: string | null; now?: Date }) {
@@ -873,7 +880,7 @@ export async function reviewVersion(actor: Actor, versionId: string, input: { ap
     assert(v, "Version not found.");
     const { ctx, all, stage } = await stageWithItem(tx, v.stageId);
     ensureOpen(ctx);
-    assert(can.review(actor), "Only managers or the Content team can approve versions.");
+    assert(can.review(actor), "Only the Content creators approve versions.");
     assert(v.status === "pending", `v${v.number} was already ${v.status === "approved" ? "approved" : v.status === "changes" ? "sent back for changes" : "replaced by a newer version"}.`);
     assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current step.`);
     const note = input.note?.trim() || null;

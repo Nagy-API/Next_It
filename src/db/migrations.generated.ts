@@ -189,5 +189,14 @@ export const MIGRATIONS: { sql: string[]; bps: boolean; folderMillis: number; ha
     "bps": true,
     "folderMillis": 1790616373439,
     "hash": "d75c3c90a5d909743db661dcb45bfbb0164a03dcfd838265ff838df03eec6c74"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"content_items\" ADD COLUMN \"extra_requested_by_id\" uuid;",
+      "\nALTER TABLE \"content_items\" ADD CONSTRAINT \"content_items_extra_requested_by_id_users_id_fk\" FOREIGN KEY (\"extra_requested_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;"
+    ],
+    "bps": true,
+    "folderMillis": 1791331005159,
+    "hash": "b26c9ef555c11d5ac8df19e0b61307fdb23f0cb39e988b72a0f5765cd3d69602"
   }
 ];

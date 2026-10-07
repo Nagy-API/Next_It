@@ -16,7 +16,7 @@ import {
   type StageKind,
 } from "@/db/schema";
 import { STAGE_META, TYPE_META, routeFor } from "@/domain/workflow";
-import { formatDay, isValidISODate, isValidTime, monthLabel, plural } from "@/lib/dates";
+import { cairoDate, formatDay, isValidISODate, isValidTime, monthLabel, plural } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
 import { NOT_ALLOWED, can, isManager } from "@/domain/permissions";
@@ -537,5 +537,100 @@ export async function setPlanLinks(
       summary: `${actor.name} updated ${changes.join(" and ")} for ${b.name} · ${monthLabel(target.year, target.month)}.`,
     });
     return true;
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Extra work: a manager gives a task for a brand                        */
+/* ------------------------------------------------------------------ */
+
+export type ExtraTaskInput = {
+  title: string;
+  notes?: string | null;
+  assigneeIds: string[];
+  brandId: string;
+  /** The step the work starts at — everything before it is skipped (e.g. "media" = editing only). */
+  step: StageKind;
+  type: ContentType;
+  dueDate?: string | null;
+};
+
+/**
+ * "Give a task" with a brand: the task becomes a real item in that brand's plan for the month it was given,
+ * marked EXTRA (outside the planned content). It starts at the chosen step, with that person and the deadline,
+ * and then works like any item: links, versions, approval or changes, the next steps, statistics.
+ * One item per person chosen.
+ */
+export async function createExtraTasks(actor: Actor, input: ExtraTaskInput, opts: { now?: Date } = {}): Promise<string[]> {
+  assert(can.giveTasks(actor), "Only managers can give tasks.");
+  const title = input.title.trim();
+  assert(title, "Write what needs to be done.");
+  assert(title.length <= 300, "Keep the title under 300 characters.");
+  const ids = [...new Set(input.assigneeIds.filter(Boolean))];
+  assert(ids.length, "Choose who it's for.");
+  assert(TYPE_META[input.type], "Unknown content type.");
+  const route = routeFor(input.type, "plan");
+  const start = route.indexOf(input.step);
+  assert(start >= 0, `A ${TYPE_META[input.type].label} has no ${STAGE_META[input.step]?.label ?? "such"} step — pick another type or step.`);
+  if (input.dueDate) assert(isValidISODate(input.dueDate), "Invalid date.");
+  const now = opts.now ?? new Date();
+  const today = cairoDate(now);
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+
+  return db.transaction(async (tx) => {
+    const [brand] = await tx.select().from(brands).where(eq(brands.id, input.brandId));
+    assert(brand, "Brand not found.");
+    assert(brand.isActive, `${brand.name} is inactive. Reactivate it in Settings to add new work.`);
+    const planId = await ensurePlanTx(tx, actor, brand.id, year, month);
+    const where = `${brand.name} · ${monthLabel(year, month)}`;
+    const kinds = route.slice(start);
+    const defaults: Partial<Record<StageKind, string | null>> = {};
+    for (const k of kinds) defaults[k] = await defaultAssigneeTx(tx, brand.id, k);
+    const people = await tx.select({ id: users.id, name: users.name, isActive: users.isActive }).from(users).where(inArray(users.id, ids));
+    const created: string[] = [];
+    for (const assigneeId of ids) {
+      const p = people.find((x) => x.id === assigneeId);
+      assert(p?.isActive, "That person is not an active team member.");
+      const [item] = await tx
+        .insert(contentItems)
+        .values({ title, type: input.type, planId, extraRequestedById: actor.id, createdAt: now, createdById: actor.id })
+        .returning();
+      await tx.insert(stages).values(
+        kinds.map((kind, i) => ({
+          itemId: item.id,
+          kind,
+          position: i,
+          status: i === 0 ? ("active" as const) : ("waiting" as const),
+          activatedAt: i === 0 ? now : null,
+          assigneeId: i === 0 ? assigneeId : (defaults[kind] ?? null),
+        })),
+      );
+      const step = STAGE_META[input.step].label;
+      await logActivity(tx, actor, {
+        action: "item_created",
+        itemId: item.id,
+        brandId: brand.id,
+        subjectUserId: assigneeId,
+        summary: `${actor.name} gave ${p!.name} an extra task in ${where}: ${TYPE_META[input.type].label} “${title}”, starting at ${step}${input.dueDate ? `, due ${formatDay(input.dueDate)}` : ""}.`,
+        at: now,
+      });
+      if (input.dueDate) {
+        const ctx = await loadItemCtx(tx, item.id);
+        const [first] = await loadStages(tx, item.id);
+        await setStageDeadlineTx(tx, actor, ctx, first, input.dueDate);
+      }
+      const notes = input.notes?.trim();
+      if (notes) await tx.insert(comments).values({ itemId: item.id, authorId: actor.id, body: notes, tag: "task", createdAt: now });
+      await notify(tx, actor, [assigneeId], {
+        kind: "new_task",
+        title: `New task from ${actor.name}: ${title}`,
+        body: `${where} · Extra · ${step}${input.dueDate ? ` · due ${formatDay(input.dueDate)}` : ""}`,
+        itemId: item.id,
+        at: now,
+      });
+      created.push(item.id);
+    }
+    return created;
   });
 }

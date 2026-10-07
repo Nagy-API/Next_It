@@ -62,7 +62,16 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
 
       {/* KPI row */}
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label={`Planned for ${d.label.split(" ")[0]}`} value={d.totals.total} foot={<Delta now={d.totals.total} before={d.totals.prevTotal} label={prevShort} />} />
+        <Kpi
+          label={`Planned for ${d.label.split(" ")[0]}`}
+          value={d.totals.total}
+          foot={
+            <span className="flex flex-wrap items-center gap-x-2">
+              <Delta now={d.totals.total} before={d.totals.prevTotal} label={prevShort} />
+              {d.totals.extra > 0 && <span className="text-[12px] font-semibold text-[#b45309]">+{d.totals.extra} extra tasks</span>}
+            </span>
+          }
+        />
         <Kpi label="Published" value={d.totals.published} foot={<Delta now={d.totals.published} before={d.totals.prevPublished} label={prevShort} />} />
         <Kpi label="Still in progress" value={d.totals.inProgress} foot={<span className="text-[12px] text-muted">{d.totals.total ? Math.round((d.totals.published / d.totals.total) * 100) : 0}% of the month published</span>} />
         <Kpi label="Late right now" value={d.totals.late} tone={d.totals.late ? "bad" : undefined} foot={<span className="text-[12px] text-muted">across every brand, today</span>} />
@@ -90,7 +99,9 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
                 <span className="text-right text-[13px] tabular-nums text-ink-2">
                   {r.total ? (
                     <>
-                      <b className="text-ink">{r.published}</b>/{r.total} published{r.late ? <span className="ml-1.5 font-semibold text-bad">· {r.late} late</span> : null}
+                      <b className="text-ink">{r.published}</b>/{r.total} published
+                      {r.extra ? <span className="ml-1.5 font-semibold text-[#b45309]">+{r.extra} extra ({r.extraDone} done)</span> : null}
+                      {r.late ? <span className="ml-1.5 font-semibold text-bad">· {r.late} late</span> : null}
                     </>
                   ) : (
                     <span className="text-faint">no plan</span>

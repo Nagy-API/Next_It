@@ -25,7 +25,7 @@ import { endSession, requireActor, requireAdmin, startSession } from "@/server/a
 import { UserError } from "@/server/errors";
 import { createTasks, deleteTask, setTaskDone } from "@/server/tasks";
 import { deleteChatMessage, markChatRead, postChatMessage } from "@/server/chat";
-import { addComment, bulkStageAction, createItems, deleteComment, resolveComment, setItemCancelled, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
+import { addComment, bulkStageAction, createExtraTasks, createItems, deleteComment, resolveComment, setItemCancelled, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
 import { checkCredentials, deleteAllSessions } from "@/server/sessions";
 import { LOCK, clientIp, isLockedOut, recordAttempt, safeNext } from "@/server/security";
 import { markNotificationsRead } from "@/server/stats";
@@ -386,6 +386,24 @@ export async function shootAction(_: ActionResult, fd: FormData): Promise<Action
 
 export async function createTaskAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
+    const brandId = opt(fd, "brandId");
+    const stepRaw = opt(fd, "step");
+    const step = stepRaw && (STAGE_KINDS as readonly string[]).includes(stepRaw) ? (stepRaw as StageKind) : null;
+    const typeRaw = opt(fd, "type") ?? "reel";
+    if (brandId && stepRaw && !step) throw new UserError("Pick the step the work starts at.");
+    // A task for a brand becomes Extra work in that brand's plan, at the chosen step.
+    if (brandId && step) {
+      const ids = await createExtraTasks(actor, {
+        title: str(fd, "title"),
+        notes: opt(fd, "notes"),
+        assigneeIds: fd.getAll("assigneeId").map(String),
+        brandId,
+        step,
+        type: ((CONTENT_TYPES as readonly string[]).includes(typeRaw) ? typeRaw : "reel") as ContentType,
+        dueDate: opt(fd, "dueDate"),
+      });
+      return ids.length > 1 ? `Sent to ${ids.length} people — added to the brand as extra work.` : "Sent — added to the brand as extra work.";
+    }
     const r = str(fd, "recurrence") as Recurrence;
     const created = await createTasks(actor, {
       title: str(fd, "title"),

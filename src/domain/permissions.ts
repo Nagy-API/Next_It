@@ -3,8 +3,9 @@
  * each team does its own step; managers run the work; the admin can do everything.
  *
  *  - Managers (Shahenda, Ammar, Ayman, Assem): give tasks to anyone, choose who does a step, set deadlines,
- *    see the dashboard and the activity log, approve versions.
- *  - Content team: plans the month, edits content details, sends work to production, approves versions.
+ *    see the dashboard and the activity log.
+ *  - Content team: plans the month, edits content details, sends work to production, approves versions
+ *    (only the Content creators — and the admins — approve videos and designs).
  *  - Media / Design: do and submit their step (for any brand or one-off project).
  *  - Social: publishes and edits platform details.
  *  - Deadlines lock once set — only the admin can change one.
@@ -42,9 +43,9 @@ export const can = {
   excuseLateness(w: Who) {
     return !!w.isAdmin;
   },
-  /** Approve a version (v1, v2…) or ask for changes: managers and the Content team. */
+  /** Approve a version (v1, v2…) or ask for changes: the Content creators (and the admins, who can do everything). */
   review(w: Who) {
-    return isManager(w) || has(w, "content");
+    return !!w.isAdmin || has(w, "content");
   },
   /** Add content, change title/type/Canva link, delete/restore items. */
   editContent(w: Who) {

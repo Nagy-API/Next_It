@@ -183,6 +183,18 @@ later steps go back to waiting, the person is notified.
 Social: pasting a live link marks that platform Published; when every planned platform is published the item is
 done automatically; un-publishing reopens Social.
 "Hot": posting or current deadline within 48 hours (`isHot` in queries.ts) → highlighted and sorted first.
+Reviewer of a version: the item's content creator, else the brand's default content creator (`reviewersFor`, `WorkItem.reviewerId`).
+
+**Extra tasks** ("Give a task" + a brand → `createExtraTasks`, items.ts): the task becomes a real item in that brand's plan for
+the month it was given, with `content_items.extra_requested_by_id` = the manager who gave it. It starts at the chosen step
+(content / shooting / editing / design / social — earlier steps are skipped, e.g. editing → `[media, social]`), assigned to the
+person with the deadline, and then works like any item (links, versions, approval, next steps, statistics). Brand pages, the
+brands list, the Overview and the Dashboard count the plan WITHOUT extras and show extras on their own ("+N extra").
+A task without a brand stays a simple to-do (tasks.ts, can repeat).
+
+**Order in My tasks**: new work first (`isNewWork`: reached the person in the last 3 days, not started; newest on top), then late,
+then posting/due within 48h, then sent back, then by deadline/posting date. Manager to-dos: new first, then by deadline.
+Every card shows when it was received (and from whom) and its deadline.
 
 ## 7. Permissions (src/domain/permissions.ts) — always enforced on the server
 
@@ -193,7 +205,7 @@ done automatically; un-publishing reopens Social.
 | Do a step (`doStage`) | the assignee, the step's team, admin; delivery: account/content/managers |
 | Choose who does a step (`assign`) | managers (anyone can "take" unassigned work of their own team) |
 | Set a deadline | managers — change/remove a set one: admin only |
-| Approve versions (`review`) | managers + content team |
+| Approve versions (`review`) | **content team only** (+ admins) — managers outside Content (Ayman, Assem) can't approve or skip approval |
 | Add/edit/delete content (`editContent`) | managers + content |
 | Posting date | managers + content + social |
 | Shoot plan | managers + media + content |

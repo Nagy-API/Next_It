@@ -75,24 +75,28 @@ export default async function BrandsPage() {
   );
 }
 
-function MonthCell({ label, items }: { label: string; items: { completedAt: Date | null; current: { kind: string } | null; attention: string | null }[] }) {
+function MonthCell({ label, items: all }: { label: string; items: { completedAt: Date | null; current: { kind: string } | null; attention: string | null; extra: unknown }[] }) {
+  // The plan's progress; extra tasks given on top are shown on their own.
+  const items = all.filter((i) => !i.extra);
+  const extras = all.length - items.length;
   const done = items.filter((i) => i.completedAt).length;
-  const late = items.filter((i) => i.attention === "overdue").length;
+  const late = all.filter((i) => i.attention === "overdue").length;
   return (
     <div>
       <div className="flex items-baseline justify-between text-[12.5px]">
         <span className="text-muted">{label}</span>
-        {items.length ? (
+        {all.length ? (
           <span>
             <b>{done}</b>
             <span className="text-muted">/{items.length}</span>
+            {extras > 0 && <span className="ml-1.5 font-semibold text-[#b45309]">+{extras} extra</span>}
             {late > 0 && <span className="ml-2 font-semibold text-bad">{late} late</span>}
           </span>
         ) : (
           <span className="text-faint">not planned</span>
         )}
       </div>
-      {items.length > 0 && (
+      {all.length > 0 && (
         <ProgressBar
           className="mt-1.5"
           segments={[

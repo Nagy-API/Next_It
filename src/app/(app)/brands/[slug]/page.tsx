@@ -48,11 +48,12 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
   ]);
   // Team filter: Media Production = Reels, Graphic Design = Posts & Carousels.
   const TEAM_TYPES: Record<string, ContentType[]> = { media: ["reel"], design: ["static", "carousel"], story: ["story"] };
-  const team = typeof sp.team === "string" && TEAM_TYPES[sp.team] ? sp.team : "";
+  const team = typeof sp.team === "string" && (TEAM_TYPES[sp.team] || sp.team === "extra") ? sp.team : "";
   const stateF = sp.state === "open" || sp.state === "done" ? sp.state : "";
   const allLive = items.filter((i) => !i.cancelledAt);
   const shown = items.filter(
-    (i) => (!team || TEAM_TYPES[team].includes(i.type)) && (!stateF || (stateF === "done" ? !!i.completedAt : !i.completedAt)),
+    (i) =>
+      (!team || (team === "extra" ? !!i.extra : TEAM_TYPES[team].includes(i.type))) && (!stateF || (stateF === "done" ? !!i.completedAt : !i.completedAt)),
   );
   const live = shown.filter((i) => !i.cancelledAt);
   const prev = shiftMonth(sel.year, sel.month, -1);
@@ -69,7 +70,10 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
     if (st) p.set("state", st);
     return `${base}?${p}`;
   };
-  const done = live.filter((i) => i.completedAt).length;
+  // The plan's progress counts only planned items; extra tasks given on top are counted on their own.
+  const planned = live.filter((i) => !i.extra);
+  const extras = live.filter((i) => i.extra);
+  const done = planned.filter((i) => i.completedAt).length;
   const social = live.filter((i) => i.current?.kind === "social").length;
   const production = live.filter((i) => i.current && ["shooting", "media", "design"].includes(i.current.kind)).length;
   const content = live.filter((i) => i.current?.kind === "content").length;
@@ -190,7 +194,12 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
               </div>
               <div className="mt-1 font-display text-[28px] font-bold leading-none">
                 {done}
-                <span className="text-[16px] font-semibold text-muted">/{live.length} published</span>
+                <span className="text-[16px] font-semibold text-muted">/{planned.length} published</span>
+                {extras.length > 0 && (
+                  <span className="ml-2 align-middle text-[13px] font-semibold text-[#b45309]">
+                    + {extras.length} extra · {extras.filter((i) => i.completedAt).length} done
+                  </span>
+                )}
               </div>
               <ProgressBar
                 className="mt-3 h-2"
@@ -214,6 +223,7 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
                 { key: "media", label: "Media Production · Reels", n: allLive.filter((i) => i.type === "reel").length },
                 { key: "design", label: "Graphic Design · Posts & Carousels", n: allLive.filter((i) => i.type === "static" || i.type === "carousel").length },
                 { key: "story", label: "Stories", n: allLive.filter((i) => i.type === "story").length },
+                { key: "extra", label: "Extra tasks", n: allLive.filter((i) => i.extra).length },
               ]
                 .filter((c) => c.key === "" || c.n > 0)
                 .map((c) => (
