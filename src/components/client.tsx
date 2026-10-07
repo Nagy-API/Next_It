@@ -7,6 +7,7 @@ import clsx from "clsx";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import type { ActionResult } from "@/app/actions";
 import { btn, type BtnVariant } from "./ui";
+import { celebrate } from "./celebrate";
 
 /* ------------------------------------------------------------------ */
 /* Toasts                                                               */
@@ -83,6 +84,7 @@ export function ActionForm({
     const o = opts.current;
     if (r?.ok) {
       if (o.toast && r.message) push({ kind: "ok", text: r.message });
+      if (r.celebrate) celebrate(r.celebrate);
       if (o.resetOnSuccess) ref.current?.reset();
       o.onSuccess?.(r);
     } else if (r && !o.inlineError) {

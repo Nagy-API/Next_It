@@ -11,6 +11,7 @@ import { requireUser } from "@/server/auth";
 import { getOpenItems } from "@/server/cached";
 import { getActivity, getBrandMonthSummaries, getHomeData, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
 import { ItemRow } from "@/components/item-row";
+import { teamEmoji } from "@/lib/cheer";
 import { Avatar, BrandDot, Empty, ProgressBar, SectionTitle, StageChip, TypeIcon } from "@/components/ui";
 
 export const metadata = { title: "Overview" };
@@ -48,7 +49,7 @@ export default async function HomePage() {
         <div>
           <div className="text-[13px] text-muted">{new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Cairo" }).format(new Date())}</div>
           <h1 className="mt-1 font-display text-[28px] font-bold tracking-[-0.01em]">
-            {greeting}, {user.name}
+            {greeting}, {user.name} <span className="inline-block origin-bottom-right animate-wave">{teamEmoji(user.teams)}</span>
           </h1>
           <p className="mt-1 text-[14px] text-muted">
             {open.length} pieces moving through the studio

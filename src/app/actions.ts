@@ -29,10 +29,13 @@ import { addComment, bulkStageAction, createExtraTasks, createItems, deleteComme
 import { checkCredentials, deleteAllSessions } from "@/server/sessions";
 import { LOCK, clientIp, isLockedOut, recordAttempt, safeNext } from "@/server/security";
 import { markNotificationsRead } from "@/server/stats";
+import { isItemFinished } from "@/server/queries";
 import { reviewVersion, setShootDetails, submitVersion } from "@/server/workflow";
 import { assignStage, completeStage, handOff, setStageProgress, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
 
-export type ActionResult = { ok: true; message?: string; at: number } | { ok: false; error: string; at: number } | null;
+/** `celebrate`: the person just finished something — the page shows a short emoji shower (small, or big for a finished item). */
+export type ActionResult = { ok: true; message?: string; celebrate?: "small" | "big"; at: number } | { ok: false; error: string; at: number } | null;
+type Done = { message: string; celebrate?: "small" | "big" };
 
 const str = (fd: FormData, k: string) => {
   const v = fd.get(k);
@@ -40,15 +43,16 @@ const str = (fd: FormData, k: string) => {
 };
 const opt = (fd: FormData, k: string) => (fd.has(k) ? str(fd, k).trim() || null : undefined);
 
-async function run(fn: (actor: Actor) => Promise<string | void>, admin = false): Promise<ActionResult> {
+async function run(fn: (actor: Actor) => Promise<string | Done | void>, admin = false): Promise<ActionResult> {
   const actor = admin ? await requireAdmin().catch(() => null) : await requireActor();
   if (!actor) return { ok: false, error: "Only account administrators can do that.", at: Date.now() };
   // Someone on a temporary password can't do anything until they choose their own.
   if (actor.user.mustChangePassword) return { ok: false, error: "Choose your own password first (My account).", at: Date.now() };
   try {
-    const message = await fn(actor);
+    const out = await fn(actor);
     revalidatePath("/", "layout");
-    return { ok: true, message: message || undefined, at: Date.now() };
+    if (out && typeof out === "object") return { ok: true, message: out.message, celebrate: out.celebrate, at: Date.now() };
+    return { ok: true, message: out || undefined, at: Date.now() };
   } catch (e) {
     if (e instanceof UserError) return { ok: false, error: e.message, at: Date.now() };
     console.error(e);
@@ -111,7 +115,7 @@ export async function signOutEverywhereAction() {
 export async function completeStageAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
     const r = await completeStage(actor, str(fd, "stageId"), { driveUrl: opt(fd, "driveUrl") ?? undefined });
-    return r.next ? `Sent to ${STAGE_META[r.next].label}.` : "Done — nice work.";
+    return r.next ? { message: `Sent to ${STAGE_META[r.next].label}.`, celebrate: "small" } : { message: "Done — nice work! 🎉", celebrate: "big" };
   });
 }
 
@@ -126,9 +130,9 @@ export async function handOffAction(_: ActionResult, fd: FormData): Promise<Acti
       driveUrl: opt(fd, "driveUrl") ?? undefined,
       canvaUrl: opt(fd, "canvaUrl") ?? undefined,
     });
-    if (!r.next) return "Done — nice work.";
+    if (!r.next) return { message: "Done — nice work! 🎉", celebrate: "big" };
     const who = r.nextAssignee ?? (str(fd, "assigneeName") || null);
-    return who ? `Sent to ${who} (${STAGE_META[r.next].label}).` : `Sent to the ${STAGE_META[r.next].label} team.`;
+    return { message: who ? `Sent to ${who} (${STAGE_META[r.next].label}).` : `Sent to the ${STAGE_META[r.next].label} team.`, celebrate: "small" };
   });
 }
 
@@ -193,12 +197,17 @@ export async function platformAction(_: ActionResult, fd: FormData): Promise<Act
   return run(async (actor) => {
     const status = opt(fd, "status") as PlatformStatus | null | undefined;
     if (status && !PLATFORM_STATUSES.includes(status)) throw new UserError("Unknown status.");
-    await setPlatformState(actor, str(fd, "itemId"), str(fd, "platformId"), {
+    const itemId = str(fd, "itemId");
+    const liveUrl = opt(fd, "liveUrl");
+    await setPlatformState(actor, itemId, str(fd, "platformId"), {
       status: status ?? undefined,
       date: opt(fd, "date"),
       time: opt(fd, "time"),
-      liveUrl: opt(fd, "liveUrl"),
+      liveUrl,
     });
+    // Live on every planned platform → the item is finished: a big celebration. One platform live → a small one.
+    if ((liveUrl || status === "published") && (await isItemFinished(itemId))) return { message: "Published everywhere — done! 🎉", celebrate: "big" };
+    if (liveUrl || status === "published") return { message: "Published! ✨", celebrate: "small" };
     return "Saved.";
   });
 }
@@ -366,7 +375,7 @@ export async function reviewVersionAction(_: ActionResult, fd: FormData): Promis
     const approve = str(fd, "decision") === "approve";
     const r = await reviewVersion(actor, str(fd, "versionId"), { approve, note: opt(fd, "note") });
     if (!r.approved) return "Sent back for changes — they'll upload the next version.";
-    return r.next ? `Approved and sent to ${r.nextAssignee ?? STAGE_META[r.next].label}.` : "Approved — done.";
+    return r.next ? { message: `Approved and sent to ${r.nextAssignee ?? STAGE_META[r.next].label}.`, celebrate: "small" } : { message: "Approved — done! 🎉", celebrate: "big" };
   });
 }
 
@@ -422,7 +431,8 @@ export async function taskDoneAction(_: ActionResult, fd: FormData): Promise<Act
   return run(async (actor) => {
     const done = str(fd, "done") !== "0";
     const next = await setTaskDone(actor, str(fd, "taskId"), done);
-    return done ? (next ? "Done! The next one is already scheduled." : "Done — nice work.") : "Reopened.";
+    if (!done) return "Reopened.";
+    return { message: next ? "Done! The next one is already scheduled." : "Done — nice work! 🎉", celebrate: "small" };
   });
 }
 

@@ -767,3 +767,9 @@ export function reviewsFor(open: WorkItem[], user: { id: string; isAdmin?: boole
     return i.reviewerId === user.id || manager;
   });
 }
+
+/** True once an item is finished (published everywhere / delivered). */
+export async function isItemFinished(itemId: string) {
+  const [i] = await db.select({ completedAt: contentItems.completedAt }).from(contentItems).where(eq(contentItems.id, itemId));
+  return !!i?.completedAt;
+}

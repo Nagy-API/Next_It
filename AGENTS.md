@@ -200,6 +200,11 @@ Phones/tablets get a bottom tab bar (My tasks, Overview, Chat, Brands, More) in 
 Look: every step has one colour everywhere (`STAGE_COLOR` in domain/workflow.ts → `StageChip` in ui.tsx); cards and rows
 carry their brand's colour as a left stripe; `/` or Ctrl/⌘+K focuses search. `(app)/error.tsx` and `global-error.tsx`
 show a calm "Try again" page instead of a blank error (Next 16 passes `retry`, not `reset`).
+Delight: an action can return `{ message, celebrate: "small" | "big" }` from `run()`; `ActionForm` then calls `celebrate()`
+(`components/celebrate.ts` + `.celebrate` CSS) — a short emoji shower (≤28 nodes, transform/opacity only, removed after
+2.7 s, never twice at once, skipped with prefers-reduced-motion). Used for: step finished/sent on, version approved,
+task done, published (big when the item is finished). Greetings show the person's team emoji and a daily line
+(`lib/cheer.ts`). Buttons press (`active:scale`), task cards rise in and lift on hover.
 
 **Dashboard month report** (`getDashboard` → `qualityFor`, stats.ts): planned / done / not done (plan only), extra
 requested + done, changes requested (versions reviewed with "changes" that month), items that needed changes more than

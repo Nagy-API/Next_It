@@ -52,6 +52,38 @@
       transform: none;
     }
   }
+  --animate-wave: wave 1.6s ease-in-out 0.4s 1;
+  @keyframes wave {
+    0%,
+    60%,
+    100% {
+      transform: rotate(0deg);
+    }
+    10%,
+    30% {
+      transform: rotate(14deg);
+    }
+    20% {
+      transform: rotate(-8deg);
+    }
+    40% {
+      transform: rotate(-4deg);
+    }
+    50% {
+      transform: rotate(10deg);
+    }
+  }
+  --animate-rise: rise 260ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
   --animate-pop: pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
   @keyframes pop {
     0% {
@@ -135,5 +167,40 @@
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
+  }
+}
+
+/* Celebration emoji shower (src/components/celebrate.ts) — transform/opacity only, so it stays smooth on any device. */
+.celebrate {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  overflow: hidden;
+  pointer-events: none;
+}
+.celebrate span {
+  position: absolute;
+  top: -48px;
+  left: var(--x);
+  opacity: 0;
+  line-height: 1;
+  will-change: transform, opacity;
+  animation: emoji-fall var(--dur) cubic-bezier(0.22, 0.61, 0.36, 1) var(--delay) forwards;
+}
+@keyframes emoji-fall {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(0.6);
+  }
+  12% {
+    opacity: 1;
+    transform: translate3d(0, 8vh, 0) rotate(calc(var(--rot) * 0.1)) scale(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--drift), 108vh, 0) rotate(var(--rot)) scale(1);
   }
 }
