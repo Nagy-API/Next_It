@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import clsx from "clsx";
 import { ArrowLeft, CalendarClock, CheckCircle2, ExternalLink, FolderOpen, Info, MessageSquare, Palette } from "lucide-react";
 import { FlowStepper, healthBadge } from "@/components/flow";
-import { Avatar, Badge, BrandDot, ExternalLink as ExtA, TypeTag, btn } from "@/components/ui";
+import { Avatar, Badge, BrandDot, ExternalLink as ExtA, ExtraBadge, TypeTag, btn } from "@/components/ui";
 import { PLATFORM_STATUS_META, STAGE_META, finalLabel } from "@/domain/workflow";
 import { cairoDate, diffDays, formatDateTime, formatDay, formatRelative, monthLabel, plural, todayISO } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
@@ -82,7 +82,10 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
             {item.cancelledAt && <Badge tone="bad">Deleted</Badge>}
             {item.completedAt && <Badge tone="ok" icon={CheckCircle2}>{finalLabel(item.context)}</Badge>}
           </div>
-          <h1 className="mt-1.5 font-display text-[28px] font-bold leading-tight tracking-[-0.01em]">{item.title}</h1>
+          <h1 className="mt-1.5 flex flex-wrap items-center gap-2.5 font-display text-[28px] font-bold leading-tight tracking-[-0.01em]">
+            {item.title}
+            {item.extra && <ExtraBadge by={item.extra.by?.name} className="font-sans" />}
+          </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {item.canvaLink ? (

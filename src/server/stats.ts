@@ -61,8 +61,11 @@ export async function personPerMonth(userId: string, year: number, month: number
 type DeptCell = { tasks: number; done: number };
 export type BrandRow = {
   brand: { id: string; name: string; slug: string; color: string };
+  /** The month's plan (extra tasks given on top are counted on their own). */
   total: number;
   published: number;
+  extra: number;
+  extraDone: number;
   social: number;
   production: number;
   content: number;
@@ -94,10 +97,13 @@ export async function getDashboard(year: number, month: number) {
     .filter((b) => b.isActive || items.some((i) => i.brand?.id === b.id))
     .map((b) => {
       const mine = items.filter((i) => i.brand?.id === b.id);
+      const planned = mine.filter((i) => !i.extra);
       return {
         brand: { id: b.id, name: b.name, slug: b.slug, color: b.color },
-        total: mine.length,
-        published: mine.filter((i) => i.completedAt).length,
+        total: planned.length,
+        published: planned.filter((i) => i.completedAt).length,
+        extra: mine.length - planned.length,
+        extraDone: mine.filter((i) => i.extra && i.completedAt).length,
         social: mine.filter((i) => i.current?.kind === "social").length,
         production: mine.filter((i) => i.current && (i.current.kind === "shooting" || i.current.kind === "media" || i.current.kind === "design")).length,
         content: mine.filter((i) => i.current?.kind === "content").length,
@@ -108,13 +114,15 @@ export async function getDashboard(year: number, month: number) {
       };
     });
 
+  const planned = items.filter((i) => !i.extra);
   const totals = {
-    total: items.length,
-    published: items.filter((i) => i.completedAt).length,
+    total: planned.length,
+    published: planned.filter((i) => i.completedAt).length,
+    extra: items.length - planned.length,
     inProgress: items.filter((i) => !i.completedAt).length,
     late: open.filter((i) => i.attention === "overdue").length,
-    prevTotal: prevItems.length,
-    prevPublished: prevItems.filter((i) => i.completedAt).length,
+    prevTotal: prevItems.filter((i) => !i.extra).length,
+    prevPublished: prevItems.filter((i) => !i.extra && i.completedAt).length,
   };
   const departments = (["media", "design", "social"] as const).map((k) => ({ kind: k, label: STAGE_META[k].label, ...dept(items, k) }));
 

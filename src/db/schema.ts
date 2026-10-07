@@ -202,6 +202,8 @@ export const contentItems = pgTable(
     cancelledById: uuid("cancelled_by_id").references(() => users.id),
     createdAt: ts("created_at").notNull().defaultNow(),
     createdById: uuid("created_by_id").references(() => users.id),
+    /** Set when a manager gave this as a task ("Give a task" + brand): an EXTRA on top of the month's plan. */
+    extraRequestedById: uuid("extra_requested_by_id").references(() => users.id),
   },
   (t) => [
     index("content_items_plan_idx").on(t.planId),

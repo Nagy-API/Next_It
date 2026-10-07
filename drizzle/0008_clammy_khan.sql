@@ -1,0 +1,2 @@
+ALTER TABLE "content_items" ADD COLUMN "extra_requested_by_id" uuid;--> statement-breakpoint
+ALTER TABLE "content_items" ADD CONSTRAINT "content_items_extra_requested_by_id_users_id_fk" FOREIGN KEY ("extra_requested_by_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;

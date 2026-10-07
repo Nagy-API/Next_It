@@ -28,12 +28,12 @@ import {
 } from "lucide-react";
 import { assignAction, completeStageAction, handOffAction, platformAction, progressAction, reviewVersionAction, shootAction, submitVersionAction } from "@/app/actions";
 import type { StageKind, StageProgress } from "@/db/schema";
-import { STAGE_META, TYPE_META, handoffTargets, type WorkContext } from "@/domain/workflow";
+import { STAGE_META, TYPE_META, handoffTargets, isNewWork, type WorkContext } from "@/domain/workflow";
 import { formatDateTime, formatDay, formatRelative } from "@/lib/dates";
 import type { StageView, VersionView, WorkItem } from "@/server/queries";
 import { ActionForm, Submit } from "./client";
 import { Avatar } from "./avatar";
-import { BrandDot, TypeIcon, btn } from "./ui";
+import { BrandDot, ExtraBadge, TypeIcon, btn } from "./ui";
 
 export type PickPerson = { id: string; name: string; teams: string[] };
 
@@ -621,7 +621,8 @@ export function TaskCard({
 }) {
   const cur = item.current!;
   const prev = item.stages.filter((s) => s.position < cur.position && s.status === "done").at(-1);
-  const from = prev ? (prev.assignee?.name ?? prev.completedBy?.name) : null;
+  const from = prev ? (prev.assignee?.name ?? prev.completedBy?.name) : (item.extra?.by?.name ?? null);
+  const fresh = mode === "do" && isNewWork(item);
   const where = item.brand ? item.brand.name : item.project ? `${item.project.clientName} · ${item.project.name}` : "";
   const late = cur.health === "overdue";
   const returned = cur.round > 1 && !!cur.returnedAt;
@@ -644,7 +645,12 @@ export function TaskCard({
             </Link>
             {item.slideNumber && <span className="rounded-md bg-[#f1e8fd] px-1.5 py-0.5 text-[11.5px] font-bold text-[#6d28d9]">Slide {item.slideNumber}</span>}
             <HotBadge item={item} today={today} />
-            {unclaimed && <span className="rounded-full bg-electric px-2 py-0.5 text-[11px] font-semibold text-white">NEW for your team</span>}
+            {unclaimed ? (
+              <span className="rounded-full bg-electric px-2 py-0.5 text-[11px] font-semibold text-white">NEW for your team</span>
+            ) : (
+              fresh && <span className="rounded-full bg-electric px-2 py-0.5 text-[11px] font-semibold text-white">NEW</span>
+            )}
+            {item.extra && <ExtraBadge by={item.extra.by?.name} />}
             <span className="rounded-full bg-canvas px-2 py-0.5 text-[11.5px] font-semibold text-ink-2">{STAGE_META[cur.kind].label}</span>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-muted">
@@ -652,9 +658,10 @@ export function TaskCard({
             <span className="font-medium text-ink-2">{where}</span>
             <span>· {TYPE_META[item.type].label}</span>
             {item.postingDate && <span>· posting {formatDay(item.postingDate)}</span>}
-            {from && cur.activatedAt && (
+            {cur.activatedAt && (
               <span>
-                · from {from}, {formatRelative(cur.activatedAt)}
+                · received {formatRelative(cur.activatedAt)}
+                {from && <> from {from}</>}
               </span>
             )}
           </div>

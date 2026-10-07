@@ -229,3 +229,20 @@ export function parseContentType(v: string | null | undefined): ContentType | nu
   if (["story", "stories"].includes(t)) return "story";
   return null;
 }
+
+/* ------------------------------------------------------------------ */
+/* "New" work: just arrived, not started — always shown first            */
+/* ------------------------------------------------------------------ */
+
+const NEW_FOR_MS = 3 * 86_400_000;
+
+/** A step that reached this person in the last 3 days and hasn't been started yet. */
+export function isNewWork(i: { current: { activatedAt: Date | null; progress: string } | null }, now = Date.now()) {
+  const c = i.current;
+  return !!c?.activatedAt && c.progress === "not_started" && now - new Date(c.activatedAt).getTime() < NEW_FOR_MS;
+}
+
+/** A manager's to-do given in the last 3 days and not done yet. */
+export function isNewTask(t: { doneAt: Date | null; createdAt: Date }, now = Date.now()) {
+  return !t.doneAt && now - new Date(t.createdAt).getTime() < NEW_FOR_MS;
+}

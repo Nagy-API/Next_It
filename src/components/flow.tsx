@@ -193,7 +193,11 @@ export function ItemStatus({ item }: { item: WorkItem }) {
   const c = item.current;
   if (!c) return null;
   if (item.attention === "at_risk" && c.health !== "overdue")
-    return (
+    return item.postingDate && item.postingDate < todayISO() ? (
+      <Badge tone="bad" icon={Hourglass} title="The posting date has passed and it isn't with Social Media yet">
+        Posting date passed
+      </Badge>
+    ) : (
       <Badge tone="warn" icon={Hourglass} title="Posting soon but not with Social Media yet">
         Posting soon
       </Badge>

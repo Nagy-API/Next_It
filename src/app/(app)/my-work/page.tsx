@@ -5,7 +5,7 @@ import { TaskCard } from "@/components/handoff";
 import { TaskRow } from "@/components/tasks";
 import { Avatar, Badge, BrandDot, SectionTitle, TypeIcon } from "@/components/ui";
 import { can, isManager } from "@/domain/permissions";
-import { STAGE_META } from "@/domain/workflow";
+import { STAGE_META, isNewTask, isNewWork } from "@/domain/workflow";
 import { addDays, formatDateTime, formatRelative, monthName, monthRange, todayISO, weekRange } from "@/lib/dates";
 import { personPerMonth } from "@/server/stats";
 import { requireUser } from "@/server/auth";
@@ -16,13 +16,14 @@ import { BRAND } from "@/config/brand";
 
 export const metadata = { title: "My tasks" };
 
-/** Late first, then posting within 48h, then sent-back, then by deadline / posting date. */
+/** New work first, then late, then posting within 48h, then sent-back, then by deadline / posting date. */
 function urgency(i: WorkItem) {
   const c = i.current!;
-  if (c.health === "overdue") return 0;
-  if (i.hot) return 1;
-  if (c.round > 1 && c.returnedAt) return 2;
-  return 3;
+  if (isNewWork(i)) return 0;
+  if (c.health === "overdue") return 1;
+  if (i.hot) return 2;
+  if (c.round > 1 && c.returnedAt) return 3;
+  return 4;
 }
 
 const PERIODS = [
@@ -61,10 +62,20 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const inPeriod = (d: string | null | undefined) => !until || (!!d && d <= until);
 
   const allItems = tasksFor(open, user).sort(
-    (a, b) => urgency(a) - urgency(b) || (a.current?.deadline ?? a.postingDate ?? "9").localeCompare(b.current?.deadline ?? b.postingDate ?? "9"),
+    (a, b) =>
+      urgency(a) - urgency(b) ||
+      (urgency(a) === 0 ? (b.current?.activatedAt?.getTime() ?? 0) - (a.current?.activatedAt?.getTime() ?? 0) : 0) ||
+      (a.current?.deadline ?? a.postingDate ?? "9").localeCompare(b.current?.deadline ?? b.postingDate ?? "9"),
   );
   const reviews = reviewsFor(open, user).filter((i) => !allItems.includes(i));
   const openTasks = myTasks.filter((t) => !t.doneAt);
+  // Manager to-dos: new ones first (newest on top), then by deadline; finished ones last.
+  const taskOrder = (t: (typeof myTasks)[number]) => (t.doneAt ? 2 : isNewTask(t) ? 0 : 1);
+  myTasks.sort(
+    (a, b) =>
+      taskOrder(a) - taskOrder(b) ||
+      (taskOrder(a) === 0 ? b.createdAt.getTime() - a.createdAt.getTime() : (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9")),
+  );
 
   // Brand filter (brands + one-off projects), only for places that actually have tasks.
   const places = new Map<string, { key: string; label: string; color?: string; n: number }>();
@@ -83,7 +94,8 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const hotCount = allItems.filter((i) => i.hot).length;
   const months = await personPerMonth(user.id, Number(today.slice(0, 4)), Number(today.slice(5, 7)), 2);
   const [lastMonth, thisMonth] = months;
-  const total = allItems.length + openTasks.length;
+  // Everything on this person right now: their steps, versions waiting for their approval, and managers' to-dos.
+  const total = allItems.length + reviews.length + openTasks.length;
   const q = (patch: Record<string, string>) => {
     const p = new URLSearchParams();
     const merged = { when: period, brand: filter, ...patch };

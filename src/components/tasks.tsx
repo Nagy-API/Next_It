@@ -7,7 +7,7 @@ import { createTaskAction, deleteTaskAction, taskDoneAction } from "@/app/action
 import { ActionForm, Modal, Submit } from "./client";
 import { Avatar } from "./avatar";
 import { BrandDot, btn } from "./ui";
-import { TEAM_META } from "@/domain/workflow";
+import { TEAM_META, isNewTask } from "@/domain/workflow";
 import type { Team } from "@/db/schema";
 import { formatDay, formatRelative } from "@/lib/dates";
 
@@ -44,10 +44,30 @@ export function GiveTaskButton({ people, brands, variant = "sidebar" }: { people
   );
 }
 
+/** Where a brand task starts, and which content types can start there. */
+const STEPS = [
+  { v: "content", label: "Content", types: ["reel", "static", "carousel", "story"] },
+  { v: "shooting", label: "Shooting", types: ["reel"] },
+  { v: "media", label: "Editing", types: ["reel"] },
+  { v: "design", label: "Design", types: ["static", "carousel"] },
+  { v: "social", label: "Social", types: ["reel", "static", "carousel", "story"] },
+] as const;
+const TYPE_LABEL: Record<string, string> = { reel: "Reel", static: "Static post", carousel: "Carousel", story: "Story" };
+const STEP_FOR_TEAM: Record<string, string> = { content: "content", media: "media", design: "design", social: "social" };
+
 function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone: () => void }) {
   const [who, setWho] = useState<string[]>([]);
   const [repeat, setRepeat] = useState<string>("none");
+  const [brandId, setBrandId] = useState("");
+  const [step, setStep] = useState<string>("");
+  const [type, setType] = useState<string>("reel");
   const toggle = (id: string) => setWho((w) => (w.includes(id) ? w.filter((x) => x !== id) : [...w, id]));
+  // The step follows the first person's team until the manager picks one.
+  const firstTeam = people.find((p) => p.id === who[0])?.teams.find((t) => STEP_FOR_TEAM[t]);
+  const stepNow = step || (firstTeam ? STEP_FOR_TEAM[firstTeam] : "content");
+  const stepMeta = STEPS.find((x) => x.v === stepNow)!;
+  const typeNow = (stepMeta.types as readonly string[]).includes(type) ? type : stepMeta.types[0];
+  const brandName = brands.find((b) => b.id === brandId)?.name;
   const groups = new Map<string, P[]>();
   for (const p of people) {
     const t = (p.teams.find((x) => x !== "leadership") ?? p.teams[0] ?? "other") as Team | "other";
@@ -59,7 +79,9 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
       {who.map((id) => (
         <input key={id} type="hidden" name="assigneeId" value={id} />
       ))}
-      <input type="hidden" name="recurrence" value={repeat} />
+      <input type="hidden" name="recurrence" value={brandId ? "none" : repeat} />
+      {brandId && <input type="hidden" name="step" value={stepNow} />}
+      {brandId && <input type="hidden" name="type" value={typeNow} />}
       <div>
         <label className="label" htmlFor="task-title">
           What needs to be done?
@@ -96,20 +118,80 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
           ))}
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+      <div>
+        <label className="label" htmlFor="task-brand">
+          Brand <span className="font-normal text-muted">(optional — the task goes into the brand as Extra work)</span>
+        </label>
+        <select id="task-brand" name="brandId" className="field" value={brandId} onChange={(e) => setBrandId(e.target.value)}>
+          <option value="">— Not for a brand (a simple to-do)</option>
+          {brands.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {brandId && (
+        <div className="space-y-3 rounded-xl border border-[#f6d9ad] bg-[#fffaf2] p-3">
+          <div>
+            <div className="label">Starts at</div>
+            <div className="inline-flex flex-wrap rounded-xl border border-line bg-white p-0.5" role="radiogroup" aria-label="Starts at">
+              {STEPS.map((x) => (
+                <button
+                  key={x.v}
+                  type="button"
+                  role="radio"
+                  aria-checked={stepNow === x.v}
+                  onClick={() => setStep(x.v)}
+                  className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", stepNow === x.v ? "bg-navy-900 text-white" : "text-muted hover:bg-canvas hover:text-ink")}
+                >
+                  {x.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {stepMeta.types.length > 1 && (
+            <div>
+              <div className="label">Type</div>
+              <div className="inline-flex flex-wrap rounded-xl border border-line bg-white p-0.5" role="radiogroup" aria-label="Type">
+                {stepMeta.types.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="radio"
+                    aria-checked={typeNow === t}
+                    onClick={() => setType(t)}
+                    className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", typeNow === t ? "bg-navy-900 text-white" : "text-muted hover:bg-canvas hover:text-ink")}
+                  >
+                    {TYPE_LABEL[t]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="text-[12.5px] text-ink-2">
+            It goes into <b>{brandName}</b>&rsquo;s plan for this month as <b className="text-[#b45309]">Extra</b> work, starting at <b>{stepMeta.label}</b>
+            {stepNow !== "content" && " (the steps before it are skipped)"}. They upload the link there and it goes for approval like any item.
+          </p>
+        </div>
+      )}
+      <div className={clsx("grid gap-3", !brandId && "sm:grid-cols-[1fr_120px]")}>
         <div>
           <label className="label" htmlFor="task-due">
             Deadline
           </label>
           <input id="task-due" type="date" name="dueDate" className="field" />
         </div>
-        <div>
-          <label className="label" htmlFor="task-time">
-            Time
-          </label>
-          <input id="task-time" type="time" name="dueTime" className="field" />
-        </div>
+        {!brandId && (
+          <div>
+            <label className="label" htmlFor="task-time">
+              Time
+            </label>
+            <input id="task-time" type="time" name="dueTime" className="field" />
+          </div>
+        )}
       </div>
+      {!brandId && (
       <div>
         <div className="label">Repeat</div>
         <div className="inline-flex flex-wrap rounded-xl border border-line bg-white p-0.5" role="radiogroup" aria-label="Repeat">
@@ -128,26 +210,12 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
         </div>
         {repeat !== "none" && <p className="mt-1.5 text-[12.5px] text-muted">When it&rsquo;s done, the next one is created by itself.</p>}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="label" htmlFor="task-brand">
-            Brand <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <select id="task-brand" name="brandId" className="field" defaultValue="">
-            <option value="">—</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label" htmlFor="task-notes">
-            Notes <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <input id="task-notes" name="notes" placeholder="Links, details…" className="field" />
-        </div>
+      )}
+      <div>
+        <label className="label" htmlFor="task-notes">
+          Notes <span className="font-normal text-muted">(optional)</span>
+        </label>
+        <input id="task-notes" name="notes" placeholder="Links, details…" className="field" />
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
         <button type="button" onClick={onDone} className={btn("ghost")}>
@@ -173,6 +241,7 @@ export type TaskRowData = {
   createdByName: string;
   brandName: string | null;
   brandColor: string | null;
+  createdAt: Date;
 };
 
 /** One task with a big tick button. `mode="mine"` for the person doing it, `"given"` for the manager who gave it. */
@@ -200,12 +269,16 @@ export function TaskRow({ t, today, mode, canDelete }: { t: TaskRowData; today: 
       <div className="min-w-0 flex-1">
         <div className={clsx("text-[14.5px] font-semibold", t.doneAt && "line-through")}>{t.title}</div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-muted">
+          {isNewTask(t) && <span className="rounded-full bg-electric px-2 py-0.5 text-[11px] font-semibold text-white">NEW</span>}
           {mode === "mine" ? <span>from {t.createdByName}</span> : <span className="inline-flex items-center gap-1"><Avatar name={t.assigneeName} size={18} badge={false} /> {t.assigneeName}</span>}
-          {t.dueDate && (
+          <span>· given {formatRelative(t.createdAt)}</span>
+          {t.dueDate ? (
             <span className={clsx("inline-flex items-center gap-1", late ? "font-semibold text-bad" : soon ? "font-semibold text-warn" : "")}>
               <CalendarClock className="size-3.5" /> {late ? "Was due" : "Due"} {formatDay(t.dueDate)}
               {t.dueTime && ` · ${t.dueTime}`}
             </span>
+          ) : (
+            !t.doneAt && <span className="inline-flex items-center gap-1 text-faint"><CalendarClock className="size-3.5" /> No deadline</span>
           )}
           {t.recurrence !== "none" && (
             <span className="inline-flex items-center gap-1 text-electric">

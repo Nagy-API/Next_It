@@ -5,7 +5,7 @@ import { formatDateTime, formatDay, monthName } from "@/lib/dates";
 import { Check } from "lucide-react";
 import type { WorkItem } from "@/server/queries";
 import { FlowMini, ItemStatus } from "./flow";
-import { Avatar, BrandDot, TypeIcon } from "./ui";
+import { Avatar, BrandDot, ExtraBadge, TypeIcon } from "./ui";
 
 export function itemContextLabel(item: WorkItem) {
   if (item.brand && item.plan) return `${item.brand.name} · ${monthName(item.plan.month, true)} ${item.plan.year}`;
@@ -27,6 +27,12 @@ export function ItemRow({ item, showContext = true, compact, leading, actions }:
             <span className="text-[11px] font-medium uppercase text-muted">{formatDay(item.postingDate, { weekday: false }).split(" ")[1]}</span>
             <span className="font-display text-[17px] font-bold">{Number(item.postingDate.slice(8))}</span>
           </>
+        ) : item.current?.deadline ? (
+          <>
+            <span className="text-[11px] font-medium uppercase text-muted">Due</span>
+            <span className="font-display text-[17px] font-bold">{Number(item.current.deadline.slice(8))}</span>
+            <span className="text-[10.5px] text-muted">{formatDay(item.current.deadline, { weekday: false }).split(" ")[1]}</span>
+          </>
         ) : (
           <span className="text-[11px] text-faint">No date</span>
         )}
@@ -42,6 +48,7 @@ export function ItemRow({ item, showContext = true, compact, leading, actions }:
               #{item.slideNumber}
             </span>
           ) : null}
+          {item.extra && <ExtraBadge by={item.extra.by?.name} />}
         </div>
         {showContext && (
           <div className="mt-0.5 flex items-center gap-1.5 truncate text-[12.5px] text-muted">

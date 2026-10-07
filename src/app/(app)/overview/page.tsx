@@ -9,7 +9,7 @@ import type { StageKind } from "@/db/schema";
 import { addDays, dayOfWeek, formatDay, formatRelative, monthLabel, todayISO } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
 import { getOpenItems } from "@/server/cached";
-import { getActivity, getBrandMonthSummaries, getHomeData, tasksFor, type WorkItem } from "@/server/queries";
+import { getActivity, getBrandMonthSummaries, getHomeData, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
 import { ItemRow } from "@/components/item-row";
 import { Avatar, BrandDot, Empty, ProgressBar, SectionTitle, TypeIcon } from "@/components/ui";
 
@@ -25,6 +25,8 @@ export default async function HomePage() {
   const mine = tasksFor(open, user);
   const moveNow = mine.filter((i) => i.hot || i.current?.health === "overdue").sort((a, b) => (a.postingDate ?? a.current?.deadline ?? "9").localeCompare(b.postingDate ?? b.current?.deadline ?? "9"));
   const tasksSoon = myTasks.filter((t) => !t.doneAt && t.dueDate && t.dueDate <= addDays(today, 2));
+  // Versions waiting for MY approval (the content creator of the item) — they hold the next team up.
+  const toApprove = reviewsFor(open, user).filter((i) => !moveNow.includes(i));
   const agencyHot = open.filter((i) => i.hot && i.current?.kind !== "social" && !moveNow.includes(i));
   const year = Number(today.slice(0, 4));
   const month = Number(today.slice(5, 7));
@@ -35,6 +37,7 @@ export default async function HomePage() {
   const late = open.filter((i) => i.attention === "overdue");
   const returned = open.filter((i) => i.attention === "returned");
   const atRisk = open.filter((i) => i.attention === "at_risk");
+  const postingPassed = atRisk.filter((i) => i.postingDate && i.postingDate < today).length;
   const unassigned = open.filter((i) => i.current && !i.current.assignee && i.attention !== "overdue" && i.attention !== "at_risk" && i.attention !== "returned");
   const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "numeric", hour12: false }).format(new Date()));
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -49,14 +52,19 @@ export default async function HomePage() {
           </h1>
           <p className="mt-1 text-[14px] text-muted">
             {open.length} pieces moving through the studio
-            {late.length > 0 ? (
+            {late.length > 0 && (
               <>
                 {" · "}
-                <span className="font-medium text-bad">{late.length} late</span>
+                <span className="font-medium text-bad">{late.length} past their deadline</span>
               </>
-            ) : (
-              " · nothing late 🎉"
             )}
+            {postingPassed > 0 && (
+              <>
+                {" · "}
+                <span className="font-medium text-bad">{postingPassed} past their posting date</span>
+              </>
+            )}
+            {late.length + postingPassed === 0 && " · nothing late 🎉"}
           </p>
         </div>
       </header>
@@ -68,11 +76,11 @@ export default async function HomePage() {
             <Flame className="size-4 text-[#ff8a1f]" /> Move now — the next 48 hours
           </span>
         </SectionTitle>
-        {moveNow.length + tasksSoon.length === 0 ? (
+        {moveNow.length + tasksSoon.length + toApprove.length === 0 ? (
           <div className="card flex items-center gap-3 px-5 py-4 text-[14px]">
             <PartyPopper className="size-5 text-ok" />
             <span>
-              <b>Nothing urgent on you.</b> <span className="text-muted">Anything posting or due within 48 hours shows up here first.</span>
+              <b>Nothing urgent on you.</b> <span className="text-muted">Anything posting or due within 48 hours, and anything waiting for your approval, shows up here first.</span>
             </span>
           </div>
         ) : (
@@ -92,6 +100,28 @@ export default async function HomePage() {
                 </div>
               </Link>
             ))}
+            {toApprove.slice(0, 6).map((i) => {
+              const v = i.versions.filter((x) => x.kind === i.current!.kind).at(-1);
+              return (
+                <Link key={i.id} href={`/items/${i.id}`} className="card group flex flex-col gap-2 border-ok/40 bg-gradient-to-br from-white to-ok-soft/40 p-4 transition-shadow hover:shadow-pop">
+                  <span className="inline-flex w-fit items-center gap-1 rounded-full bg-ok px-2 py-0.5 text-[11.5px] font-bold text-white">
+                    <Check className="size-3.5" strokeWidth={3} /> Approve v{v?.number} · {STAGE_META[i.current!.kind].label}
+                  </span>
+                  <div className="flex items-center gap-1.5 font-semibold group-hover:text-electric">
+                    <TypeIcon type={i.type} /> <span className="truncate">{i.title}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[12.5px] text-muted">
+                    {i.brand && <BrandDot color={i.brand.color} />} {i.brand?.name ?? i.project?.clientName}
+                    {v && <span>· sent {formatRelative(v.submittedAt)} by {v.submittedBy?.name ?? "the team"}</span>}
+                  </div>
+                </Link>
+              );
+            })}
+            {toApprove.length > 6 && (
+              <Link href="/my-work" className="card flex items-center justify-center p-4 text-[13.5px] font-semibold text-electric hover:shadow-pop">
+                {toApprove.length - 6} more waiting for your approval →
+              </Link>
+            )}
             {tasksSoon.map((t) => (
               <Link key={t.id} href="/my-work#tasks" className="card flex flex-col gap-2 border-[#ff8a1f]/50 p-4 transition-shadow hover:shadow-pop">
                 <span className="inline-flex w-fit items-center gap-1 rounded-full bg-[#ff8a1f] px-2 py-0.5 text-[11.5px] font-bold text-white">
@@ -109,7 +139,7 @@ export default async function HomePage() {
 
       {manager && agencyHot.length > 0 && (
         <section>
-          <SectionTitle right={<span className="text-[12.5px] text-muted">Posting within 48 hours and not with Social yet</span>}>
+          <SectionTitle right={<span className="text-[12.5px] text-muted">Posting within 48 hours (or already passed) and not with Social yet</span>}>
             <span className="inline-flex items-center gap-2">
               <Flame className="size-4 text-bad" /> Across the agency
             </span>
@@ -139,7 +169,7 @@ export default async function HomePage() {
             <div className="space-y-5">
               <AttentionGroup icon={AlertTriangle} tone="bad" title="Late" hint="Past the deadline while it's with this person" items={late} href="/work?status=late" />
               <AttentionGroup icon={CornerUpLeft} tone="back" title="Sent back for changes" items={returned} href="/work?status=returned" />
-              <AttentionGroup icon={Hourglass} tone="warn" title="Posting soon, not with Social yet" hint="Posting within 3 days" items={atRisk} href="/work?status=at_risk" />
+              <AttentionGroup icon={Hourglass} tone="warn" title="Posting soon or passed, not with Social yet" hint="Posting within 3 days, or the date already passed" items={atRisk} href="/work?status=at_risk" />
               <AttentionGroup icon={CircleUserRound} tone="wait" title="Waiting for someone to pick it up" hint="Current stage has no owner" items={unassigned} href="/work?status=unassigned" />
             </div>
           )}
@@ -342,7 +372,10 @@ function BrandCard({ brand, items, next, label, nextLabel }: { brand: { id: stri
   );
 }
 
-function MonthProgress({ label, items }: { label: string; items: WorkItem[] }) {
+function MonthProgress({ label, items: all }: { label: string; items: WorkItem[] }) {
+  // The plan's progress; extra tasks given on top are counted on their own.
+  const items = all.filter((i) => !i.extra);
+  const extras = all.filter((i) => i.extra);
   const done = items.filter((i) => i.completedAt).length;
   const social = items.filter((i) => i.current?.kind === "social").length;
   const production = items.filter((i) => i.current && (i.current.kind === "shooting" || i.current.kind === "media" || i.current.kind === "design")).length;
@@ -355,7 +388,10 @@ function MonthProgress({ label, items }: { label: string; items: WorkItem[] }) {
           <span className="tabular-nums">
             <span className="font-semibold">{done}</span>
             <span className="text-muted">/{items.length} published</span>
+            {extras.length > 0 && <span className="ml-1.5 font-semibold text-[#b45309]">+{extras.length} extra</span>}
           </span>
+        ) : extras.length ? (
+          <span className="font-semibold text-[#b45309]">{extras.length} extra</span>
         ) : (
           <span className="text-faint">No plan yet</span>
         )}

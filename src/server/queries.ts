@@ -126,6 +126,10 @@ export type WorkItem = {
   /** What the item needs right now, in one word — drives badges & sorting. */
   attention: "overdue" | "returned" | "unassigned" | "at_risk" | "due_soon" | null;
   platforms: { platformId: string; name: string; status: PlatformStatus; date: string | null; time: string | null; liveUrl: string | null }[];
+  /** Given as a task by a manager ("Give a task" + brand): extra work on top of the month's plan. */
+  extra: { by: { id: string; name: string } | null } | null;
+  /** Who approves its versions: the content creator, else the brand's default content creator. */
+  reviewerId: string | null;
 };
 
 const brandCols = { id: brands.id, name: brands.name, slug: brands.slug, color: brands.color, isActive: brands.isActive };
@@ -299,6 +303,11 @@ async function enrich(
       hot: !!cur && isHot(item.postingDate, cur.deadline, today),
       attention: attentionOf(cur, item.postingDate, context, today),
       platforms: platsByItem.get(item.id) ?? [],
+      extra: item.extraRequestedById ? { by: person(item.extraRequestedById) } : null,
+      reviewerId: (() => {
+        const content = st.find((s) => s.kind === "content");
+        return content?.assignee?.id ?? content?.completedBy?.id ?? brandDefaults.find((x) => x.id === brand?.id)?.content ?? null;
+      })(),
     };
   });
 }
@@ -392,8 +401,11 @@ export async function getBrandMonths(brandId: string) {
       id: contentPlans.id,
       year: contentPlans.year,
       month: contentPlans.month,
-      total: sql<number>`count(${contentItems.id}) filter (where ${contentItems.cancelledAt} is null)::int`,
-      done: sql<number>`count(${contentItems.id}) filter (where ${contentItems.completedAt} is not null and ${contentItems.cancelledAt} is null)::int`,
+      // The plan itself; extra tasks given on top are counted on their own.
+      total: sql<number>`count(${contentItems.id}) filter (where ${contentItems.cancelledAt} is null and ${contentItems.extraRequestedById} is null)::int`,
+      done: sql<number>`count(${contentItems.id}) filter (where ${contentItems.completedAt} is not null and ${contentItems.cancelledAt} is null and ${contentItems.extraRequestedById} is null)::int`,
+      extra: sql<number>`count(${contentItems.id}) filter (where ${contentItems.cancelledAt} is null and ${contentItems.extraRequestedById} is not null)::int`,
+      extraDone: sql<number>`count(${contentItems.id}) filter (where ${contentItems.completedAt} is not null and ${contentItems.cancelledAt} is null and ${contentItems.extraRequestedById} is not null)::int`,
     })
     .from(contentPlans)
     .leftJoin(contentItems, eq(contentItems.planId, contentPlans.id))
@@ -742,18 +754,15 @@ export function tasksFor(open: WorkItem[], user: { id: string; teams: readonly s
 const STAGE_TEAM: Record<string, string> = { content: "content", shooting: "media", media: "media", design: "design", social: "social", delivery: "account" };
 
 /**
- * Versions waiting for this person's approval: the item's content creator reviews it;
- * managers see every version that's waiting (they can approve anything).
+ * Versions waiting for this person's approval: the item's content creator reviews it
+ * (the admins see every version that's waiting — they can approve anything).
  */
-export function reviewsFor(open: WorkItem[], user: { id: string; isAdmin?: boolean; isManager?: boolean }) {
-  const manager = !!user.isAdmin || !!user.isManager;
+export function reviewsFor(open: WorkItem[], user: { id: string; isAdmin?: boolean }) {
   return open.filter((i) => {
     const c = i.current;
     if (!c || (c.kind !== "media" && c.kind !== "design")) return false;
     const latest = i.versions.filter((v) => v.kind === c.kind).at(-1);
     if (latest?.status !== "pending") return false;
-    const content = i.stages.find((s) => s.kind === "content");
-    const owner = content?.assignee?.id ?? content?.completedBy?.id;
-    return owner === user.id || manager;
+    return i.reviewerId === user.id || !!user.isAdmin;
   });
 }
