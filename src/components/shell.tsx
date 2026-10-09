@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { BarChart3, Briefcase, Camera, History, Home, KeyRound, LogOut, Menu, MessagesSquare, Plus, Search, Settings, Tags, UserRound, Users, X } from "lucide-react";
 import { GiveTaskButton } from "./tasks";
@@ -10,6 +10,7 @@ import { ManagerChip } from "./avatar";
 import { BRAND } from "@/config/brand";
 import { logoutAction } from "@/app/actions";
 import { NotificationBell } from "./bell";
+import { ScrollMemory } from "./scroll-memory";
 import { Avatar, btn } from "./ui";
 
 type NavBrand = { id: string; name: string; slug: string; color: string; open: number; late: number };
@@ -24,7 +25,7 @@ export function Shell({
   taskBrands,
   children,
 }: {
-  user: { name: string; title: string | null; isAdmin: boolean; username: string; manager: boolean };
+  user: { name: string; title: string | null; isAdmin: boolean; username: string; manager: boolean; roleLabel: string | null };
   brands: NavBrand[];
   myCount: number;
   chatUnread: number;
@@ -41,6 +42,9 @@ export function Shell({
 
   return (
     <div className="min-h-dvh lg:pl-[248px]">
+      <Suspense fallback={null}>
+        <ScrollMemory />
+      </Suspense>
       {/* Sidebar */}
       <aside
         className={clsx(
@@ -190,7 +194,7 @@ function NavItem({ href, icon: Icon, label, active, count, highlight }: { href: 
   );
 }
 
-function UserMenu({ user }: { user: { name: string; title: string | null; username: string; manager: boolean } }) {
+function UserMenu({ user }: { user: { name: string; title: string | null; username: string; manager: boolean; roleLabel: string | null } }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -205,14 +209,14 @@ function UserMenu({ user }: { user: { name: string; title: string | null; userna
         <Avatar name={user.name} size={30} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[14px] font-semibold text-white">{user.name}</span>
-          <span className="block truncate text-[12px] text-white/50">{user.manager ? "Manager · " : ""}{user.title ?? `@${user.username}`}</span>
+          <span className="block truncate text-[12px] text-white/50">{user.roleLabel ? `${user.roleLabel} · ` : user.manager ? "Manager · " : ""}{user.title ?? `@${user.username}`}</span>
         </span>
       </button>
       {open && (
         <div className="absolute bottom-full left-0 right-0 mb-2 animate-in overflow-hidden rounded-xl border border-line bg-white py-1 text-ink shadow-pop">
-          {user.manager && (
+          {(user.manager || user.roleLabel) && (
             <div className="border-b border-line px-3 pb-2 pt-1.5">
-              <ManagerChip />
+              <ManagerChip role={user.roleLabel} />
             </div>
           )}
           <Link href="/settings/account" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-2 text-[14px] hover:bg-canvas">

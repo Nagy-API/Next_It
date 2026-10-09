@@ -1,11 +1,10 @@
 import clsx from "clsx";
 import { AlertTriangle, Check, CornerUpLeft, Flag, Hourglass, Send } from "lucide-react";
-import { STAGE_META, finalLabel, type StageHealth } from "@/domain/workflow";
+import { PROGRESS_META, STAGE_META, finalLabel, type StageHealth } from "@/domain/workflow";
 import { diffDays, formatDateTime, formatDay, plural, todayISO } from "@/lib/dates";
 import type { StageView, WorkItem } from "@/server/queries";
 import { Avatar, Badge, type Tone } from "./ui";
 
-const PROGRESS_TEXT = { not_started: "Not started yet", processing: "In progress", adjusting: "Adjusting", waiting_approval: "Waiting approval" } as const;
 
 /* ------------------------------------------------------------------ */
 /* Health → words                                                       */
@@ -125,7 +124,7 @@ export function FlowStepper({ item }: { item: WorkItem }) {
               </div>
               <div className="mt-1 text-[12px] leading-snug text-muted">
                 {s.status === "done" && s.completedAt && <>Done {formatDateTime(s.completedAt)}</>}
-                {s.status === "active" && (state === "returned" ? <span className="text-back">Sent back — needs changes</span> : state === "late" ? <span className="font-medium text-bad">{healthBadge(s, today)?.label}</span> : <span className="font-medium text-electric">{PROGRESS_TEXT[s.progress]}</span>)}
+                {s.status === "active" && (state === "returned" ? <span className="text-back">Sent back — needs changes</span> : state === "late" ? <span className="font-medium text-bad">{healthBadge(s, today)?.label}</span> : <span className="font-medium text-electric">{s.progress === "not_started" ? "Not started yet" : PROGRESS_META[s.progress].label}</span>)}
                 {s.status === "waiting" && (prevDone ? "Up next" : "Waiting")}
               </div>
             </div>

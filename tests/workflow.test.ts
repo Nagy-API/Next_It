@@ -33,6 +33,9 @@ describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
   it("hands off automatically: Content → Pre-production → Post-production (v1 approved) → Social → Published", async () => {
     const king = await makeUser("King", ["content"]);
     const ayman = await makeUser("Ayman", ["media"]);
+    // A second media person: the step isn't auto-given to "the only member of the team", so taking it is logged
+    // (on a brand-new database Ayman would otherwise be the only one and the test would depend on old data).
+    await makeUser("Jana", ["media"]);
     const assem = await makeManager("Assem", ["account"]);
     const esraa = await makeUser("Esraa", ["social"]);
     const brand = await makeBrand("Vanilla Roza", king.id);
@@ -71,7 +74,7 @@ describe("Scenario 1 — The Ampoule (Reel) end to end", () => {
     await expect(reviewVersion(king, v1.id, { approve: false })).rejects.toThrow(/Write what needs to change/);
     await reviewVersion(king, v1.id, { approve: false, note: "Cut the intro" });
     all = await stagesOf(id);
-    expect(byKind(all, "media")).toMatchObject({ status: "active", progress: "adjusting" });
+    expect(byKind(all, "media")).toMatchObject({ status: "active", progress: "changes_requested" });
     const t2 = cairoNoon("2026-09-29");
     const v2 = await submitVersion(ayman, byKind(all, "media").id, { url: "https://drive.google.com/file/d/ampoule-final", now: t2 });
     expect(v2.number).toBe(2);

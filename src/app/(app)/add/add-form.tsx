@@ -11,6 +11,7 @@ import type { ContentType } from "@/db/schema";
 import { TYPE_META, guessTypeFromTitle } from "@/domain/workflow";
 import { formatDay, monthLabel, monthName } from "@/lib/dates";
 import { parsePastedList } from "@/lib/paste";
+import { DateInput } from "@/components/date-input";
 
 type Brand = { id: string; name: string; slug: string; color: string; defaultCreatorId: string | null };
 type Project = { id: string; name: string; clientName: string };
@@ -292,7 +293,7 @@ export function AddForm({
                   </button>
                 ))}
               </div>
-              <input type="date" value={r.postingDate} onChange={(e) => update(r.key, { postingDate: e.target.value })} aria-label="Date" className="field field-sm h-9" />
+              <DateInput value={r.postingDate} onChange={(v) => update(r.key, { postingDate: v })} aria-label="Date" size="sm" className="w-full" />
               <input type="time" value={r.postingTime} onChange={(e) => update(r.key, { postingTime: e.target.value })} aria-label="Time" className="field field-sm h-9" />
               <input value={r.canvaUrl} onChange={(e) => update(r.key, { canvaUrl: e.target.value })} placeholder="https://canva.link/…" aria-label="Canva link" className="field field-sm h-9" />
               <button type="button" onClick={() => setRows((rs) => (rs.length > 1 ? rs.filter((x) => x.key !== r.key) : [blank()]))} className="flex size-8 items-center justify-center rounded-md text-faint hover:bg-bad-soft hover:text-bad" aria-label="Remove row">

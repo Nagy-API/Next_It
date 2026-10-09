@@ -4,7 +4,7 @@ import ExcelJS from "exceljs";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { contentPlans, users } from "@/db/schema";
-import { STAGE_META, TEAM_META, TYPE_META, finalLabel } from "@/domain/workflow";
+import { PROGRESS_META, STAGE_META, TEAM_META, TYPE_META, finalLabel } from "@/domain/workflow";
 import { cairoDate, formatDateTime, monthLabel, monthRange, todayISO } from "@/lib/dates";
 import { getDashboard, personPerMonth } from "./stats";
 import { BRAND as brand } from "@/config/brand";
@@ -57,7 +57,7 @@ function itemRow(i: WorkItem) {
     posting: i.postingDate ?? "",
     time: i.postingTime ?? "",
     status: i.cancelledAt ? "Deleted" : i.completedAt ? finalLabel(i.context) : cur ? STAGE_META[cur.kind].label : "",
-    progress: cur ? { not_started: "Not started", processing: "In progress", adjusting: "Adjusting", waiting_approval: "Waiting approval" }[cur.progress] : "",
+    progress: cur ? PROGRESS_META[cur.progress].label : "",
     withWho: cur?.assignee?.name ?? (cur ? `${STAGE_META[cur.kind].label} team` : ""),
     deadline: cur?.deadline ?? "",
     late: cur?.health === "overdue" ? "LATE" : "",

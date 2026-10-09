@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { RANGES, type RangeKey } from "@/lib/ranges";
+import { DateInput } from "@/components/date-input";
 
 export function RangePicker({ current, from, to }: { current: RangeKey; from: string; to: string }) {
   const router = useRouter();
@@ -25,9 +26,9 @@ export function RangePicker({ current, from, to }: { current: RangeKey; from: st
           router.push(`${pathname}?range=custom&from=${custom.from}&to=${custom.to}`);
         }}
       >
-        <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className="field field-sm h-8 w-[140px] border-0" aria-label="From" />
+        <DateInput value={custom.from} onChange={(v) => setCustom((c) => ({ ...c, from: v }))} size="sm" className="w-[140px]" aria-label="From" />
         <span className="text-muted">→</span>
-        <input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className="field field-sm h-8 w-[140px] border-0" aria-label="To" />
+        <DateInput value={custom.to} onChange={(v) => setCustom((c) => ({ ...c, to: v }))} size="sm" className="w-[140px]" aria-label="To" />
         <button className="rounded-lg bg-canvas px-2.5 py-1.5 text-[13px] font-medium hover:bg-line">Apply</button>
       </form>
     </div>

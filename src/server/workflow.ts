@@ -4,7 +4,7 @@
  *  - derives timestamps / completing user / next stage automatically,
  *  - writes immutable activity records for everything it changes.
  */
-import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import {
   brands,
@@ -19,6 +19,7 @@ import {
   stages,
   users,
   versions,
+  workSessions,
   type ContentItem,
   type PlatformStatus,
   type Stage,
@@ -26,8 +27,11 @@ import {
   type StageKind,
 } from "@/db/schema";
 import {
+  PICKABLE_PROGRESS,
   PLATFORM_STATUS_META,
+  PROGRESS_META,
   STAGE_META,
+  TIMED_PROGRESS,
   canReturnTo,
   currentStage,
   downstreamShift,
@@ -43,7 +47,7 @@ import {
 import { cairoDate, formatDay, isValidISODate, isValidTime, monthLabel, plural } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
-import { NOT_ALLOWED, can } from "@/domain/permissions";
+import { NOT_ALLOWED, can, isManager } from "@/domain/permissions";
 import { notify, soleTeamMember, stageAudience } from "./notify";
 
 /* ------------------------------------------------------------------ */
@@ -126,6 +130,45 @@ async function stageWithItem(tx: Tx, stageId: string) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Time on a step                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The step's clock: it runs while the step is "In progress" or "Adjusting" for its person and stops when the work
+ * is sent for approval, finished, sent back, scheduled for later or handed to someone else. Nobody starts or stops
+ * it by hand; it follows the status.
+ */
+export async function trackTimeTx(
+  tx: Tx,
+  stage: { id: string; itemId: string },
+  next: { progress: StageProgress | "done"; userId: string | null },
+  now: Date,
+  reason: "status" | "sent" | "done" | "returned" | "reassigned" | "cancelled",
+) {
+  const open = await tx.select().from(workSessions).where(and(eq(workSessions.stageId, stage.id), isNull(workSessions.endedAt)));
+  const timed = next.progress !== "done" && TIMED_PROGRESS.includes(next.progress) && !!next.userId;
+  const keep = timed ? open.find((o) => o.kind === next.progress && o.userId === next.userId) : undefined;
+  for (const o of open) if (o !== keep) await tx.update(workSessions).set({ endedAt: now, endReason: reason }).where(eq(workSessions.id, o.id));
+  if (timed && !keep) await tx.insert(workSessions).values({ stageId: stage.id, itemId: stage.itemId, userId: next.userId!, kind: next.progress, startedAt: now });
+}
+
+/** Stop every running clock on an item (deleted / finished). */
+export async function stopItemTimeTx(tx: Tx, itemId: string, now: Date, reason: "done" | "cancelled") {
+  await tx
+    .update(workSessions)
+    .set({ endedAt: now, endReason: reason })
+    .where(and(eq(workSessions.itemId, itemId), isNull(workSessions.endedAt)));
+}
+
+/** Anyone may choose themselves or someone from that step's team; managers may choose anyone. */
+async function assertMayChoose(tx: Tx, actor: Actor, kind: StageKind, userId: string) {
+  if (userId === actor.id || isManager(actor)) return;
+  const team = STAGE_META[kind].team;
+  const [u] = await tx.select({ teams: users.teams, isActive: users.isActive }).from(users).where(eq(users.id, userId));
+  assert(u?.isActive && (!team || u.teams.includes(team)), `Choose someone from the ${STAGE_META[kind].label} team, or yourself.`);
+}
+
+/* ------------------------------------------------------------------ */
 /* Completing a stage (automatic hand-off + deadline propagation)       */
 /* ------------------------------------------------------------------ */
 
@@ -153,8 +196,9 @@ export async function completeStageTx(
   if (!stage.assigneeId) stage = { ...stage, assigneeId: actor.id };
   await tx
     .update(stages)
-    .set({ status: "done", completedAt: now, completedById: actor.id, assigneeId: stage.assigneeId })
+    .set({ status: "done", completedAt: now, completedById: actor.id, assigneeId: stage.assigneeId, scheduledFor: null })
     .where(eq(stages.id, stage.id));
+  await trackTimeTx(tx, stage, { progress: "done", userId: null }, now, "done");
 
   await tx.insert(stageCompletions).values({
     stageId: stage.id,
@@ -318,7 +362,7 @@ export async function returnToStage(
   itemId: string,
   target: StageKind,
   note?: string | null,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; /** Who fixes it (default: whoever did that step). */ assigneeId?: string | null } = {},
 ) {
   return db.transaction(async (tx) => {
     const now = opts.now ?? new Date();
@@ -326,9 +370,14 @@ export async function returnToStage(
     ensureOpen(ctx);
     const all = await loadStages(tx, itemId);
     assert(canReturnTo(all, target), "Work can only be returned to an earlier stage.");
-    const t = all.find((s) => s.kind === target)!;
+    let t = all.find((s) => s.kind === target)!;
     const from = currentStage(all);
     const cleanNote = note?.trim() || null;
+    if (opts.assigneeId && opts.assigneeId !== t.assigneeId) {
+      await assertMayChoose(tx, actor, target, opts.assigneeId);
+      await assignStageTx(tx, actor, ctx, t, opts.assigneeId, { quiet: true });
+      t = { ...t, assigneeId: opts.assigneeId };
+    }
 
     for (const s of all.filter((x) => x.position >= t.position)) {
       if (s.id === t.id) {
@@ -343,8 +392,10 @@ export async function returnToStage(
             returnedAt: now,
             returnedById: actor.id,
             returnNote: cleanNote,
-            progress: "adjusting",
+            // They read what to change, then press "On it" (Adjusting, the clock runs) or schedule it.
+            progress: "changes_requested",
             progressAt: now,
+            scheduledFor: null,
             lateExcusedAt: null,
             lateExcusedById: null,
           })
@@ -352,9 +403,10 @@ export async function returnToStage(
       } else if (s.status !== "waiting") {
         await tx
           .update(stages)
-          .set({ status: "waiting", activatedAt: null, completedAt: null, completedById: null, progress: "not_started", progressAt: null })
+          .set({ status: "waiting", activatedAt: null, completedAt: null, completedById: null, progress: "not_started", progressAt: null, scheduledFor: null })
           .where(eq(stages.id, s.id));
       }
+      await trackTimeTx(tx, s, { progress: "not_started", userId: null }, now, "returned");
     }
     await notify(tx, actor, await stageAudience(tx, t.kind, t.assigneeId), {
       kind: "sent_back",
@@ -396,6 +448,7 @@ export async function assignStageTx(tx: Tx, actor: Actor, ctx: ItemCtx, stage: S
     assert(u?.isActive, "That person is not an active team member.");
   }
   await tx.update(stages).set({ assigneeId }).where(eq(stages.id, stage.id));
+  if (stage.status === "active") await trackTimeTx(tx, stage, { progress: stage.progress, userId: assigneeId }, new Date(), "reassigned");
   if (!opts.quiet && stage.status !== "done") {
     await notify(tx, actor, [assigneeId], {
       kind: "assigned",
@@ -425,8 +478,8 @@ export async function assignStage(actor: Actor, stageId: string, assigneeId: str
   return db.transaction(async (tx) => {
     const { ctx, stage } = await stageWithItem(tx, stageId);
     ensureOpen(ctx);
-    // Anyone who can do a step may take it themselves; choosing someone else is for that team or managers.
-    const claiming = assigneeId === actor.id && can.doStage(actor, { kind: stage.kind });
+    // Anyone who can do a step may take it themselves; choosing someone else is for managers.
+    const claiming = assigneeId === actor.id && (can.doStage(actor, { kind: stage.kind }) || !stage.assigneeId);
     assert(claiming || can.assign(actor, stage), NOT_ALLOWED);
     return assignStageTx(tx, actor, ctx, stage, assigneeId);
   });
@@ -611,6 +664,16 @@ export async function setPlatformState(
     if (social) {
       const rows = await tx.select().from(itemPlatforms).where(eq(itemPlatforms.itemId, itemId));
       const complete = socialComplete(rows);
+      // Every planned platform scheduled (or already live) → the Social step reads "Scheduled" from outside.
+      const targeted = rows.filter((r) => PLATFORM_STATUS_META[r.status].targeted);
+      const scheduled = targeted.filter((r) => r.status === "scheduled");
+      if (social.status === "active" && !complete && scheduled.length && targeted.every((r) => r.status === "scheduled" || r.status === "published")) {
+        const first = scheduled.map((r) => r.date).filter((d): d is string => !!d).sort()[0] ?? null;
+        if (social.progress !== "scheduled" || social.scheduledFor !== first) {
+          await tx.update(stages).set({ progress: "scheduled", progressAt: now, scheduledFor: first, assigneeId: social.assigneeId ?? actor.id }).where(eq(stages.id, social.id));
+          await trackTimeTx(tx, social, { progress: "scheduled", userId: social.assigneeId ?? actor.id }, now, "status");
+        }
+      }
       if (social.status === "active" && complete) {
         await completeStageTx(tx, actor, ctx, all, social, now);
       } else if (social.status === "done" && !complete && rows.some((r) => PLATFORM_STATUS_META[r.status].targeted)) {
@@ -728,10 +791,8 @@ export async function handOff(actor: Actor, stageId: string, input: HandOffInput
     ensureOpen(ctx);
     assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current step.`);
     assert(can.doStage(actor, stage), NOT_ALLOWED);
+    // The content link is optional and can be any link (Canva, a Google Doc, Drive…).
     if (input.canvaUrl?.trim() && stage.kind === "content") await setCanvaUrlTx(tx, actor, ctx, input.canvaUrl, now);
-    if (stage.kind === "content" && !ctx.item.canvaUrl && !ctx.planCanvaUrl) {
-      throw new UserError("Add the Canva link first (this slide's link, or the month's Canva link on the brand page) — that's what the next team works from.");
-    }
     if (input.driveUrl?.trim()) await setDriveUrlTx(tx, actor, ctx, input.driveUrl, now);
     if (STAGE_META[stage.kind].needsDriveLink && !ctx.item.driveUrl) {
       throw new UserError("Add the Google Drive link to the final file before sending it on.");
@@ -744,7 +805,7 @@ export async function handOff(actor: Actor, stageId: string, input: HandOffInput
     // The person chosen for the next step is set first so the "new task" notification goes to them.
     const me = all.find((s) => s.id === stage.id)!;
     const upcoming = all.find((s) => s.position > me.position);
-    if (input.assigneeId) assert(can.assign(actor), "Only managers choose the person — it goes to the default person or team.");
+    if (upcoming && input.assigneeId) await assertMayChoose(tx, actor, upcoming.kind, input.assigneeId);
     if (upcoming && input.assigneeId) {
       await assignStageTx(tx, actor, ctx, upcoming, input.assigneeId, { quiet: true });
       all = await loadStages(tx, ctx.item.id);
@@ -765,25 +826,30 @@ export async function handOff(actor: Actor, stageId: string, input: HandOffInput
 /* Progress of the current step (same statuses as the old tracker)       */
 /* ------------------------------------------------------------------ */
 
-export const PROGRESS_LABEL: Record<StageProgress, string> = {
-  not_started: "Not started",
-  processing: "In progress",
-  adjusting: "Adjusting",
-  waiting_approval: "Waiting approval",
-};
+export const PROGRESS_LABEL: Record<StageProgress, string> = Object.fromEntries(
+  Object.entries(PROGRESS_META).map(([k, v]) => [k, v.label]),
+) as Record<StageProgress, string>;
 
-export async function setStageProgress(actor: Actor, stageId: string, progress: StageProgress, opts: { now?: Date } = {}) {
+export async function setStageProgress(
+  actor: Actor,
+  stageId: string,
+  progress: StageProgress,
+  opts: { now?: Date; /** The day they'll do it (status "Scheduled"). */ scheduledFor?: string | null } = {},
+) {
   return db.transaction(async (tx) => {
     const now = opts.now ?? new Date();
     const { ctx, stage } = await stageWithItem(tx, stageId);
     ensureOpen(ctx);
     assert(stage.status === "active", "You can only update the step that's in progress.");
     assert(can.doStage(actor, stage), NOT_ALLOWED);
-    assert(PROGRESS_LABEL[progress], "Unknown status.");
-    if (stage.progress === progress) return false;
+    assert(PICKABLE_PROGRESS.includes(progress), "Unknown status.");
+    const scheduledFor = progress === "scheduled" ? opts.scheduledFor || null : null;
+    if (progress === "scheduled") assert(scheduledFor && isValidISODate(scheduledFor), "Pick the day you'll do it.");
+    if (stage.progress === progress && (stage.scheduledFor ?? null) === scheduledFor) return false;
     // Starting work on an unclaimed step claims it.
     const assigneeId = stage.assigneeId ?? (progress !== "not_started" ? actor.id : null);
-    await tx.update(stages).set({ progress, progressAt: now, assigneeId }).where(eq(stages.id, stage.id));
+    await tx.update(stages).set({ progress, progressAt: now, assigneeId, scheduledFor }).where(eq(stages.id, stage.id));
+    await trackTimeTx(tx, stage, { progress, userId: assigneeId }, now, progress === "waiting_approval" ? "sent" : "status");
     await logActivity(tx, actor, {
       ...refs(ctx),
       action: "stage_progress",
@@ -791,7 +857,7 @@ export async function setStageProgress(actor: Actor, stageId: string, progress: 
       field: "progress",
       oldValue: stage.progress,
       newValue: progress,
-      summary: `${actor.name} set ${STAGE_META[stage.kind].label} to “${PROGRESS_LABEL[progress]}”.`,
+      summary: `${actor.name} set ${STAGE_META[stage.kind].label} to “${PROGRESS_LABEL[progress]}”${scheduledFor ? ` for ${formatDay(scheduledFor)}` : ""}.`,
       at: now,
     });
     return true;
@@ -825,7 +891,11 @@ async function reviewersFor(tx: Tx, ctx: ItemCtx, all: Stage[]): Promise<string[
   return team.map((m) => m.id);
 }
 
-export async function submitVersion(actor: Actor, stageId: string, input: { url: string; note?: string | null; now?: Date }) {
+export async function submitVersion(
+  actor: Actor,
+  stageId: string,
+  input: { url: string; /** More options for the reviewer to choose from (e.g. a second design). */ altUrls?: (string | null | undefined)[]; note?: string | null; now?: Date },
+) {
   return db.transaction(async (tx) => {
     const now = input.now ?? new Date();
     const { ctx, all, stage } = await stageWithItem(tx, stageId);
@@ -835,6 +905,8 @@ export async function submitVersion(actor: Actor, stageId: string, input: { url:
     assert(can.doStage(actor, stage), NOT_ALLOWED);
     const url = normalizeUrl(input.url);
     assert(url, "Paste the Google Drive link to this version.");
+    const altUrls = [...new Set((input.altUrls ?? []).map((u) => normalizeUrl(u)).filter((u): u is string => !!u && u !== url))];
+    assert(altUrls.length <= 3, "Up to 4 options per version.");
     const [{ n }] = await tx.select({ n: max(versions.number) }).from(versions).where(eq(versions.stageId, stage.id));
     const number = (n ?? 0) + 1;
     await tx
@@ -844,16 +916,17 @@ export async function submitVersion(actor: Actor, stageId: string, input: { url:
     const note = input.note?.trim() || null;
     const [v] = await tx
       .insert(versions)
-      .values({ itemId: ctx.item.id, stageId: stage.id, kind: stage.kind, number, url, note, submittedById: actor.id, submittedAt: now })
+      .values({ itemId: ctx.item.id, stageId: stage.id, kind: stage.kind, number, url, altUrls, note, submittedById: actor.id, submittedAt: now })
       .returning();
     await setDriveUrlTx(tx, actor, ctx, url, now);
     await tx
       .update(stages)
-      .set({ progress: "waiting_approval", progressAt: now, assigneeId: stage.assigneeId ?? actor.id })
+      .set({ progress: "waiting_approval", progressAt: now, assigneeId: stage.assigneeId ?? actor.id, scheduledFor: null })
       .where(eq(stages.id, stage.id));
+    await trackTimeTx(tx, stage, { progress: "waiting_approval", userId: stage.assigneeId ?? actor.id }, now, "sent");
     await notify(tx, actor, await reviewersFor(tx, ctx, all), {
       kind: "review",
-      title: `v${number} ready to approve: ${ctx.item.title}`,
+      title: altUrls.length ? `v${number} ready · ${altUrls.length + 1} options to choose from: ${ctx.item.title}` : `v${number} ready to approve: ${ctx.item.title}`,
       body: `${STAGE_META[stage.kind].label} · ${ctx.where} · from ${actor.name}${note ? ` — “${truncate(note, 80)}”` : ""}`,
       itemId: ctx.item.id,
       at: now,
@@ -864,8 +937,8 @@ export async function submitVersion(actor: Actor, stageId: string, input: { url:
       stageKind: stage.kind,
       field: "version",
       newValue: `v${number}`,
-      summary: `${actor.name} sent v${number} of ${STAGE_META[stage.kind].label} for approval.`,
-      meta: { url, note },
+      summary: `${actor.name} sent v${number} of ${STAGE_META[stage.kind].label} for approval${altUrls.length ? ` (${altUrls.length + 1} options)` : ""}.`,
+      meta: { url, altUrls, note },
       at: now,
     });
     return v;
@@ -873,7 +946,11 @@ export async function submitVersion(actor: Actor, stageId: string, input: { url:
 }
 
 /** Approve a version (the step finishes and goes on) or ask for changes (a new version opens). */
-export async function reviewVersion(actor: Actor, versionId: string, input: { approve: boolean; note?: string | null; now?: Date }) {
+export async function reviewVersion(
+  actor: Actor,
+  versionId: string,
+  input: { approve: boolean; note?: string | null; /** The option chosen when the version came with several. */ chosenUrl?: string | null; now?: Date },
+) {
   return db.transaction(async (tx) => {
     const now = input.now ?? new Date();
     const [v] = await tx.select().from(versions).where(eq(versions.id, versionId));
@@ -885,10 +962,15 @@ export async function reviewVersion(actor: Actor, versionId: string, input: { ap
     assert(stage.status === "active", `${STAGE_META[stage.kind].label} is not the current step.`);
     const note = input.note?.trim() || null;
     if (!input.approve) assert(note, "Write what needs to change.");
+    const options = [v.url, ...v.altUrls];
+    const chosen = input.approve && options.length > 1 ? (input.chosenUrl && options.includes(input.chosenUrl) ? input.chosenUrl : null) : null;
+    if (input.approve && options.length > 1) assert(chosen, "Pick the option you're approving.");
+    const optionName = chosen ? `option ${String.fromCharCode(65 + options.indexOf(chosen))} of ` : "";
     await tx
       .update(versions)
-      .set({ status: input.approve ? "approved" : "changes", reviewedById: actor.id, reviewedAt: now, reviewNote: note })
+      .set({ status: input.approve ? "approved" : "changes", reviewedById: actor.id, reviewedAt: now, reviewNote: note, chosenUrl: chosen })
       .where(eq(versions.id, v.id));
+    if (chosen && chosen !== ctx.item.driveUrl) await setDriveUrlTx(tx, actor, ctx, chosen, now);
     const label = STAGE_META[stage.kind].label;
     await logActivity(tx, actor, {
       ...refs(ctx),
@@ -897,7 +979,7 @@ export async function reviewVersion(actor: Actor, versionId: string, input: { ap
       field: "version",
       newValue: `v${v.number}`,
       summary: input.approve
-        ? `${actor.name} approved v${v.number} of ${label}.`
+        ? `${actor.name} approved ${optionName}v${v.number} of ${label}.`
         : `${actor.name} asked for changes on v${v.number} of ${label}: “${truncate(note!, 140)}”`,
       at: now,
     });
@@ -912,7 +994,9 @@ export async function reviewVersion(actor: Actor, versionId: string, input: { ap
       });
     }
     if (!input.approve) {
-      await tx.update(stages).set({ progress: "adjusting", progressAt: now }).where(eq(stages.id, stage.id));
+      // They read the note, then press "On it" (Adjusting, the clock runs) or schedule it for a day.
+      await tx.update(stages).set({ progress: "changes_requested", progressAt: now, scheduledFor: null }).where(eq(stages.id, stage.id));
+      await trackTimeTx(tx, stage, { progress: "changes_requested", userId: stage.assigneeId }, now, "status");
       await notify(tx, actor, [stage.assigneeId ?? v.submittedById], {
         kind: "sent_back",
         title: `Changes on v${v.number}: ${ctx.item.title}`,
@@ -967,7 +1051,9 @@ export async function setShootDetails(
     const shoot = all.find((s) => s.kind === "shooting");
     // Planning the shoot means the step has started.
     if (shoot?.status === "active" && shoot.progress === "not_started" && next.shootDate) {
-      await tx.update(stages).set({ progress: "processing", progressAt: new Date(), assigneeId: shoot.assigneeId ?? actor.id }).where(eq(stages.id, shoot.id));
+      const now = new Date();
+      await tx.update(stages).set({ progress: "processing", progressAt: now, assigneeId: shoot.assigneeId ?? actor.id }).where(eq(stages.id, shoot.id));
+      await trackTimeTx(tx, shoot, { progress: "processing", userId: shoot.assigneeId ?? actor.id }, now, "status");
     }
     const editor = all.find((s) => s.kind === "media");
     if (next.shootDate) {

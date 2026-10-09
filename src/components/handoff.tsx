@@ -34,6 +34,7 @@ import type { StageView, VersionView, WorkItem } from "@/server/queries";
 import { ActionForm, Submit } from "./client";
 import { Avatar } from "./avatar";
 import { BrandDot, ExtraBadge, StageChip, TypeIcon, btn } from "./ui";
+import { DateInput } from "@/components/date-input";
 
 export type PickPerson = { id: string; name: string; teams: string[] };
 
@@ -156,7 +157,7 @@ function WhoAndWhen({
               <Lock className="size-3.5 text-muted" /> {formatDay(existingDeadline)}
             </div>
           ) : (
-            <input id={`dl-${stageId}`} type="date" name="deadline" className="field" />
+            <DateInput id={`dl-${stageId}`} name="deadline" className="w-full" />
           )}
         </div>
       )}
@@ -244,7 +245,7 @@ function ShootForm({ item, compact }: { item: HandItem; compact?: boolean }) {
         <label className="label" htmlFor={`sd-${item.id}`}>
           Shoot day
         </label>
-        <input id={`sd-${item.id}`} type="date" name="shootDate" defaultValue={item.shoot.date ?? ""} className="field" required />
+        <DateInput id={`sd-${item.id}`} name="shootDate" defaultValue={item.shoot.date ?? ""} className="w-full" required />
       </div>
       <div>
         <label className="label" htmlFor={`st-${item.id}`}>

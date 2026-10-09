@@ -63,7 +63,8 @@ export async function importTracker(data: TrackerBrand[] = TRACKER) {
       .select({ id: contentItems.id, title: contentItems.title, postingDate: contentItems.postingDate })
       .from(contentItems)
       .innerJoin(contentPlans, eq(contentPlans.id, contentItems.planId))
-      .where(and(eq(contentPlans.brandId, brand.id), eq(contentPlans.year, b.year), eq(contentPlans.month, b.month), isNull(contentItems.cancelledAt)));
+      // Any month: an item dated in the next month lives in that month's plan.
+      .where(and(eq(contentPlans.brandId, brand.id), isNull(contentItems.cancelledAt)));
 
     for (const it of b.items) {
       const match = existing.find((e) => e.title.trim().toLowerCase() === it.title.toLowerCase() && e.postingDate === it.postingDate);

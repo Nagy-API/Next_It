@@ -38,7 +38,7 @@ export const STAGE_STATUSES = ["waiting", "active", "done"] as const;
 export const stageStatusEnum = pgEnum("stage_status", STAGE_STATUSES);
 
 /** Where the person doing a step is with it (same statuses as the old tracker). Done = the step is completed. */
-export const STAGE_PROGRESS = ["not_started", "processing", "adjusting", "waiting_approval"] as const;
+export const STAGE_PROGRESS = ["not_started", "processing", "adjusting", "waiting_approval", "changes_requested", "scheduled"] as const;
 export const stageProgressEnum = pgEnum("stage_progress", STAGE_PROGRESS);
 
 export const PLATFORM_STATUSES = ["not_planned", "pending", "scheduled", "published", "cancelled"] as const;
@@ -59,6 +59,8 @@ export const users = pgTable("users", {
   isAdmin: boolean("is_admin").notNull().default(false),
   /** Managers assign work, set deadlines, see the dashboard and the activity log. */
   isManager: boolean("is_manager").notNull().default(false),
+  /** Shown instead of "Manager" next to the name when set (e.g. "IT"). */
+  roleLabel: text("role_label"),
   /** Profile photo as a small data URL (resized in the browser before upload). */
   avatar: text("avatar"),
   avatarUpdatedAt: ts("avatar_updated_at"),
@@ -236,6 +238,8 @@ export const stages = pgTable(
     round: integer("round").notNull().default(1),
     progress: stageProgressEnum("progress").notNull().default("not_started"),
     progressAt: ts("progress_at"),
+    /** The day the person plans to do it (progress "scheduled"). */
+    scheduledFor: date("scheduled_for", { mode: "string" }),
     activatedAt: ts("activated_at"),
     completedAt: ts("completed_at"),
     completedById: uuid("completed_by_id").references(() => users.id),
@@ -433,8 +437,99 @@ export const versions = pgTable(
     reviewedById: uuid("reviewed_by_id").references(() => users.id),
     reviewedAt: ts("reviewed_at"),
     reviewNote: text("review_note"),
+    /** Extra options sent with the same version (e.g. two designs to choose from). */
+    altUrls: text("alt_urls").array().notNull().default(sql`'{}'::text[]`),
+    /** The option the reviewer picked when approving (url of the main or an extra option). */
+    chosenUrl: text("chosen_url"),
   },
   (t) => [uniqueIndex("versions_stage_number_uq").on(t.stageId, t.number), index("versions_item_idx").on(t.itemId)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Time on a step: from "In progress" / "Adjusting" until it's sent      */
+/* ------------------------------------------------------------------ */
+
+export const workSessions = pgTable(
+  "work_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => stages.id),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => contentItems.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    /** processing | adjusting */
+    kind: text("kind").notNull(),
+    startedAt: ts("started_at").notNull(),
+    endedAt: ts("ended_at"),
+    /** Why it stopped: sent (waiting approval) | done | status | returned | reassigned */
+    endReason: text("end_reason"),
+  },
+  (t) => [index("work_sessions_user_idx").on(t.userId, t.startedAt), index("work_sessions_stage_idx").on(t.stageId), index("work_sessions_item_idx").on(t.itemId)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Files & links attached to content or to a task                         */
+/* ------------------------------------------------------------------ */
+
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    itemId: uuid("item_id").references(() => contentItems.id),
+    taskId: uuid("task_id").references(() => tasks.id),
+    /** file | link */
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    url: text("url"),
+    mime: text("mime"),
+    size: integer("size"),
+    /** File name on disk (in the files folder next to the database); never a path from the user. */
+    storageKey: text("storage_key"),
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("attachments_item_idx").on(t.itemId), index("attachments_task_idx").on(t.taskId)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Team notes (like Instagram notes): a short line for 12 hours           */
+/* ------------------------------------------------------------------ */
+
+export const notes = pgTable(
+  "notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    text: text("text").notNull(),
+    color: text("color").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    expiresAt: ts("expires_at").notNull(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("notes_expires_idx").on(t.expiresAt)],
+);
+
+/** Reminders in the bell (late / due / posting soon) someone already saw and cleared. */
+export const alertDismissals = pgTable(
+  "alert_dismissals",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    alertId: text("alert_id").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.alertId] })],
 );
 
 /* ------------------------------------------------------------------ */
@@ -515,3 +610,6 @@ export type StageProgress = (typeof STAGE_PROGRESS)[number];
 export type Version = typeof versions.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type Recurrence = (typeof RECURRENCES)[number];
+export type WorkSession = typeof workSessions.$inferSelect;
+export type Attachment = typeof attachments.$inferSelect;
+export type Note = typeof notes.$inferSelect;

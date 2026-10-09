@@ -12,6 +12,7 @@ import type { WorkItem } from "@/server/queries";
 import { ActionForm, Modal, Submit } from "./client";
 import { btn } from "./ui";
 import { ItemRow } from "./item-row";
+import { DateInput } from "@/components/date-input";
 
 type P = { id: string; name: string; teams: string[] };
 
@@ -109,7 +110,7 @@ export function BulkList({ items, people, showContext = false, selectable = true
                 ))}
               </select>
             )}
-            {mode === "deadline" && <input type="date" name="date" className="h-8 rounded-md border-0 bg-white/10 px-2 text-[13px] text-white [color-scheme:dark]" aria-label="Deadline" />}
+            {mode === "deadline" && <DateInput name="date" dark className="w-[140px]" aria-label="Deadline" />}
             {mode === "complete" && <span className="text-[12.5px] text-white/60">Only items currently at this stage</span>}
             <Submit size="sm" variant="primary">
               Apply

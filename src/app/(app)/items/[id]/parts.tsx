@@ -19,6 +19,7 @@ import { ActionForm, AutoInput, AutoSelect, Modal, Submit } from "@/components/c
 import { btn } from "@/components/ui";
 import type { ContentType, PlatformStatus, StageKind } from "@/db/schema";
 import { PLATFORM_STATUS_META, STAGE_META, TYPE_META } from "@/domain/workflow";
+import { DateInput } from "@/components/date-input";
 
 type P = { id: string; name: string; teams: string[] };
 
@@ -74,7 +75,7 @@ export function DeadlineInput({ stageId, value, disabled, locked }: { stageId: s
   return (
     <ActionForm action={deadlineAction} inlineError={false} className="flex items-center gap-1">
       <input type="hidden" name="stageId" value={stageId} />
-      <AutoInput type="date" name="deadline" defaultValue={value ?? ""} key={value ?? ""} disabled={disabled} aria-label="Deadline" className="w-[150px]" />
+      <DateInput name="deadline" defaultValue={value ?? ""} key={value ?? ""} disabled={disabled} autoSubmit size="sm" aria-label="Deadline" className="w-[150px]" />
     </ActionForm>
   );
 }
@@ -303,7 +304,7 @@ export function PlatformRow({
           <ActionForm action={platformAction} inlineError={false} className="flex items-center gap-1.5">
             <input type="hidden" name="itemId" value={itemId} />
             <input type="hidden" name="platformId" value={platform.id} />
-            <AutoInput type="date" name="date" defaultValue={row?.date ?? ""} key={`d${row?.date}`} className="w-[140px]" aria-label={`${platform.name} date`} />
+            <DateInput name="date" defaultValue={row?.date ?? ""} key={`d${row?.date}`} autoSubmit size="sm" className="w-[140px]" aria-label={`${platform.name} date`} />
             <AutoInput type="time" name="time" defaultValue={row?.time ?? ""} key={`t${row?.time}`} className="w-[100px]" aria-label={`${platform.name} time`} />
           </ActionForm>
           {row?.liveUrl && !editingLink ? (
@@ -374,7 +375,7 @@ export function DetailsForm({
             </div>
             <div>
               <label className="label">{item.context === "plan" ? "Posting date" : "Due date"}</label>
-              <input type="date" name="postingDate" defaultValue={item.postingDate ?? ""} className="field" />
+              <DateInput name="postingDate" defaultValue={item.postingDate ?? ""} className="w-full" />
             </div>
             <div>
               <label className="label">Time</label>

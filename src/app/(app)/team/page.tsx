@@ -70,7 +70,7 @@ function PersonCard({ r, q, showStats }: { r: PersonInsight; q: string; showStat
       <Avatar name={r.person.name} size={44} />
       <div className="min-w-0">
         <div className="flex items-center gap-2 font-display text-[16px] font-bold group-hover:text-electric">
-          {r.person.name} {(r.person.isManager || r.person.isAdmin) && <ManagerChip />}
+          {r.person.name} {(r.person.isManager || r.person.isAdmin || r.person.roleLabel) && <ManagerChip role={r.person.roleLabel} />}
         </div>
         <div className="truncate text-[12.5px] text-muted">
           {r.person.isActive ? r.person.title || r.person.teams.map((t) => TEAM_META[t].label).join(" · ") : "Inactive"}

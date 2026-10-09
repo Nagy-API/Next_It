@@ -31,7 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const myCount = tasksFor(open, user).length + messages.length + myTasks.filter((t) => !t.doneAt).length;
   return (
     <ToastProvider>
-      <AvatarProvider people={everyone.map((p) => ({ id: p.id, name: p.name, v: p.avatarUpdatedAt?.getTime() ?? null, manager: p.isManager || p.isAdmin }))}>
+      <AvatarProvider people={everyone.map((p) => ({ id: p.id, name: p.name, v: p.avatarUpdatedAt?.getTime() ?? null, manager: p.isManager || p.isAdmin, role: p.roleLabel }))}>
         <Shell
           user={{ ...user, manager: isManager(user) }}
           brands={navBrands}

@@ -25,7 +25,8 @@ import { endSession, requireActor, requireAdmin, startSession } from "@/server/a
 import { UserError } from "@/server/errors";
 import { createTasks, deleteTask, setTaskDone, setTaskStatus, TASK_STATUS_LABEL } from "@/server/tasks";
 import { deleteChatMessage, markChatRead, postChatMessage } from "@/server/chat";
-import { addComment, bulkStageAction, createExtraTasks, createItems, deleteComment, resolveComment, setItemCancelled, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
+import { addComment, bulkStageAction, createExtraTasks, createItems, deleteComment, resolveComment, setItemCancelled, setItemExtra, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
+import { addLink, linkPending, removeAttachment } from "@/server/attachments";
 import { checkCredentials, deleteAllSessions } from "@/server/sessions";
 import { LOCK, clientIp, isLockedOut, recordAttempt, safeNext } from "@/server/security";
 import { markNotificationsRead } from "@/server/stats";
@@ -140,7 +141,9 @@ export async function progressAction(_: ActionResult, fd: FormData): Promise<Act
   return run(async (actor) => {
     const p = str(fd, "progress") as StageProgress;
     if (!STAGE_PROGRESS.includes(p)) throw new UserError("Unknown status.");
-    await setStageProgress(actor, str(fd, "stageId"), p);
+    await setStageProgress(actor, str(fd, "stageId"), p, { scheduledFor: opt(fd, "scheduledFor") });
+    if (p === "adjusting" && str(fd, "ack") === "1") return "On it — the clock is running.";
+    if (p === "scheduled") return "Scheduled.";
   });
 }
 
@@ -166,7 +169,8 @@ export async function returnAction(_: ActionResult, fd: FormData): Promise<Actio
   return run(async (actor) => {
     const target = str(fd, "target") as StageKind;
     if (!STAGE_KINDS.includes(target)) throw new UserError("Choose where to send it back to.");
-    await returnToStage(actor, str(fd, "itemId"), target, opt(fd, "note"));
+    const who = str(fd, "assigneeId");
+    await returnToStage(actor, str(fd, "itemId"), target, opt(fd, "note"), { assigneeId: who === "me" ? actor.id : who || null });
     return `Sent back to ${STAGE_META[target].label}.`;
   });
 }
@@ -276,6 +280,7 @@ export async function createItemsAction(_: ActionResult, fd: FormData): Promise<
       contentReady: str(fd, "contentReady") === "1",
       sendWithCanva: str(fd, "sendWithCanva") === "1",
     });
+    await linkPending(actor, fd.getAll("attachmentId").map(String), ids.map((itemId) => ({ itemId })));
     dest = str(fd, "returnTo");
     return `${ids.length} item${ids.length === 1 ? "" : "s"} added.`;
   });
@@ -365,15 +370,16 @@ export async function deleteProjectAction(_: ActionResult, fd: FormData): Promis
 
 export async function submitVersionAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
-    const v = await submitVersion(actor, str(fd, "stageId"), { url: str(fd, "url"), note: opt(fd, "note") });
-    return `v${v.number} sent for approval.`;
+    const alt = fd.getAll("altUrl").map(String).filter((u) => u.trim());
+    const v = await submitVersion(actor, str(fd, "stageId"), { url: str(fd, "url"), altUrls: alt, note: opt(fd, "note") });
+    return alt.length ? `v${v.number} sent with ${alt.length + 1} options.` : `v${v.number} sent for approval.`;
   });
 }
 
 export async function reviewVersionAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
     const approve = str(fd, "decision") === "approve";
-    const r = await reviewVersion(actor, str(fd, "versionId"), { approve, note: opt(fd, "note") });
+    const r = await reviewVersion(actor, str(fd, "versionId"), { approve, note: opt(fd, "note"), chosenUrl: opt(fd, "chosenUrl") });
     if (!r.approved) return "Sent back for changes — they'll upload the next version.";
     return r.next ? { message: `Approved and sent to ${r.nextAssignee ?? STAGE_META[r.next].label}.`, celebrate: "small" } : { message: "Approved — done! 🎉", celebrate: "big" };
   });
@@ -411,6 +417,7 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
         type: ((CONTENT_TYPES as readonly string[]).includes(typeRaw) ? typeRaw : "reel") as ContentType,
         dueDate: opt(fd, "dueDate"),
       });
+      await linkPending(actor, fd.getAll("attachmentId").map(String), ids.map((itemId) => ({ itemId })));
       return ids.length > 1 ? `Sent to ${ids.length} people — added to the brand as extra work.` : "Sent — added to the brand as extra work.";
     }
     const r = str(fd, "recurrence") as Recurrence;
@@ -423,6 +430,7 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
       dueTime: opt(fd, "dueTime"),
       recurrence: RECURRENCES.includes(r) ? r : "none",
     });
+    await linkPending(actor, fd.getAll("attachmentId").map(String), created.map((t) => ({ taskId: t.id })));
     return created.length > 1 ? `Task sent to ${created.length} people.` : "Task sent.";
   });
 }
@@ -449,6 +457,36 @@ export async function deleteTaskAction(_: ActionResult, fd: FormData): Promise<A
   return run(async (actor) => {
     await deleteTask(actor, str(fd, "taskId"), { series: str(fd, "series") === "1" });
     return "Task deleted.";
+  });
+}
+
+/* ----------------------------- Attachments ----------------------------- */
+
+export async function addLinkAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await addLink(actor, { url: str(fd, "url"), name: opt(fd, "name"), itemId: opt(fd, "itemId"), taskId: opt(fd, "taskId") });
+    return "Link attached.";
+  });
+}
+
+export async function removeAttachmentAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await removeAttachment(actor, str(fd, "attachmentId"));
+    return "Removed.";
+  });
+}
+
+/** A file was uploaded through /api/files: refresh the page that shows it. */
+export async function refreshAction(): Promise<void> {
+  await requireActor();
+  revalidatePath("/", "layout");
+}
+
+export async function extraAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const extra = str(fd, "extra") === "1";
+    await setItemExtra(actor, str(fd, "itemId"), extra);
+    return extra ? "Counted as extra work." : "Counted as part of the plan.";
   });
 }
 

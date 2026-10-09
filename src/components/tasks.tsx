@@ -10,6 +10,7 @@ import { BrandDot, btn } from "./ui";
 import { TEAM_META, isNewTask } from "@/domain/workflow";
 import type { Team } from "@/db/schema";
 import { formatDay, formatRelative } from "@/lib/dates";
+import { DateInput } from "@/components/date-input";
 
 type P = { id: string; name: string; teams: string[] };
 type B = { id: string; name: string };
@@ -180,7 +181,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
           <label className="label" htmlFor="task-due">
             Deadline
           </label>
-          <input id="task-due" type="date" name="dueDate" className="field" />
+          <DateInput id="task-due" name="dueDate" className="w-full" />
         </div>
         {!brandId && (
           <div>
@@ -310,7 +311,7 @@ function StatusPicker({ t, today }: { t: TaskRowData; today: string }) {
         <ActionForm action={taskStatusAction} onSuccess={() => setPicking(false)} className="flex items-center gap-1.5">
           <input type="hidden" name="taskId" value={t.id} />
           <input type="hidden" name="status" value="scheduled" />
-          <input type="date" name="scheduledDate" required min={today} defaultValue={t.scheduledDate ?? ""} aria-label="Day you'll do it" className="field !h-8 !w-auto !py-0 text-[12.5px]" />
+          <DateInput name="scheduledDate" required min={today} defaultValue={t.scheduledDate ?? ""} aria-label="Day you'll do it" size="sm" className="w-[140px]" />
           <Submit variant="secondary" className="!h-8 !px-3 text-[12.5px]">
             Save
           </Submit>
