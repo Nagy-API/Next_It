@@ -81,8 +81,7 @@ export function PlatformIcon({ name, size = 22, className, muted }: { name: stri
   const spec = key ? ICONS[key] : null;
   return (
     <span
-      role="img"
-      aria-label={name}
+      aria-hidden
       title={name}
       className={clsx("inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[28%]", muted && "opacity-40 grayscale", className)}
       style={{ width: size, height: size, background: spec?.bg ?? "#64748b", color: spec?.fg ?? "#ffffff" }}

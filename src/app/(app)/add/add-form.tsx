@@ -179,7 +179,7 @@ export function AddForm({
 
         {pasting && (
           <div className="border-b border-line bg-electric-soft/40 px-5 py-4">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div>
                 <label className="label" htmlFor="paste-box">
                   Paste or type your list — <b>one line = one post</b>
@@ -323,7 +323,7 @@ export function AddForm({
       {/* 3. Who & how */}
       <section className="card p-5">
         <div className="eyebrow mb-3">3 · Starting point</div>
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <div>
             <label className="label">Content owner</label>
             <select

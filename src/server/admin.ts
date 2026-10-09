@@ -112,6 +112,7 @@ export async function updateBrand(
       assert(/^#[0-9a-fA-F]{6}$/.test(input.color), "Color must be a hex value like #3B82F6.");
       await tx.update(brands).set({ color: input.color }).where(eq(brands.id, brandId));
     }
+    if (input.logoUrl) assert(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(input.logoUrl) && input.logoUrl.length < 300_000, "That logo isn't a small image (PNG, JPG or WebP).");
     if (input.logoUrl !== undefined && (input.logoUrl || null) !== b.logoUrl) {
       await tx.update(brands).set({ logoUrl: input.logoUrl || null }).where(eq(brands.id, brandId));
       await logActivity(tx, actor, { action: "brand_updated", brandId, field: "logo", summary: `${actor.name} updated the ${b.name} logo.` });

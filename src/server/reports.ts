@@ -8,7 +8,25 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from
 import { db } from "@/db";
 import { activityLog, brands, clients, contentItems, contentPlans, projects, stageCompletions, tasks, users, workSessions, type ContentType, type StageKind, type Team } from "@/db/schema";
 import { addDays, cairoDate, startOfCairoDay, todayISO } from "@/lib/dates";
-import { getPeople, getWorkItems, type WorkItem } from "./queries";
+import { brandLogoSrc, getPeople, getWorkItems, type WorkItem } from "./queries";
+
+/** Wall-clock time covered by these intervals: two items "In progress" at the same hour count once. */
+export function coveredMs(parts: { s: Date; e: Date }[]) {
+  const xs = parts.filter((p) => p.e > p.s).sort((a, b) => a.s.getTime() - b.s.getTime());
+  let total = 0;
+  let curS = 0;
+  let curE = 0;
+  for (const p of xs) {
+    const s = p.s.getTime();
+    const e = p.e.getTime();
+    if (s > curE) {
+      total += curE - curS;
+      curS = s;
+      curE = e;
+    } else if (e > curE) curE = e;
+  }
+  return total + (curE - curS);
+}
 
 type Where = { itemId: string; title: string; type: ContentType; brand: { name: string; color: string } | null; client: string | null; extra: boolean };
 
@@ -131,7 +149,7 @@ export async function peopleReport(from: string, to: string, opts: { userIds?: s
         day: d,
         from: marks.reduce((a, b) => (b < a ? b : a)),
         to: marks.reduce((a, b) => (b > a ? b : a)),
-        workedMs: parts.reduce((n, x) => n + (x.e.getTime() - x.s.getTime()), 0),
+        workedMs: coveredMs(parts),
         finished: fin.length + tasksDone.filter((t) => cairoDate(t.doneAt) === d).length,
       });
     }
@@ -142,7 +160,7 @@ export async function peopleReport(from: string, to: string, opts: { userIds?: s
       tasksDone,
       days,
       open: open.filter((i) => i.current?.assignee?.id === p.id),
-      workedMs: mySessions.reduce((n, w) => n + w.ms, 0),
+      workedMs: coveredMs(mySessions.map((w) => ({ s: w.startedAt < fromTs ? fromTs : w.startedAt, e: (w.endedAt ?? now) > toTs ? toTs : (w.endedAt ?? now) }))),
       extrasDone: finished.filter((f) => f.extra).length,
     };
   });
@@ -163,7 +181,7 @@ export async function brandsReport(from: string, to: string, dueBy: string, opts
   const fromTs = startOfCairoDay(from);
   const toTs = startOfCairoDay(addDays(to, 1));
   const [bs, open, finishedItems, steps, acts] = await Promise.all([
-    db.select({ id: brands.id, name: brands.name, slug: brands.slug, color: brands.color, logoUrl: brands.logoUrl }).from(brands).where(eq(brands.isActive, true)).orderBy(asc(brands.name)),
+    db.select({ id: brands.id, name: brands.name, slug: brands.slug, color: brands.color, logoUrl: brandLogoSrc }).from(brands).where(eq(brands.isActive, true)).orderBy(asc(brands.name)),
     opts.open ? Promise.resolve(opts.open) : getWorkItems({}),
     getWorkItems({ completedFrom: fromTs }),
     db

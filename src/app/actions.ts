@@ -28,9 +28,10 @@ import { deleteChatMessage, markChatRead, postChatMessage } from "@/server/chat"
 import { addComment, bulkStageAction, createExtraTasks, createItems, deleteComment, resolveComment, setItemCancelled, setItemExtra, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
 import { addLink, attachLinks, linkPending, removeAttachment } from "@/server/attachments";
 import { postNote, removeNote } from "@/server/notes";
+import { quickUpdate, type QuickRow } from "@/server/quick";
 import { checkCredentials, deleteAllSessions } from "@/server/sessions";
 import { LOCK, clientIp, isLockedOut, recordAttempt, safeNext } from "@/server/security";
-import { markNotificationsRead } from "@/server/stats";
+import { dismissAlerts, markNotificationsRead } from "@/server/stats";
 import { isItemFinished } from "@/server/queries";
 import { reviewVersion, setShootDetails, submitVersion } from "@/server/workflow";
 import { assignStage, completeStage, handOff, setStageProgress, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
@@ -162,7 +163,9 @@ export async function planLinksAction(_: ActionResult, fd: FormData): Promise<Ac
 export async function markReadAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   const actor = await requireActor();
   const ids = fd.getAll("id").map(String).filter(Boolean);
-  await markNotificationsRead(actor.id, ids.length ? ids : undefined);
+  const alerts = fd.getAll("alert").map(String).filter(Boolean);
+  if (alerts.length) await dismissAlerts(actor.id, alerts);
+  if (ids.length || !alerts.length) await markNotificationsRead(actor.id, ids.length ? ids : undefined);
   return { ok: true, at: Date.now() };
 }
 
@@ -491,6 +494,19 @@ export async function extraAction(_: ActionResult, fd: FormData): Promise<Action
     const extra = str(fd, "extra") === "1";
     await setItemExtra(actor, str(fd, "itemId"), extra);
     return extra ? "Counted as extra work." : "Counted as part of the plan.";
+  });
+}
+
+/* ----------------------------- Quick update ----------------------------- */
+
+export async function quickAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const rows = JSON.parse(str(fd, "rows") || "[]") as QuickRow[];
+    if (!Array.isArray(rows) || !rows.length) throw new UserError("Nothing to save yet: paste or type at least one link.");
+    const r = await quickUpdate(actor, rows);
+    if (!r.done && r.skipped.length) throw new UserError(`Nothing saved. ${r.skipped[0].title}: ${r.skipped[0].reason}`);
+    const skipped = r.skipped.length ? ` ${r.skipped.length} skipped (${r.skipped.slice(0, 2).map((x) => `${x.title}: ${x.reason}`).join("; ")}).` : "";
+    return { message: `${r.done} updated.${skipped}`, celebrate: r.done ? "small" : undefined };
   });
 }
 

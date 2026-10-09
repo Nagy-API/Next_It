@@ -19,6 +19,9 @@ async function openItem(page: Page, brandSlug: string, title: string, month = "2
   await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
 }
 
+/** Date fields read day first: "2026-10-03" → "03/10/2026". */
+const dmy = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 const toast = (page: Page, text: string | RegExp) => expect(page.getByText(text).last()).toBeVisible();
 const card = (page: Page, title: string) => page.locator("article.card", { has: page.getByRole("link", { name: title, exact: true }) }).first();
 
@@ -53,17 +56,17 @@ test.describe.serial("NEXORA acceptance", () => {
     await login(page, "ayman");
     await openItem(page, "vanilla-roza", "The Ampoule");
     await expect(page.getByText("With Ayman")).toBeVisible();
-    await page.getByLabel("Shoot day").fill("2026-10-03");
+    await page.getByLabel("Shoot day").fill(dmy("2026-10-03"));
     await page.getByLabel("How long").selectOption("2 hours");
     await page.getByRole("button", { name: "Save shoot" }).click();
     await toast(page, "Shoot saved.");
     await expect(page.getByText(/Shoot Sat 3 Oct/).first()).toBeVisible();
-    await page.getByRole("button", { name: /Shooting done — send to Jana/ }).click();
+    await page.getByRole("button", { name: /Shooting done, send to Jana/ }).click();
     await toast(page, "Sent to Jana (Post-production).");
 
     // Jana (editing) sends v1 from her task list.
     await login(page, "jana");
-    await card(page, "The Ampoule").getByPlaceholder(/Google Drive link to v1/).fill("https://drive.google.com/file/d/the-ampoule-v1");
+    await card(page, "The Ampoule").getByPlaceholder(/Drive link to v1/).fill("https://drive.google.com/file/d/the-ampoule-v1");
     await card(page, "The Ampoule").getByRole("button", { name: "Send v1 for approval" }).click();
     await toast(page, "v1 sent for approval.");
 
@@ -78,30 +81,31 @@ test.describe.serial("NEXORA acceptance", () => {
 
     await login(page, "jana");
     await expect(card(page, "The Ampoule").getByText(/Make the logo bigger at the end/).first()).toBeVisible();
-    await card(page, "The Ampoule").getByPlaceholder(/Google Drive link to v2/).fill("https://drive.google.com/file/d/the-ampoule-final");
+    await card(page, "The Ampoule").getByPlaceholder(/Drive link to v2/).fill("https://drive.google.com/file/d/the-ampoule-final");
     await card(page, "The Ampoule").getByRole("button", { name: "Send v2 for approval" }).click();
     await toast(page, "v2 sent for approval.");
 
     await login(page, "king");
     await page.goto("/my-work");
     await expect(page.getByText("Waiting for your approval")).toBeVisible();
-    await page.getByRole("button", { name: /Approve v2 — send to Esraa/ }).click();
+    await page.getByRole("button", { name: /Approve v2, send to Esraa/ }).click();
     await toast(page, "Approved and sent to Esraa.");
 
     // Esraa picks the platforms, then pastes live links — pasting the link marks it Published.
     await login(page, "esraa");
     await openItem(page, "vanilla-roza", "The Ampoule");
     await expect(page.getByRole("link", { name: /Drive file/ })).toHaveAttribute("href", "https://drive.google.com/file/d/the-ampoule-final");
-    await page.getByLabel("Instagram status").selectOption("pending");
-    await toast(page, "Saved.");
-    await page.getByLabel("TikTok status").selectOption("pending");
-    await toast(page, "Saved.");
+    // The Social step: tap each app it goes to (with its icon), then paste each live link.
+    await page.getByRole("button", { name: "Instagram", exact: true }).click();
+    await expect(page.getByPlaceholder(/Instagram link/)).toBeVisible();
+    await page.getByRole("button", { name: "TikTok", exact: true }).click();
+    await expect(page.getByPlaceholder(/TikTok link/)).toBeVisible();
     await page.goto("/my-work");
-    await card(page, "The Ampoule").getByPlaceholder(/Instagram post link/).fill("https://www.instagram.com/p/ampoule");
-    await card(page, "The Ampoule").getByRole("button", { name: "Published" }).first().click();
+    await card(page, "The Ampoule").getByPlaceholder(/Instagram link/).fill("https://www.instagram.com/p/ampoule");
+    await card(page, "The Ampoule").getByRole("button", { name: "Live" }).first().click();
     await toast(page, "Published! ✨");
-    await card(page, "The Ampoule").getByPlaceholder(/TikTok post link/).fill("https://www.tiktok.com/@vr/video/1");
-    await card(page, "The Ampoule").getByRole("button", { name: "Published" }).click();
+    await card(page, "The Ampoule").getByPlaceholder(/TikTok link/).fill("https://www.tiktok.com/@vr/video/1");
+    await card(page, "The Ampoule").getByRole("button", { name: "Live" }).click();
     await toast(page, /Published everywhere/);
 
     await openItem(page, "vanilla-roza", "The Ampoule");
@@ -130,13 +134,13 @@ test.describe.serial("NEXORA acceptance", () => {
     // The post had its Canva link → already with the default designer; the reels wait with King.
     await page.goto("/brands/vanilla-roza?m=2026-11&team=design");
     await expect(page.getByRole("link", { name: "Post 01: November Hello", exact: true })).toBeVisible();
-    await expect(page.getByText("Gannah").first()).toBeVisible();
+    await expect(page.getByText("Gannah").filter({ visible: true }).first()).toBeVisible(); // (phones show the name on a second line)
     await page.goto("/my-work");
     await expect(card(page, "Revision Reel")).toBeVisible();
 
     // King pastes the Canva link right in his task list → sent to shooting (Ayman), time recorded.
-    await card(page, "Revision Reel").getByPlaceholder(/Canva link/).fill("https://canva.link/revision-reel");
-    await card(page, "Revision Reel").getByRole("button", { name: /Content ready — send to Ayman/ }).click();
+    await card(page, "Revision Reel").getByPlaceholder(/content link/i).fill("https://canva.link/revision-reel");
+    await card(page, "Revision Reel").getByRole("button", { name: /Content ready, send to Ayman/ }).click();
     await toast(page, "Sent to Ayman (Pre-production).");
     await expect(page.getByRole("link", { name: "Revision Reel", exact: true })).toHaveCount(0);
   });
@@ -152,9 +156,9 @@ test.describe.serial("NEXORA acceptance", () => {
       x.setUTCDate(x.getUTCDate() + d);
       return x.toISOString().slice(0, 10);
     };
-    await steps.getByLabel("Deadline").nth(0).fill(shift(-3));
+    await steps.getByLabel("Deadline").nth(0).fill(dmy(shift(-3)));
     await toast(page, "Deadline saved.");
-    await steps.getByLabel("Deadline").nth(0).fill(shift(-1)); // now the Pre-production row (Content's deadline is locked)
+    await steps.getByLabel("Deadline").nth(0).fill(dmy(shift(-1))); // now the Pre-production row (Content's deadline is locked)
     await toast(page, "Deadline saved.");
     await page.reload();
     await page.getByText("More details").click();
@@ -164,8 +168,8 @@ test.describe.serial("NEXORA acceptance", () => {
 
     await login(page, "king");
     await openItem(page, "vanilla-roza", "Late Reel", "2026-11");
-    await page.getByLabel(/Canva link to this content/).fill("https://canva.link/late-reel");
-    await page.getByRole("button", { name: /Done — send to Ayman/ }).click();
+    await page.getByLabel(/^Content link/).fill("https://canva.link/late-reel");
+    await page.getByRole("button", { name: /Done, send to Ayman/ }).click();
     await toast(page, "Sent to Ayman (Pre-production).");
     await expect(page.getByText(/Deadline moved from/)).toBeVisible();
     await expect(page.getByText(/Shifted by 3 days because Content was delivered late/).first()).toBeVisible();
@@ -189,9 +193,13 @@ test.describe.serial("NEXORA acceptance", () => {
 
     await login(page, "king");
     await page.goto("/my-work");
-    await expect(card(page, "The Oil").getByText(/Sent back by Assem/)).toBeVisible();
+    // He reads what to change, presses "OK, I'm on it" → Adjusting (the clock runs).
+    await expect(card(page, "The Oil").getByText(/Changes requested by Assem/)).toBeVisible();
+    await expect(card(page, "The Oil").getByText(/stronger hook/)).toBeVisible();
+    await card(page, "The Oil").getByRole("button", { name: /I.m on it/ }).click();
+    await toast(page, /On it/);
     await expect(card(page, "The Oil").getByRole("radio", { name: "Adjusting" })).toHaveAttribute("aria-checked", "true");
-    await card(page, "The Oil").getByRole("button", { name: /Content ready — send to Ayman/ }).click();
+    await card(page, "The Oil").getByRole("button", { name: /Content ready, send to Ayman/ }).click();
     await toast(page, "Sent to Ayman (Pre-production).");
   });
 
@@ -218,15 +226,15 @@ test.describe.serial("NEXORA acceptance", () => {
     await login(page, "ayman");
     await page.goto("/my-work"); // Ayman is a manager: he lands on the overview
     await expect(card(page, "Reel 1").getByText("NEW for your team")).toBeVisible();
-    await card(page, "Reel 1").getByRole("button", { name: /Shooting done — send to Editing/ }).click();
+    await card(page, "Reel 1").getByRole("button", { name: /Shooting done, send to Editing/ }).click();
     await toast(page, "Sent to the Post-production team.");
-    await card(page, "Reel 1").getByPlaceholder(/Google Drive link to v1/).fill("https://drive.google.com/sinai-reel-1");
+    await card(page, "Reel 1").getByPlaceholder(/Drive link to v1/).fill("https://drive.google.com/sinai-reel-1");
     await card(page, "Reel 1").getByRole("button", { name: "Send v1 for approval" }).click();
     await toast(page, "v1 sent for approval.");
 
     await login(page, "ammar");
     await page.goto("/my-work");
-    await page.getByRole("button", { name: /Approve v1 — send to Assem/ }).click();
+    await page.getByRole("button", { name: /Approve v1, send to Assem/ }).click();
     await toast(page, "Approved and sent to Assem.");
 
     await login(page, "assem");
@@ -258,16 +266,17 @@ test.describe.serial("NEXORA acceptance", () => {
     // Kemo (content creator, not a manager) sends it on.
     await login(page, "kemo");
     await openItem(page, "vanilla-roza", "Cover Reel", "2026-12");
-    await page.getByLabel(/Canva link to this content/).fill("https://canva.link/cover-reel");
+    await page.getByLabel(/^Content link/).fill("https://canva.link/cover-reel");
     await page.getByRole("radio", { name: /Graphic Design/ }).click();
-    await expect(page.getByRole("combobox", { name: "Who?" })).toHaveCount(0); // only managers choose the person
+    // Anyone sending work on may pick the person in that team, or themselves.
+    await expect(page.getByRole("combobox", { name: "Who works on it?" })).toBeVisible();
     await expect(page.getByLabel(/Deadline/)).toHaveCount(0); // content creators don't set deadlines
-    await page.getByRole("button", { name: /Done — send to Gannah/ }).click();
+    await page.getByRole("button", { name: /Done, send to Gannah/ }).click();
     await toast(page, "Sent to Gannah (Graphic Design).");
 
     await login(page, "assem");
     await openItem(page, "vanilla-roza", "Cover Reel", "2026-12");
-    await page.getByLabel("Deadline").first().fill("2026-12-05");
+    await page.getByLabel("Deadline").first().fill(dmy("2026-12-05"));
     await toast(page, "Deadline saved.");
     await page.reload();
     await expect(page.getByTitle(/can't be changed once set/).first()).toBeVisible();
@@ -278,19 +287,19 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.keyboard.press("Escape");
     await card(page, "Cover Reel").getByRole("radio", { name: "In progress" }).click();
     await expect(card(page, "Cover Reel").getByRole("radio", { name: "In progress" })).toHaveAttribute("aria-checked", "true");
-    await card(page, "Cover Reel").getByPlaceholder(/Google Drive link to v1/).fill("https://drive.google.com/cover-reel");
+    await card(page, "Cover Reel").getByPlaceholder(/Drive link to v1/).fill("https://drive.google.com/cover-reel");
     await card(page, "Cover Reel").getByRole("button", { name: "Send v1 for approval" }).click();
     await toast(page, "v1 sent for approval.");
 
     await login(page, "king");
     await page.goto("/my-work");
-    await page.getByRole("button", { name: /Approve v1 — send to Esraa/ }).click();
+    await page.getByRole("button", { name: /Approve v1, send to Esraa/ }).click();
     await toast(page, "Approved and sent to Esraa.");
 
     await login(page, "ayman");
     await page.goto("/my-work");
     await expect(card(page, "Reel 2").getByText("NEW for your team")).toBeVisible();
-    await card(page, "Reel 2").getByRole("button", { name: /take it/ }).click();
+    await card(page, "Reel 2").getByRole("button", { name: /work on it/ }).click();
     await expect(card(page, "Reel 2").getByText("NEW for your team")).toHaveCount(0);
 
     // Jana (editing) can't do Design's work or edit content.
@@ -309,7 +318,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await openItem(page, "vanilla-roza", "Post 02: Talk To Me");
     await page.getByPlaceholder(/Write a comment/).fill("Please use the pink background");
     await page.getByLabel("Send to").selectOption({ label: "To: Gannah (waits for their reply)" });
-    await page.getByRole("button", { name: "Post" }).click();
+    await page.getByRole("button", { name: "Post", exact: true }).click();
     await expect(page.getByText("Waiting for Gannah")).toBeVisible();
 
     await login(page, "gannah");

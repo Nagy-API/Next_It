@@ -72,14 +72,17 @@ async function People({ from, to, single, open }: { from: string; to: string; si
   const rows = (await peopleReport(from, to, { open })).sort(
     (a, b) => b.finished.length + b.tasksDone.length - (a.finished.length + a.tasksDone.length) || b.workedMs - a.workedMs || a.person.name.localeCompare(b.person.name),
   );
+  // People with nothing in this period are listed in one line, not as empty cards.
+  const active = rows.filter((r) => r.finished.length + r.tasksDone.length + r.sessions.length + r.open.length > 0);
+  const idle = rows.filter((r) => !active.includes(r));
   const totals = rows.reduce((t, r) => ({ finished: t.finished + r.finished.length + r.tasksDone.length, worked: t.worked + r.workedMs, open: t.open + r.open.length }), { finished: 0, worked: 0, open: 0 });
   return (
     <div className="space-y-3">
       <p className="text-[13px] text-muted">
         <b className="text-ink">{totals.finished}</b> finished · <b className="text-ink">{rows.filter((r) => r.sessions.length).length}</b> people worked · <b className="text-ink">{totals.open}</b> still open. Tap a person for the details.
       </p>
-      {rows.map((r) => (
-        <details key={r.person.id} className="card group overflow-hidden" open={rows.length === 1}>
+      {active.map((r) => (
+        <details key={r.person.id} className="card group overflow-hidden" open={active.length === 1}>
           <summary className="cursor-pointer list-none px-4 py-3 hover:bg-[#fafbfe]">
             <PersonReportHead r={r} single={single} />
           </summary>
@@ -93,6 +96,7 @@ async function People({ from, to, single, open }: { from: string; to: string; si
           </div>
         </details>
       ))}
+      {idle.length > 0 && <p className="px-1 text-[12.5px] text-muted">Nothing tracked for {idle.map((r) => r.person.name).join(", ")}.</p>}
     </div>
   );
 }
@@ -103,7 +107,7 @@ async function Brands({ from, to, dueBy, today, open, qsDue }: { from: string; t
     <div className="space-y-4">
       <DueByPicker value={dueBy} today={today} hrefFor={[addDays(today, 1), addDays(today, 3), addDays(today, 7)].map((d) => ({ d, href: qsDue(d) }))} />
       {rows.length === 0 && <Empty title="No active brands" />}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         {rows.map((b) => (
           <section key={b.brand.id} className="card overflow-hidden" style={{ boxShadow: `inset 0 3px 0 ${b.brand.color}` }}>
             <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">

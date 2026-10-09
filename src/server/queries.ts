@@ -147,6 +147,9 @@ export type WorkItem = {
 
 const brandCols = { id: brands.id, name: brands.name, slug: brands.slug, color: brands.color, isActive: brands.isActive };
 
+/** The brand's logo as a small cached image URL (never the image itself in the page), or null. */
+export const brandLogoSrc = sql<string | null>`case when ${brands.logoUrl} is null then null else '/api/brand-logo/' || ${brands.id} || '?v=' || left(md5(${brands.logoUrl}), 10) end`;
+
 type ItemFilter = {
   ids?: string[];
   planIds?: string[];
@@ -425,7 +428,7 @@ export function myBrandIds(all: { id: string; defaultCreatorId: string | null; d
 
 export async function getBrands() {
   return db
-    .select({ ...brandCols, logoUrl: brands.logoUrl, defaultCreatorId: brands.defaultCreatorId, defaultShootId: brands.defaultShootId, defaultMediaId: brands.defaultMediaId, defaultDesignId: brands.defaultDesignId, defaultSocialId: brands.defaultSocialId, creatorName: users.name, createdAt: brands.createdAt, archivedAt: brands.archivedAt })
+    .select({ ...brandCols, logoUrl: brandLogoSrc, defaultCreatorId: brands.defaultCreatorId, defaultShootId: brands.defaultShootId, defaultMediaId: brands.defaultMediaId, defaultDesignId: brands.defaultDesignId, defaultSocialId: brands.defaultSocialId, creatorName: users.name, createdAt: brands.createdAt, archivedAt: brands.archivedAt })
     .from(brands)
     .leftJoin(users, eq(users.id, brands.defaultCreatorId))
     .orderBy(asc(brands.name));
@@ -433,7 +436,7 @@ export async function getBrands() {
 
 export async function getBrandBySlug(slug: string) {
   const [b] = await db
-    .select({ ...brandCols, logoUrl: brands.logoUrl, defaultCreatorId: brands.defaultCreatorId, creatorName: users.name, archivedAt: brands.archivedAt })
+    .select({ ...brandCols, logoUrl: brandLogoSrc, defaultCreatorId: brands.defaultCreatorId, creatorName: users.name, archivedAt: brands.archivedAt })
     .from(brands)
     .leftJoin(users, eq(users.id, brands.defaultCreatorId))
     .where(eq(brands.slug, slug));

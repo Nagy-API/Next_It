@@ -79,7 +79,7 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
         </div>
       </section>
       <RangePicker current={range.key} from={range.from} to={range.to} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label="Steps finished" value={r.completed} hint={label} />
         <Stat label="On time" value={r.onTime} tone={r.onTime ? "ok" : undefined} hint={`${r.noDeadline} had no deadline`} />
         <Stat label="Missed deadlines" value={r.late} tone={r.late ? "bad" : undefined} hint={r.excused ? `+${r.excused} excused (not counted)` : "Exceptions never count"} />

@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .filter((b) => b.isActive)
     .map((b) => {
       const mine = open.filter((i) => i.brand?.id === b.id);
-      return { id: b.id, name: b.name, slug: b.slug, color: b.color, open: mine.length, late: mine.filter((i) => i.attention === "overdue").length };
+      return { id: b.id, name: b.name, slug: b.slug, color: b.color, logoUrl: b.logoUrl, open: mine.length, late: mine.filter((i) => i.attention === "overdue").length };
     });
   // Work sent for approval is with the reviewer, not on the person.
   const onMe = tasksFor(open, user).filter((i) => !(i.current?.progress === "waiting_approval" && i.current.assignee?.id === user.id));

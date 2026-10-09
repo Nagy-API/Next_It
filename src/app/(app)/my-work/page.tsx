@@ -205,7 +205,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
         </section>
       )}
 
-      {items.length === 0 && (
+      {items.length === 0 && reviews.length === 0 && tasksShown.length === 0 && (
         <div className="card flex flex-col items-center px-6 py-12 text-center">
           <Coffee className="mb-3 size-8 text-electric" />
           <div className="font-display text-[16px] font-bold">{period ? "Nothing due in this period" : "You’re all caught up"}</div>
@@ -293,8 +293,16 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
       )}
 
       {next.length > 0 && (
-        <section>
-          <SectionTitle right={<span className="text-[13px] text-muted">Not late — it hasn&rsquo;t reached you yet</span>}>Coming to you next</SectionTitle>
+        <details className="group">
+          <summary className="mb-3 flex cursor-pointer list-none items-center justify-between gap-3">
+            <h2 className="font-display text-[15px] font-bold text-ink">
+              Coming to you next <span className="ml-1 rounded-full bg-canvas px-2 py-0.5 text-[12px] font-semibold text-muted ring-1 ring-line">{next.length}</span>
+            </h2>
+            <span className="text-[13px] text-muted">
+              Not late, it hasn&rsquo;t reached you yet · <span className="font-medium text-electric group-open:hidden">show</span>
+              <span className="hidden font-medium text-electric group-open:inline">hide</span>
+            </span>
+          </summary>
           <div className="card divide-y divide-line">
             {next.map((i) => (
               <Link key={i.id} href={`/items/${i.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-[#f8faff]">
@@ -312,7 +320,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
               </Link>
             ))}
           </div>
-        </section>
+        </details>
       )}
 
       <section>

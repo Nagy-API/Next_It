@@ -51,7 +51,7 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
             <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
               {g.label} <span className="rounded-full bg-canvas px-2 text-[12px] font-semibold text-muted">{g.list.length}</span>
             </h2>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {g.list.map((r) => (
                 <PersonCard key={r.person.id} r={r} showStats={manager || r.person.id === me.id} q={`?range=${range.key}${range.key === "custom" ? `&from=${range.from}&to=${range.to}` : ""}`} />
               ))}

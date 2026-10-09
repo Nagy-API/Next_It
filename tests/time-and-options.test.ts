@@ -116,3 +116,12 @@ describe("Managers decide what counts as extra", () => {
     expect((await db.select().from(contentItems).where(eq(contentItems.id, id)))[0].extraRequestedById).toBeNull();
   });
 });
+
+describe("Worked time in reports", () => {
+  it("two items in progress at the same time count once", async () => {
+    const { coveredMs } = await import("@/server/reports");
+    const t = (h: number) => new Date(Date.UTC(2026, 9, 5, h));
+    expect(coveredMs([{ s: t(8), e: t(12) }, { s: t(10), e: t(14) }, { s: t(16), e: t(17) }])).toBe(7 * 3_600_000);
+    expect(coveredMs([])).toBe(0);
+  });
+});

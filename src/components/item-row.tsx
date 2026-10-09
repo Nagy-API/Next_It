@@ -72,8 +72,8 @@ export function ItemRow({ item, showContext = true, compact, leading, actions }:
           </div>
         )}
       </div>
-      <FlowMini item={item} className="hidden md:flex" />
-      <div className="hidden w-[230px] shrink-0 items-center gap-2 text-[13px] sm:flex">
+      {!compact && <FlowMini item={item} className="hidden xl:flex" />}
+      <div className={clsx("hidden shrink-0 items-center gap-2 text-[13px] sm:flex", compact ? "w-[170px]" : "w-[230px]")}>
         {c ? (
           holder ? (
             <>
@@ -97,7 +97,7 @@ export function ItemRow({ item, showContext = true, compact, leading, actions }:
           )
         ) : null}
       </div>
-      <div className="hidden w-[150px] shrink-0 justify-end sm:flex">
+      <div className={clsx("hidden shrink-0 justify-end sm:flex", compact ? "w-[130px]" : "w-[150px]")}>
         <ItemStatus item={item} />
       </div>
       {actions && <div className="relative z-10 flex shrink-0 items-center gap-1">{actions}</div>}

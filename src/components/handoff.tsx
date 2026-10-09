@@ -38,7 +38,8 @@ import { ActionForm, Submit } from "./client";
 import { BrandDot, ExtraBadge, ProgressChip, StageChip, TimeSpent, TypeIcon, btn } from "./ui";
 import { DateInput } from "./date-input";
 import { PlatformIcon } from "./platform-icon";
-import { SendBack, backTargetsOf } from "./send-back";
+import { SendBack } from "./send-back";
+import { backTargetsOf } from "@/domain/back-targets";
 import { Attachments, type AttachmentItem } from "./attachments";
 
 export type PickPerson = { id: string; name: string; teams: string[] };
@@ -440,7 +441,7 @@ function ReviewButtons({ v, next, compact }: { v: VersionView; next: string; com
       {options.length > 1 && (
         <div className="space-y-1.5">
           <div className="text-[13px] font-medium text-ink-2">{options.length} options sent. Pick the one to approve:</div>
-          <div className="grid gap-1.5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {options.map((u, i) => (
               <label key={u} className={clsx("flex cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2 text-[13.5px] transition-colors", chosen === u ? "border-ok bg-ok-soft/60" : "border-line bg-white hover:border-line-strong")}>
                 <input type="radio" name={`opt-${v.id}`} checked={chosen === u} onChange={() => setChosen(u)} className="accent-[#0f9d6b]" />
@@ -608,7 +609,7 @@ export function DeliverButton({ stageId }: { stageId: string }) {
  * Where the person is with their step. One tap saves; "Scheduled" asks for the day.
  * The clock runs while it's In progress or Adjusting and stops at Waiting approval.
  */
-export function ProgressPicker({ stage, size = "md" }: { stage: Pick<StageView, "id" | "progress" | "progressAt" | "scheduledFor" | "time">; size?: "sm" | "md" }) {
+export function ProgressPicker({ stage, size = "md", showTime = true }: { stage: Pick<StageView, "id" | "progress" | "progressAt" | "scheduledFor" | "time">; size?: "sm" | "md"; showTime?: boolean }) {
   const [scheduling, setScheduling] = useState(false);
   return (
     <div className="space-y-2">
@@ -636,8 +637,8 @@ export function ProgressPicker({ stage, size = "md" }: { stage: Pick<StageView, 
             );
           })}
         </div>
-        <TimeSpent ms={stage.time.ms} running={stage.time.running} />
-        {!stage.time.ms && stage.progressAt && stage.progress !== "not_started" && <span className="text-[12px] text-muted">since {formatRelative(stage.progressAt)}</span>}
+        {showTime && <TimeSpent ms={stage.time.ms} running={stage.time.running} />}
+        {showTime && !stage.time.ms && stage.progressAt && stage.progress !== "not_started" && <span className="text-[12px] text-muted">since {formatRelative(stage.progressAt)}</span>}
       </div>
       {scheduling && <ScheduleForm stageId={stage.id} value={stage.scheduledFor} onDone={() => setScheduling(false)} />}
     </div>
@@ -773,11 +774,9 @@ export function SocialPanel({ item, allPlatforms, canPublish = true }: { item: P
   const targeted = planned.filter((p) => p.status !== "cancelled").length;
   return (
     <div className="space-y-2.5">
-      {planned.length > 0 && (
+      {(planned.length > 0 || item.driveUrl) && (
         <div className="flex items-center justify-between text-[12.5px] text-muted">
-          <span>
-            {live}/{targeted} live
-          </span>
+          <span>{planned.length > 0 ? `${live}/${targeted} live` : ""}</span>
           {item.driveUrl && (
             <a href={item.driveUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-electric hover:underline">
               <FolderOpen className="size-3.5" /> Final file
@@ -988,7 +987,7 @@ export function TaskCard({
 
       {working && !changes && (
         <div className="mt-3 px-4">
-          <ProgressPicker stage={cur} size="sm" />
+          <ProgressPicker stage={cur} size="sm" showTime={false} />
         </div>
       )}
 

@@ -74,7 +74,7 @@ export default async function HomePage() {
               <Flame className="size-4 text-[#ff8a1f]" /> Move now · the next 48 hours
             </span>
           </SectionTitle>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {moveNow.map((i) => (
               <Link key={i.id} href={`/items/${i.id}`} className="card group flex flex-col gap-2 p-4 transition-shadow hover:shadow-pop" style={i.brand ? { boxShadow: `inset 3px 0 0 ${i.brand.color}` } : undefined}>
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -136,7 +136,7 @@ export default async function HomePage() {
         <Pipeline open={open} publishedThisMonth={home.finishedThisMonth} />
       </section>
 
-      <div className={clsx("grid gap-8", manager && "xl:grid-cols-[minmax(0,1fr)_380px]")}>
+      <div className={clsx("grid grid-cols-1 gap-8", manager && "xl:grid-cols-[minmax(0,1fr)_380px]")}>
         {/* ---------------- Needs attention (managers) ---------------- */}
         {manager && (
           <section className="min-w-0">
@@ -164,7 +164,7 @@ export default async function HomePage() {
       {/* ---------------- Brands ---------------- */}
       <section>
         <SectionTitle right={<Link href="/brands" className="text-[13px] font-medium text-electric hover:underline">All brands</Link>}>Brands</SectionTitle>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {home.activeBrands.map((b) => {
             const cur = thisMonth.get(b.id) ?? [];
             const nxt = nextMonth.get(b.id) ?? [];
@@ -219,7 +219,7 @@ function TeamNow({ open }: { open: WorkItem[] }) {
           Team right now
         </span>
       </SectionTitle>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {people.map((p) => {
           const counts = new Map<string, number>();
           for (const i of p.items) counts.set(i.current!.progress, (counts.get(i.current!.progress) ?? 0) + 1);

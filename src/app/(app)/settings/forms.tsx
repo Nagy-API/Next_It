@@ -171,7 +171,7 @@ export function NewUserForm() {
   return (
     <ActionForm action={createUserAction} onSuccess={() => setOpen(false)} className="card w-full space-y-4 p-5">
       <div className="font-display text-[15px] font-bold">New account</div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label" htmlFor="nu-name">Name</label>
           <input id="nu-name" name="name" required className="field" placeholder="e.g. Mariam" />

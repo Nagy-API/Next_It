@@ -13,7 +13,8 @@ import { getItemDetail, type StageView } from "@/server/queries";
 import { attachmentsFor } from "@/server/attachments";
 import { Comments } from "@/components/comments";
 import { Attachments } from "@/components/attachments";
-import { SendBack, backTargetsOf } from "@/components/send-back";
+import { SendBack } from "@/components/send-back";
+import { backTargetsOf } from "@/domain/back-targets";
 import { can, isManager } from "@/domain/permissions";
 import { AssignSelect, CancelToggle, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, ExtraToggle, PlatformRow } from "./parts";
 import { ChangesBanner, DeliverButton, DeliveryTimes, HandOffPanel, HotBadge, LinkGlyph, ProgressPicker, ShootSummary, SocialPanel, TakeButton, VersionPanel } from "@/components/handoff";
@@ -142,7 +143,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                   <ChangesBanner item={item} stage={cur} />
                 </div>
               )}
-              {cur.round > 1 && cur.returnedAt && cur.progress !== "changes_requested" && (
+              {cur.round > 1 && cur.returnedAt && !(may.doCurrent && cur.progress === "changes_requested") && (
                 <div className="flex gap-2 border-b border-line bg-back-soft/30 px-5 py-3 text-[13.5px]">
                   <Info className="mt-0.5 size-4 shrink-0 text-back" />
                   <div>
@@ -157,7 +158,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                     {may.doCurrent && cur.progress !== "changes_requested" && (
                       <div>
                         <div className="label">Where are you with it?</div>
-                        <ProgressPicker stage={cur} />
+                        <ProgressPicker stage={cur} showTime={false} />
                       </div>
                     )}
                     <VersionPanel item={item} stage={cur} canDo={may.doCurrent} canReview={may.review} />
@@ -171,7 +172,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                     {cur.progress !== "changes_requested" && (
                       <div>
                         <div className="label">Where are you with it?</div>
-                        <ProgressPicker stage={cur} />
+                        <ProgressPicker stage={cur} showTime={false} />
                       </div>
                     )}
                     <SocialPanel item={item} allPlatforms={allPlatforms.filter((p) => p.isActive)} canPublish={may.publish} />
@@ -188,7 +189,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                     {cur.progress !== "changes_requested" && (
                       <div>
                         <div className="label">Where are you with it?</div>
-                        <ProgressPicker stage={cur} />
+                        <ProgressPicker stage={cur} showTime={false} />
                       </div>
                     )}
                     <HandOffPanel item={item} stageId={cur.id} from={cur.kind} people={pickPeople} rights={{ deadline: may.deadline, assign: may.assign, review: may.review }} meId={me.id} />
