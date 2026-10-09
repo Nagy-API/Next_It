@@ -125,3 +125,22 @@ describe("Worked time in reports", () => {
     expect(coveredMs([])).toBe(0);
   });
 });
+
+describe("Clocks for work that was already in progress", () => {
+  it("pressing In progress again starts a missing clock (and never a second one)", async () => {
+    const king = await makeUser("King", ["content"]);
+    const jana = await makeUser("Jana", ["media"]);
+    const brand = await makeBrand("VR", king.id);
+    const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "Old", type: "story" }]);
+    const content = (await stagesOf(id))[0];
+    // As before clocks existed: In progress with no running session.
+    await db.update(stages).set({ progress: "processing", assigneeId: king.id }).where(eq(stages.id, content.id));
+    expect(await sessionsOf(id)).toHaveLength(0);
+    await setStageProgress(king, content.id, "processing");
+    await setStageProgress(king, content.id, "processing");
+    const s = await sessionsOf(id);
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ userId: king.id, kind: "processing", endedAt: null });
+    void jana;
+  });
+});

@@ -845,7 +845,11 @@ export async function setStageProgress(
     assert(PICKABLE_PROGRESS.includes(progress), "Unknown status.");
     const scheduledFor = progress === "scheduled" ? opts.scheduledFor || null : null;
     if (progress === "scheduled") assert(scheduledFor && isValidISODate(scheduledFor), "Pick the day you'll do it.");
-    if (stage.progress === progress && (stage.scheduledFor ?? null) === scheduledFor) return false;
+    if (stage.progress === progress && (stage.scheduledFor ?? null) === scheduledFor) {
+      // Same status again: only make sure its clock runs (e.g. work that was in progress before clocks existed).
+      if (TIMED_PROGRESS.includes(progress) && stage.assigneeId) await trackTimeTx(tx, stage, { progress, userId: stage.assigneeId }, now, "status");
+      return false;
+    }
     // Starting work on an unclaimed step claims it.
     const assigneeId = stage.assigneeId ?? (progress !== "not_started" ? actor.id : null);
     await tx.update(stages).set({ progress, progressAt: now, assigneeId, scheduledFor }).where(eq(stages.id, stage.id));

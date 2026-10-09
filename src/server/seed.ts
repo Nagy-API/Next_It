@@ -8,9 +8,9 @@
  * Runs on every start (src/instrumentation.ts and `npm run db:seed`): seeds only an empty database; on an
  * existing one it applies the one-time upgrades below and never overwrites what people changed in Settings.
  */
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { activityLog, brands, contentItems, contentPlans, platforms, users, type Team } from "@/db/schema";
+import { activityLog, brands, contentItems, contentPlans, platforms, stages, users, workSessions, type Team } from "@/db/schema";
 import { createItems, followPostingMonthTx, type NewItemRow } from "./items";
 import { verify } from "@node-rs/argon2";
 import { hashPassword, slugify } from "./admin";
@@ -167,6 +167,29 @@ async function plansFollowPostingDate() {
 }
 
 /**
+ * Steps that were already In progress / Adjusting before the clock existed get their clock started once,
+ * from the moment this version starts (we don't know when they really began, so nothing is invented).
+ */
+async function startRunningClocks() {
+  const MARKER = "clocks_started";
+  const [done] = await db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.action, MARKER)).limit(1);
+  if (done) return;
+  const now = new Date();
+  const running = await db
+    .select({ id: stages.id, itemId: stages.itemId, userId: stages.assigneeId, progress: stages.progress })
+    .from(stages)
+    .innerJoin(contentItems, eq(contentItems.id, stages.itemId))
+    .where(and(eq(stages.status, "active"), inArray(stages.progress, ["processing", "adjusting"]), isNotNull(stages.assigneeId), isNull(contentItems.cancelledAt), isNull(contentItems.completedAt)));
+  await db.transaction(async (tx) => {
+    for (const r of running) {
+      const [open] = await tx.select({ id: workSessions.id }).from(workSessions).where(and(eq(workSessions.stageId, r.id), isNull(workSessions.endedAt))).limit(1);
+      if (!open) await tx.insert(workSessions).values({ stageId: r.id, itemId: r.itemId, userId: r.userId!, kind: r.progress, startedAt: now });
+    }
+    await logActivity(tx, null, { action: MARKER, summary: `Time tracking started for ${running.length} step(s) already in progress.` });
+  });
+}
+
+/**
  * Anyone still using the shared starting password must pick their own at the next sign-in. Checked once
  * per start (cheap: a handful of accounts), so it also covers people an admin creates with a temporary one.
  */
@@ -217,6 +240,7 @@ export async function seed() {
       if (process.env.SEED_TRACKER !== "0") await importTracker();
     }
     await plansFollowPostingDate();
+    await startRunningClocks();
     await forceOwnPasswords();
     return;
   }
