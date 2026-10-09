@@ -1,8 +1,9 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { Clapperboard, GalleryHorizontalEnd, Image as ImageIcon, CircleDashed, type LucideIcon } from "lucide-react";
-import type { ContentType, StageKind } from "@/db/schema";
-import { STAGE_COLOR, STAGE_META, TYPE_META } from "@/domain/workflow";
+import type { ContentType, StageKind, StageProgress } from "@/db/schema";
+import { PROGRESS_META, STAGE_COLOR, STAGE_META, TYPE_META } from "@/domain/workflow";
+import { formatDay, formatDuration } from "@/lib/dates";
 
 export { clsx as cx };
 
@@ -209,6 +210,71 @@ export function StageChip({ kind, short, className }: { kind: StageKind; short?:
     <span className={clsx("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-semibold", className)} style={{ color: c.fg, backgroundColor: c.bg }}>
       <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: c.fg }} />
       {short ? STAGE_META[kind].short : STAGE_META[kind].label}
+    </span>
+  );
+}
+
+/* ------------------------------ Status ------------------------------ */
+
+/**
+ * Where the person is with the step, readable from outside (rows, Overview, Dashboard, profiles):
+ * In progress · Adjusting · Changes requested · Scheduled (with the day) · Waiting approval. Soft colours.
+ */
+export function ProgressChip({
+  progress,
+  scheduledFor,
+  running,
+  className,
+  hideNotStarted,
+}: {
+  progress: StageProgress;
+  scheduledFor?: string | null;
+  /** The clock is running (a soft pulse). */
+  running?: boolean;
+  className?: string;
+  hideNotStarted?: boolean;
+}) {
+  if (hideNotStarted && progress === "not_started") return null;
+  const m = PROGRESS_META[progress];
+  return (
+    <span className={clsx("inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-semibold whitespace-nowrap", className)} style={{ color: m.fg, backgroundColor: m.bg }}>
+      <span aria-hidden className={clsx("size-1.5 rounded-full", running && "animate-pulse")} style={{ backgroundColor: m.dot }} />
+      {m.label}
+      {progress === "scheduled" && scheduledFor ? ` · ${formatDay(scheduledFor)}` : ""}
+    </span>
+  );
+}
+
+/** "⏱ 2h 10m" worked on a step (running = still on the clock). */
+export function TimeSpent({ ms, running, className, prefix }: { ms: number; running?: boolean; className?: string; prefix?: string }) {
+  if (!ms && !running) return null;
+  return (
+    <span className={clsx("inline-flex items-center gap-1 text-[12px] font-medium tabular-nums text-ink-2", className)} title={running ? "On the clock now" : "Time worked on this step"}>
+      <svg viewBox="0 0 20 20" className={clsx("size-3.5", running ? "text-electric" : "text-faint")} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+        <circle cx="10" cy="11" r="6.5" />
+        <path d="M10 7.5V11l2.2 1.6M8 2.5h4" strokeLinecap="round" />
+      </svg>
+      {prefix}
+      {formatDuration(ms)}
+      {running && <span className="text-electric">· running</span>}
+    </span>
+  );
+}
+
+/** A brand's logo (uploaded in Settings → Brands), else its colour with the first letter. */
+export function BrandMark({ name, color, logoUrl, size = 20, className }: { name: string; color: string; logoUrl?: string | null; size?: number; className?: string }) {
+  if (logoUrl)
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={logoUrl} alt="" width={size} height={size} className={clsx("shrink-0 rounded-md bg-white object-contain ring-1 ring-black/5", className)} style={{ width: size, height: size }} />
+    );
+  return (
+    <span
+      aria-hidden
+      className={clsx("inline-flex shrink-0 items-center justify-center rounded-md font-bold text-white", className)}
+      style={{ width: size, height: size, background: color, fontSize: Math.max(9, size * 0.5) }}
+    >
+      {name.trim()[0]?.toUpperCase()}
     </span>
   );
 }

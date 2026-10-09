@@ -1,18 +1,20 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { AlertTriangle, ArrowRight, CalendarDays, Check, CircleUserRound, ClipboardCheck, CornerUpLeft, Flame, Hourglass, PartyPopper, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, Check, CircleUserRound, ClipboardCheck, CornerUpLeft, Flame, Hourglass, Sparkles } from "lucide-react";
 import { isManager } from "@/domain/permissions";
 import { getTasksFor } from "@/server/tasks";
 import { HotBadge } from "@/components/handoff";
-import { STAGE_META } from "@/domain/workflow";
+import { STAGE_COLOR, STAGE_META } from "@/domain/workflow";
 import type { StageKind } from "@/db/schema";
 import { addDays, dayOfWeek, formatDay, formatRelative, monthLabel, todayISO } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
-import { getOpenItems } from "@/server/cached";
-import { getActivity, getBrandMonthSummaries, getHomeData, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
+import { getAllBrands, getOpenItems } from "@/server/cached";
+import { getBrandMonthSummaries, getHomeData, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
+import { activeNotes } from "@/server/notes";
+import { NotesBar } from "@/components/notes-bar";
 import { ItemRow } from "@/components/item-row";
 import { teamEmoji } from "@/lib/cheer";
-import { Avatar, BrandDot, Empty, ProgressBar, SectionTitle, StageChip, TypeIcon } from "@/components/ui";
+import { Avatar, BrandDot, BrandMark, Empty, ProgressBar, ProgressChip, SectionTitle, StageChip, TimeSpent, TypeIcon } from "@/components/ui";
 
 export const metadata = { title: "Overview" };
 
@@ -22,16 +24,15 @@ export default async function HomePage() {
   const user = await requireUser();
   const today = todayISO();
   const manager = isManager(user);
-  const [open, home, activity, myTasks] = await Promise.all([getOpenItems(), getHomeData(today), manager ? getActivity({ limit: 8 }) : Promise.resolve({ rows: [], hasMore: false }), getTasksFor(user.id, today)]);
-  const mine = tasksFor(open, user);
+  const [open, home, myTasks, notes, brands] = await Promise.all([getOpenItems(), getHomeData(today), getTasksFor(user.id, today), activeNotes(), getAllBrands()]);
+  const logoOf = new Map(brands.map((b) => [b.id, b.logoUrl]));
+  const mine = tasksFor(open, user).filter((i) => !(i.current?.progress === "waiting_approval" && i.current.assignee?.id === user.id));
   const moveNow = mine.filter((i) => i.hot || i.current?.health === "overdue").sort((a, b) => (a.postingDate ?? a.current?.deadline ?? "9").localeCompare(b.postingDate ?? b.current?.deadline ?? "9"));
   const tasksSoon = myTasks.filter((t) => !t.doneAt && t.dueDate && t.dueDate <= addDays(today, 2));
   // Versions waiting for MY approval (the content creator of the item) — they hold the next team up.
   const toApprove = reviewsFor(open, user).filter((i) => !moveNow.includes(i));
-  const agencyHot = open.filter((i) => i.hot && i.current?.kind !== "social" && !moveNow.includes(i));
   const year = Number(today.slice(0, 4));
   const month = Number(today.slice(5, 7));
-  // Before the 20th people mostly care about this month; after, next month's plan is being prepared.
   const nextM = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
   const [thisMonth, nextMonth] = await Promise.all([getBrandMonthSummaries(year, month, today), getBrandMonthSummaries(nextM.year, nextM.month, today)]);
 
@@ -40,57 +41,46 @@ export default async function HomePage() {
   const atRisk = open.filter((i) => i.attention === "at_risk");
   const postingPassed = atRisk.filter((i) => i.postingDate && i.postingDate < today).length;
   const unassigned = open.filter((i) => i.current && !i.current.assignee && i.attention !== "overdue" && i.attention !== "at_risk" && i.attention !== "returned");
+  const weekPlanned = home.publishingWeek.length;
+  const weekLive = home.publishingWeek.filter((i) => i.completedAt).length;
   const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "numeric", hour12: false }).format(new Date()));
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const now = new Date().getTime();
 
   return (
     <div className="space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <NotesBar notes={notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString(), expiresAt: n.expiresAt.toISOString() }))} meId={user.id} meName={user.name} now={now} />
+
+      <header className="space-y-4">
         <div>
-          <div className="text-[13px] text-muted">{new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Cairo" }).format(new Date())}</div>
-          <h1 className="mt-1 font-display text-[28px] font-bold tracking-[-0.01em]">
+          <div className="text-[13px] text-muted">{new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Africa/Cairo" }).format(new Date())}</div>
+          <h1 className="mt-0.5 font-display text-[26px] font-bold tracking-[-0.01em] sm:text-[28px]">
             {greeting}, {user.name} <span className="inline-block origin-bottom-right animate-wave">{teamEmoji(user.teams)}</span>
           </h1>
-          <p className="mt-1 text-[14px] text-muted">
-            {open.length} pieces moving through the studio
-            {late.length > 0 && (
-              <>
-                {" · "}
-                <span className="font-medium text-bad">{late.length} past their deadline</span>
-              </>
-            )}
-            {postingPassed > 0 && (
-              <>
-                {" · "}
-                <span className="font-medium text-bad">{postingPassed} past their posting date</span>
-              </>
-            )}
-            {late.length + postingPassed === 0 && " · nothing late 🎉"}
-          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Tile href="/my-work" label="On you now" value={mine.length + myTasks.filter((t) => !t.doneAt).length} hint={moveNow.length ? `${moveNow.length} must move in 48h` : "Nothing urgent"} tone={moveNow.length ? "warn" : undefined} />
+          <Tile href="/work?status=late" label="Late across the agency" value={late.length + postingPassed} hint={late.length + postingPassed ? `${late.length} past deadline · ${postingPassed} past posting date` : "Nothing late 🎉"} tone={late.length + postingPassed ? "bad" : "ok"} />
+          <Tile label="Posting this week" value={weekPlanned} hint={`${weekLive} live so far`} />
+          <Tile label="Finished this month" value={home.finishedThisMonth} hint="Published or delivered" tone="ok" />
         </div>
       </header>
 
       {/* ---------------- Personal: what must move in the next 48 hours ---------------- */}
-      <section>
-        <SectionTitle right={<Link href="/my-work" className="text-[13px] font-medium text-electric hover:underline">All my tasks</Link>}>
-          <span className="inline-flex items-center gap-2">
-            <Flame className="size-4 text-[#ff8a1f]" /> Move now — the next 48 hours
-          </span>
-        </SectionTitle>
-        {moveNow.length + tasksSoon.length + toApprove.length === 0 ? (
-          <div className="card flex items-center gap-3 px-5 py-4 text-[14px]">
-            <PartyPopper className="size-5 text-ok" />
-            <span>
-              <b>Nothing urgent on you.</b> <span className="text-muted">Anything posting or due within 48 hours, and anything waiting for your approval, shows up here first.</span>
+      {moveNow.length + tasksSoon.length + toApprove.length > 0 && (
+        <section>
+          <SectionTitle right={<Link href="/my-work" className="text-[13px] font-medium text-electric hover:underline">All my tasks</Link>}>
+            <span className="inline-flex items-center gap-2">
+              <Flame className="size-4 text-[#ff8a1f]" /> Move now · the next 48 hours
             </span>
-          </div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2">
+          </SectionTitle>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {moveNow.map((i) => (
-              <Link key={i.id} href={`/items/${i.id}`} className="card group flex flex-col gap-2 border-[#ff8a1f]/50 bg-gradient-to-br from-white to-[#fff6ee] p-4 ring-2 ring-[#ff8a1f]/10 transition-shadow hover:shadow-pop">
-                <div className="flex flex-wrap items-center gap-2">
+              <Link key={i.id} href={`/items/${i.id}`} className="card group flex flex-col gap-2 p-4 transition-shadow hover:shadow-pop" style={i.brand ? { boxShadow: `inset 3px 0 0 ${i.brand.color}` } : undefined}>
+                <div className="flex flex-wrap items-center gap-1.5">
                   <HotBadge item={i} today={today} />
-                  <StageChip kind={i.current!.kind} />
+                  <StageChip kind={i.current!.kind} short />
+                  <ProgressChip progress={i.current!.progress} scheduledFor={i.current!.scheduledFor} running={i.current!.time.running} hideNotStarted />
                 </div>
                 <div className="flex items-center gap-1.5 font-semibold group-hover:text-electric">
                   <TypeIcon type={i.type} /> <span className="truncate">{i.title}</span>
@@ -104,9 +94,10 @@ export default async function HomePage() {
             {toApprove.slice(0, 6).map((i) => {
               const v = i.versions.filter((x) => x.kind === i.current!.kind).at(-1);
               return (
-                <Link key={i.id} href={`/items/${i.id}`} className="card group flex flex-col gap-2 border-ok/40 bg-gradient-to-br from-white to-ok-soft/40 p-4 transition-shadow hover:shadow-pop">
-                  <span className="inline-flex w-fit items-center gap-1 rounded-full bg-ok px-2 py-0.5 text-[11.5px] font-bold text-white">
-                    <Check className="size-3.5" strokeWidth={3} /> Approve v{v?.number} · {STAGE_META[i.current!.kind].label}
+                <Link key={i.id} href={`/items/${i.id}`} className="card group flex flex-col gap-2 p-4 transition-shadow hover:shadow-pop" style={{ boxShadow: "inset 3px 0 0 var(--color-ok)" }}>
+                  <span className="inline-flex w-fit items-center gap-1 rounded-full bg-ok-soft px-2 py-0.5 text-[11.5px] font-bold text-ok">
+                    <Check className="size-3.5" strokeWidth={3} /> Approve v{v?.number}
+                    {v && v.altUrls.length > 0 ? ` · ${v.altUrls.length + 1} options` : ""} · {STAGE_META[i.current!.kind].short}
                   </span>
                   <div className="flex items-center gap-1.5 font-semibold group-hover:text-electric">
                     <TypeIcon type={i.type} /> <span className="truncate">{i.title}</span>
@@ -124,8 +115,8 @@ export default async function HomePage() {
               </Link>
             )}
             {tasksSoon.map((t) => (
-              <Link key={t.id} href="/my-work#tasks" className="card flex flex-col gap-2 border-[#ff8a1f]/50 p-4 transition-shadow hover:shadow-pop">
-                <span className="inline-flex w-fit items-center gap-1 rounded-full bg-[#ff8a1f] px-2 py-0.5 text-[11.5px] font-bold text-white">
+              <Link key={t.id} href="/my-work#tasks" className="card flex flex-col gap-2 p-4 transition-shadow hover:shadow-pop" style={{ boxShadow: "inset 3px 0 0 #ff8a1f" }}>
+                <span className="inline-flex w-fit items-center gap-1 rounded-full bg-[#fff1e3] px-2 py-0.5 text-[11.5px] font-bold text-[#c2410c]">
                   <ClipboardCheck className="size-3.5" /> Task · {t.dueDate! < today ? "late" : t.dueDate === today ? "today" : formatDay(t.dueDate)}
                 </span>
                 <div className="font-semibold">{t.title}</div>
@@ -133,93 +124,133 @@ export default async function HomePage() {
               </Link>
             ))}
           </div>
-        )}
-      </section>
-
-      <MyTasksStrip open={open} user={user} />
-
-      {manager && agencyHot.length > 0 && (
-        <section>
-          <SectionTitle right={<span className="text-[12.5px] text-muted">Posting within 48 hours (or already passed) and not with Social yet</span>}>
-            <span className="inline-flex items-center gap-2">
-              <Flame className="size-4 text-bad" /> Across the agency
-            </span>
-          </SectionTitle>
-          <div className="card divide-y divide-line overflow-hidden">
-            {agencyHot.slice(0, 8).map((i) => (
-              <ItemRow key={i.id} item={i} compact />
-            ))}
-          </div>
         </section>
       )}
 
+      {/* ---------------- Who's on what right now ---------------- */}
+      <TeamNow open={open} />
+
       {/* ---------------- The cycle ---------------- */}
       <section>
-        <SectionTitle right={<span className="text-[12px] text-muted">Click a stage to see its work</span>}>Where the work is right now</SectionTitle>
+        <SectionTitle right={<span className="text-[12px] text-muted">Tap a step to see its work</span>}>Where the work is</SectionTitle>
         <Pipeline open={open} publishedThisMonth={home.finishedThisMonth} />
       </section>
 
       <div className={clsx("grid gap-8", manager && "xl:grid-cols-[minmax(0,1fr)_380px]")}>
         {/* ---------------- Needs attention (managers) ---------------- */}
         {manager && (
-        <section className="min-w-0">
-          <SectionTitle right={<Link href="/work" className="text-[13px] font-medium text-electric hover:underline">All open work</Link>}>Needs attention</SectionTitle>
-          {late.length + returned.length + atRisk.length + unassigned.length === 0 ? (
-            <Empty icon={Sparkles} title="All clear">Nothing is late, sent back, or missing an owner.</Empty>
-          ) : (
-            <div className="space-y-5">
-              <AttentionGroup icon={AlertTriangle} tone="bad" title="Late" hint="Past the deadline while it's with this person" items={late} href="/work?status=late" />
-              <AttentionGroup icon={CornerUpLeft} tone="back" title="Sent back for changes" items={returned} href="/work?status=returned" />
-              <AttentionGroup icon={Hourglass} tone="warn" title="Posting soon or passed, not with Social yet" hint="Posting within 3 days, or the date already passed" items={atRisk} href="/work?status=at_risk" />
-              <AttentionGroup icon={CircleUserRound} tone="wait" title="Waiting for someone to pick it up" hint="Current stage has no owner" items={unassigned} href="/work?status=unassigned" />
-            </div>
-          )}
-        </section>
+          <section className="min-w-0">
+            <SectionTitle right={<Link href="/work" className="text-[13px] font-medium text-electric hover:underline">All open work</Link>}>Needs attention</SectionTitle>
+            {late.length + returned.length + atRisk.length + unassigned.length === 0 ? (
+              <Empty icon={Sparkles} title="All clear">Nothing is late, sent back, or missing an owner.</Empty>
+            ) : (
+              <div className="space-y-5">
+                <AttentionGroup icon={AlertTriangle} tone="bad" title="Late" hint="Past the deadline while it's with this person" items={late} href="/work?status=late" />
+                <AttentionGroup icon={Hourglass} tone="warn" title="Posting soon or passed, not with Social yet" hint="Posting within 3 days, or the date already passed" items={atRisk} href="/work?status=at_risk" />
+                <AttentionGroup icon={CornerUpLeft} tone="back" title="Sent back for changes" items={returned} href="/work?status=returned" />
+                <AttentionGroup icon={CircleUserRound} tone="wait" title="Waiting for someone to pick it up" hint="Current step has no owner" items={unassigned} href="/work?status=unassigned" />
+              </div>
+            )}
+          </section>
         )}
 
         {/* ---------------- This week ---------------- */}
         <section className="min-w-0">
-          <SectionTitle right={<span className="text-[12px] text-muted">{formatDay(home.week.start, { weekday: false })} – {formatDay(home.week.end, { weekday: false })}</span>}>Publishing this week</SectionTitle>
+          <SectionTitle right={<span className="text-[12px] text-muted">{formatDay(home.week.start, { weekday: false })} to {formatDay(home.week.end, { weekday: false })}</span>}>Publishing this week</SectionTitle>
           <ThisWeek items={home.publishingWeek} start={home.week.start} today={today} />
         </section>
       </div>
 
       {/* ---------------- Brands ---------------- */}
       <section>
-        <SectionTitle>Brands</SectionTitle>
+        <SectionTitle right={<Link href="/brands" className="text-[13px] font-medium text-electric hover:underline">All brands</Link>}>Brands</SectionTitle>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {home.activeBrands.map((b) => {
             const cur = thisMonth.get(b.id) ?? [];
             const nxt = nextMonth.get(b.id) ?? [];
-            return <BrandCard key={b.id} brand={b} items={cur} next={nxt} label={monthLabel(year, month)} nextLabel={monthLabel(nextM.year, nextM.month)} />;
+            return <BrandCard key={b.id} brand={{ ...b, logoUrl: logoOf.get(b.id) ?? null }} items={cur} next={nxt} label={monthLabel(year, month)} nextLabel={monthLabel(nextM.year, nextM.month)} />;
           })}
         </div>
       </section>
-
-      {/* ---------------- Activity (managers) ---------------- */}
-      {manager && (
-      <section>
-        <SectionTitle right={<Link href="/activity" className="text-[13px] font-medium text-electric hover:underline">Full history</Link>}>Latest changes</SectionTitle>
-        <div className="card divide-y divide-line">
-          {activity.rows.map((a) => (
-            <div key={a.id} className="flex items-start gap-3 px-4 py-2.5 text-[13.5px]">
-              <Avatar name={a.actorName ?? "System"} size={24} className="mt-0.5" />
-              <div className="min-w-0 flex-1">
-                <span className="text-ink-2">{a.summary}</span>
-                {a.itemId && a.itemTitle && (
-                  <Link href={`/items/${a.itemId}`} className="ml-1.5 inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-electric">
-                    {a.brandColor && <BrandDot color={a.brandColor} />}
-                    {a.itemTitle}
-                  </Link>
-                )}
-              </div>
-              <span className="shrink-0 text-[12px] text-faint">{formatRelative(a.at)}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-      )}
     </div>
+  );
+}
+
+function Tile({ label, value, hint, tone, href }: { label: string; value: number; hint?: string; tone?: "bad" | "warn" | "ok"; href?: string }) {
+  const body = (
+    <>
+      <div className="text-[12.5px] font-medium text-muted">{label}</div>
+      <div className={clsx("mt-1.5 font-display text-[30px] font-bold leading-none tracking-tight", tone === "bad" && value > 0 && "text-bad", tone === "warn" && "text-[#c2410c]", tone === "ok" && "text-ok")}>{value}</div>
+      {hint && <div className="mt-1.5 truncate text-[12px] text-muted">{hint}</div>}
+    </>
+  );
+  return href ? (
+    <Link href={href} className="card block px-4 py-3.5 transition-[border-color,box-shadow] hover:border-line-strong hover:shadow-pop">
+      {body}
+    </Link>
+  ) : (
+    <div className="card px-4 py-3.5">{body}</div>
+  );
+}
+
+/** Everyone who has work right now: what they're on, its status, and the clock. Readable at a glance. */
+function TeamNow({ open }: { open: WorkItem[] }) {
+  const byPerson = new Map<string, { id: string; name: string; items: WorkItem[] }>();
+  for (const i of open) {
+    const c = i.current;
+    if (!c?.assignee) continue;
+    const p = byPerson.get(c.assignee.id) ?? { id: c.assignee.id, name: c.assignee.name, items: [] };
+    p.items.push(i);
+    byPerson.set(c.assignee.id, p);
+  }
+  const rank = (i: WorkItem) => (i.current!.time.running ? 0 : i.current!.progress === "changes_requested" ? 1 : i.current!.progress === "scheduled" ? 2 : i.current!.progress === "waiting_approval" ? 4 : 3);
+  const people = [...byPerson.values()]
+    .map((p) => ({ ...p, items: p.items.sort((a, b) => rank(a) - rank(b) || (a.postingDate ?? "9").localeCompare(b.postingDate ?? "9")) }))
+    .sort((a, b) => Number(b.items.some((i) => i.current!.time.running)) - Number(a.items.some((i) => i.current!.time.running)) || a.name.localeCompare(b.name));
+  if (!people.length) return null;
+  return (
+    <section>
+      <SectionTitle right={<Link href="/reports" className="text-[13px] font-medium text-electric hover:underline">Today&rsquo;s report</Link>}>
+        <span className="inline-flex items-center gap-2">
+          <span className="relative flex size-2.5">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-50" />
+            <span className="relative inline-flex size-2.5 rounded-full bg-ok" />
+          </span>
+          Team right now
+        </span>
+      </SectionTitle>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {people.map((p) => {
+          const counts = new Map<string, number>();
+          for (const i of p.items) counts.set(i.current!.progress, (counts.get(i.current!.progress) ?? 0) + 1);
+          return (
+            <div key={p.id} className="card p-3.5">
+              <div className="flex items-center gap-2.5">
+                <Avatar name={p.name} size={34} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-semibold">{p.name}</div>
+                  <div className="text-[12px] text-muted">{p.items.length} on them</div>
+                </div>
+                {p.items.some((i) => i.current!.time.running) && <span className="rounded-full bg-electric-soft px-2 py-0.5 text-[11px] font-semibold text-electric">Working</span>}
+              </div>
+              <ul className="mt-3 space-y-1.5">
+                {p.items.slice(0, 3).map((i) => (
+                  <li key={i.id}>
+                    <Link href={`/items/${i.id}`} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-[13px] hover:bg-canvas">
+                      {i.brand ? <BrandDot color={i.brand.color} /> : <span className="size-2" />}
+                      <span className="min-w-0 flex-1 truncate">{i.title}</span>
+                      {i.current!.progress === "not_started" ? <StageChip kind={i.current!.kind} short className="!px-1.5 !py-0 !text-[10.5px]" /> : <ProgressChip progress={i.current!.progress} scheduledFor={i.current!.scheduledFor} running={i.current!.time.running} className="!px-1.5 !py-0 !text-[10.5px]" />}
+                      {i.current!.time.running && <TimeSpent ms={i.current!.time.ms} className="!text-[11px]" />}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {p.items.length > 3 && <div className="mt-1 pl-1.5 text-[12px] text-muted">+{p.items.length - 3} more</div>}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -242,9 +273,9 @@ function Pipeline({ open, publishedThisMonth }: { open: WorkItem[]; publishedThi
           }
           const sorted = [...people.values()].sort((a, b) => (a.name ? 0 : 1) - (b.name ? 0 : 1) || b.n - a.n);
           return (
-            <Link key={k} href={`/work?stage=${k}`} className="group relative flex flex-1 flex-col border-r border-line px-4 py-4 transition-colors hover:bg-[#f8faff]">
+            <Link key={k} href={`/work?stage=${k}`} className="group relative flex flex-1 flex-col border-r border-line px-4 py-4 transition-colors hover:bg-[#f8faff]" style={{ boxShadow: `inset 0 3px 0 ${STAGE_COLOR[k].fg}` }}>
               <div className="flex items-center gap-2">
-                <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted group-hover:text-electric">{STAGE_META[k].label}</span>
+                <span className="text-[12px] font-semibold uppercase tracking-[0.06em]" style={{ color: STAGE_COLOR[k].fg }}>{STAGE_META[k].label}</span>
                 {idx < kinds.length && <ArrowRight className="ml-auto size-3.5 text-faint" />}
               </div>
               <div className="mt-2 flex items-baseline gap-2">
@@ -352,12 +383,12 @@ function ThisWeek({ items, start, today }: { items: WorkItem[]; start: string; t
   );
 }
 
-function BrandCard({ brand, items, next, label, nextLabel }: { brand: { id: string; name: string; slug: string; color: string }; items: WorkItem[]; next: WorkItem[]; label: string; nextLabel: string }) {
+function BrandCard({ brand, items, next, label, nextLabel }: { brand: { id: string; name: string; slug: string; color: string; logoUrl: string | null }; items: WorkItem[]; next: WorkItem[]; label: string; nextLabel: string }) {
   const lateN = [...items, ...next].filter((i) => i.attention === "overdue").length;
   return (
     <Link href={`/brands/${brand.slug}`} className="card group block p-4 transition-colors hover:border-line-strong">
       <div className="flex items-center gap-2">
-        <BrandDot color={brand.color} className="size-2.5" />
+        <BrandMark name={brand.name} color={brand.color} logoUrl={brand.logoUrl} size={26} />
         <span className="font-display text-[15px] font-bold group-hover:text-electric">{brand.name}</span>
         {lateN > 0 && <span className="ml-auto rounded-full bg-bad-soft px-2 text-[12px] font-semibold text-bad">{lateN} late</span>}
       </div>
@@ -416,29 +447,5 @@ function MonthProgress({ label, items: all }: { label: string; items: WorkItem[]
         </>
       )}
     </div>
-  );
-}
-
-function MyTasksStrip({ open, user }: { open: WorkItem[]; user: { id: string; teams: string[] } }) {
-  const all = tasksFor(open, user);
-  const mine = all.filter((i) => i.current?.assignee?.id === user.id).length;
-  const forTeam = all.length - mine;
-  if (!mine && !forTeam) return null;
-  return (
-    <Link href="/my-work" className="flex flex-wrap items-center gap-4 rounded-2xl bg-navy-900 px-5 py-4 text-white shadow-pop transition-colors hover:bg-navy-850">
-      <div className="flex items-baseline gap-2">
-        <span className="font-display text-[28px] font-bold leading-none">{mine}</span>
-        <span className="text-[14px] text-white/70">with you</span>
-      </div>
-      {forTeam > 0 && (
-        <div className="flex items-baseline gap-2">
-          <span className="font-display text-[28px] font-bold leading-none text-electric-bright">{forTeam}</span>
-          <span className="text-[14px] text-white/70">new for your team</span>
-        </div>
-      )}
-      <span className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-electric px-4 py-2 text-[14px] font-semibold">
-        Open my tasks <ArrowRight className="size-4" />
-      </span>
-    </Link>
   );
 }

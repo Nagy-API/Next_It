@@ -26,7 +26,8 @@ import { UserError } from "@/server/errors";
 import { createTasks, deleteTask, setTaskDone, setTaskStatus, TASK_STATUS_LABEL } from "@/server/tasks";
 import { deleteChatMessage, markChatRead, postChatMessage } from "@/server/chat";
 import { addComment, bulkStageAction, createExtraTasks, createItems, deleteComment, resolveComment, setItemCancelled, setItemExtra, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
-import { addLink, linkPending, removeAttachment } from "@/server/attachments";
+import { addLink, attachLinks, linkPending, removeAttachment } from "@/server/attachments";
+import { postNote, removeNote } from "@/server/notes";
 import { checkCredentials, deleteAllSessions } from "@/server/sessions";
 import { LOCK, clientIp, isLockedOut, recordAttempt, safeNext } from "@/server/security";
 import { markNotificationsRead } from "@/server/stats";
@@ -281,6 +282,7 @@ export async function createItemsAction(_: ActionResult, fd: FormData): Promise<
       sendWithCanva: str(fd, "sendWithCanva") === "1",
     });
     await linkPending(actor, fd.getAll("attachmentId").map(String), ids.map((itemId) => ({ itemId })));
+    await attachLinks(actor, fd.getAll("attachLink").map(String), ids.map((itemId) => ({ itemId })));
     dest = str(fd, "returnTo");
     return `${ids.length} item${ids.length === 1 ? "" : "s"} added.`;
   });
@@ -418,6 +420,7 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
         dueDate: opt(fd, "dueDate"),
       });
       await linkPending(actor, fd.getAll("attachmentId").map(String), ids.map((itemId) => ({ itemId })));
+      await attachLinks(actor, fd.getAll("attachLink").map(String), ids.map((itemId) => ({ itemId })));
       return ids.length > 1 ? `Sent to ${ids.length} people — added to the brand as extra work.` : "Sent — added to the brand as extra work.";
     }
     const r = str(fd, "recurrence") as Recurrence;
@@ -431,6 +434,7 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
       recurrence: RECURRENCES.includes(r) ? r : "none",
     });
     await linkPending(actor, fd.getAll("attachmentId").map(String), created.map((t) => ({ taskId: t.id })));
+    await attachLinks(actor, fd.getAll("attachLink").map(String), created.map((t) => ({ taskId: t.id })));
     return created.length > 1 ? `Task sent to ${created.length} people.` : "Task sent.";
   });
 }
@@ -487,6 +491,22 @@ export async function extraAction(_: ActionResult, fd: FormData): Promise<Action
     const extra = str(fd, "extra") === "1";
     await setItemExtra(actor, str(fd, "itemId"), extra);
     return extra ? "Counted as extra work." : "Counted as part of the plan.";
+  });
+}
+
+/* -------------------------------- Notes -------------------------------- */
+
+export async function noteAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await postNote(actor, str(fd, "text"), str(fd, "color"));
+    return "Your note is up for 12 hours.";
+  });
+}
+
+export async function removeNoteAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await removeNote(actor, str(fd, "noteId"));
+    return "Note removed.";
   });
 }
 

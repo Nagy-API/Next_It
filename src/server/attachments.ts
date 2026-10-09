@@ -157,6 +157,12 @@ export async function linkPending(actor: Actor, ids: string[], targets: Target[]
   await db.transaction((tx) => linkPendingTx(tx, actor, ids, targets));
 }
 
+/** Links typed in a form that creates something (Give a task / Add content), added to each thing it created. */
+export async function attachLinks(actor: Actor, urls: string[], targets: Target[]) {
+  const clean = [...new Set(urls.map((u) => u.trim()).filter(Boolean))].slice(0, 10);
+  for (const url of clean) for (const t of targets) await addLink(actor, { url, ...t });
+}
+
 export async function removeAttachment(actor: Actor, id: string) {
   return db.transaction(async (tx) => {
     const [a] = await tx.select().from(attachments).where(eq(attachments.id, id));

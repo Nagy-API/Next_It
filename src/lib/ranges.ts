@@ -1,6 +1,6 @@
 import { addDays, isValidISODate, monthRange, shiftMonth, todayISO, weekRange } from "./dates";
 
-export const RANGES = { week: "This week", month: "This month", last_month: "Last month", last_30: "Last 30 days" } as const;
+export const RANGES = { today: "Today", week: "This week", month: "This month", last_month: "Last month", last_30: "Last 30 days" } as const;
 export type RangeKey = keyof typeof RANGES | "custom";
 
 export function resolveRange(sp: Record<string, string | string[] | undefined>): { key: RangeKey; from: string; to: string } {
@@ -10,6 +10,7 @@ export function resolveRange(sp: Record<string, string | string[] | undefined>):
   const y = Number(today.slice(0, 4));
   const m = Number(today.slice(5, 7));
   if (key === "custom" && isValidISODate(get("from")) && isValidISODate(get("to")) && get("from") <= get("to")) return { key, from: get("from"), to: get("to") };
+  if (key === "today") return { key, from: today, to: today };
   if (key === "week") return { key, ...weekRangeTo(today) };
   if (key === "last_month") {
     const p = shiftMonth(y, m, -1);

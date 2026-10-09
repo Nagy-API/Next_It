@@ -410,6 +410,15 @@ export async function getItemDetail(id: string) {
   return { item, history, allPlatforms, comments: commentRows, sessions };
 }
 
+export async function getActivePlatforms() {
+  return db.select({ id: platforms.id, name: platforms.name }).from(platforms).where(eq(platforms.isActive, true)).orderBy(asc(platforms.sortOrder));
+}
+
+/** Brands where this person is the usual person for a step (Settings → Brands): "my brands", shown first. */
+export function myBrandIds(all: { id: string; defaultCreatorId: string | null; defaultShootId: string | null; defaultMediaId: string | null; defaultDesignId: string | null; defaultSocialId: string | null }[], userId: string) {
+  return new Set(all.filter((b) => [b.defaultCreatorId, b.defaultShootId, b.defaultMediaId, b.defaultDesignId, b.defaultSocialId].includes(userId)).map((b) => b.id));
+}
+
 /* ------------------------------------------------------------------ */
 /* Brands & months                                                      */
 /* ------------------------------------------------------------------ */

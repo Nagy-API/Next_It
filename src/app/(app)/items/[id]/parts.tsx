@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { ArrowRight, CornerUpLeft, ExternalLink, Lock, Pencil, RotateCcw, ShieldCheck, Trash2, Undo2 } from "lucide-react";
+import { ArrowRight, ExternalLink, Lock, Pencil, PlusCircle, RotateCcw, ShieldCheck, Trash2, Undo2 } from "lucide-react";
 import { formatDay } from "@/lib/dates";
 import {
   assignAction,
@@ -11,8 +11,8 @@ import {
   completeStageAction,
   deadlineAction,
   exceptionAction,
+  extraAction,
   platformAction,
-  returnAction,
   updateItemAction,
 } from "@/app/actions";
 import { ActionForm, AutoInput, AutoSelect, Modal, Submit } from "@/components/client";
@@ -20,6 +20,8 @@ import { btn } from "@/components/ui";
 import type { ContentType, PlatformStatus, StageKind } from "@/db/schema";
 import { PLATFORM_STATUS_META, STAGE_META, TYPE_META } from "@/domain/workflow";
 import { DateInput } from "@/components/date-input";
+import { PlatformIcon } from "@/components/platform-icon";
+import { PlatformStatusPill } from "@/components/handoff";
 
 type P = { id: string; name: string; teams: string[] };
 
@@ -155,53 +157,17 @@ export function CompleteStage({
   );
 }
 
-export function SendBack({ itemId, targets, label = "Send back" }: { itemId: string; targets: { kind: StageKind; owner: string | null }[]; label?: string }) {
-  const [open, setOpen] = useState(false);
-  const [target, setTarget] = useState<StageKind | undefined>(targets[targets.length - 1]?.kind);
-  if (!targets.length || !target) return null;
+/** Managers decide what counts as extra (e.g. a replacement for a rejected post isn't). */
+export function ExtraToggle({ itemId, extra }: { itemId: string; extra: boolean }) {
   return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} className={btn("secondary", "md", "cursor-pointer")}>
-        <CornerUpLeft className="size-4 text-back" /> {label}
-      </button>
-      <Modal open={open} onClose={() => setOpen(false)} title="Send it back for changes">
-        <ActionForm action={returnAction} onSuccess={() => setOpen(false)} className="space-y-3">
-          <input type="hidden" name="itemId" value={itemId} />
-          <input type="hidden" name="target" value={target} />
-          <div className="text-[13.5px] text-muted">Who needs to fix it?</div>
-          <div className="space-y-1.5">
-            {targets.map((t) => (
-              <button
-                key={t.kind}
-                type="button"
-                onClick={() => setTarget(t.kind)}
-                aria-pressed={target === t.kind}
-                className={clsx(
-                  "flex w-full cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 text-left text-[14px] transition-colors",
-                  target === t.kind ? "border-back bg-back-soft" : "border-line hover:border-line-strong",
-                )}
-              >
-                <span className={clsx("size-3.5 rounded-full border-2", target === t.kind ? "border-back bg-back" : "border-line-strong")} />
-                <span className="flex-1 font-semibold">{STAGE_META[t.kind].label}</span>
-                <span className="text-[12.5px] text-muted">{t.owner ?? "the team"}</span>
-              </button>
-            ))}
-          </div>
-          <label className="label" htmlFor={`note-${itemId}`}>
-            What needs to change? <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <textarea id={`note-${itemId}`} name="note" rows={3} placeholder="e.g. The hook needs to be stronger" className="field resize-none" />
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => setOpen(false)} className={btn("ghost")}>
-              Cancel
-            </button>
-            <Submit variant="primary" className="!bg-back hover:!bg-[#c9560c]">
-              <CornerUpLeft className="size-4" /> Send back to {STAGE_META[target].label}
-            </Submit>
-          </div>
-        </ActionForm>
-      </Modal>
-    </>
+    <ActionForm action={extraAction} inlineError={false}>
+      <input type="hidden" name="itemId" value={itemId} />
+      <input type="hidden" name="extra" value={extra ? "0" : "1"} />
+      <Submit variant="ghost" size="sm" title={extra ? "Count it as part of the month's plan" : "Count it as extra work for the person and the brand"}>
+        {extra ? <Undo2 className="size-3.5" /> : <PlusCircle className="size-3.5" />}
+        {extra ? "Not extra" : "Mark as extra"}
+      </Submit>
+    </ActionForm>
   );
 }
 
@@ -269,9 +235,14 @@ export function PlatformRow({
   const planned = status !== "not_planned";
   if (readOnly)
     return (
-      <div className="grid grid-cols-[110px_150px_1fr] items-center gap-3 px-4 py-2.5 text-[13.5px]">
-        <div className={clsx("font-medium", !planned && "text-muted")}>{platform.name}</div>
-        <div className={clsx("font-medium", STATUS_STYLE[status])}>{PLATFORM_STATUS_META[status].label}</div>
+      <div className="grid grid-cols-[150px_150px_1fr] items-center gap-3 px-4 py-2.5 text-[13.5px] max-md:grid-cols-[1fr_auto]">
+        <div className={clsx("flex items-center gap-2 font-medium", !planned && "text-muted")}>
+          <PlatformIcon name={platform.name} size={22} muted={!planned || status === "cancelled"} />
+          {platform.name}
+        </div>
+        <div>
+          <PlatformStatusPill status={status} date={row?.date} time={row?.time} />
+        </div>
         <div className="flex items-center gap-3 text-muted">
           {row?.date && <span>{formatDay(row.date)}{row.time ? ` · ${row.time}` : ""}</span>}
           {row?.liveUrl && (
@@ -283,8 +254,9 @@ export function PlatformRow({
       </div>
     );
   return (
-    <div className={clsx("grid grid-cols-[110px_150px_1fr] items-center gap-3 px-4 py-2.5 max-md:grid-cols-[1fr_150px]", !planned && "bg-[#fbfcfe]")}>
-      <div className={clsx("font-medium", !planned && "text-muted")}>
+    <div className={clsx("grid grid-cols-[150px_150px_1fr] items-center gap-3 px-4 py-2.5 max-md:grid-cols-[1fr_150px]", !planned && "bg-[#fbfcfe]")}>
+      <div className={clsx("flex items-center gap-2 font-medium", !planned && "text-muted")}>
+        <PlatformIcon name={platform.name} size={22} muted={!planned || status === "cancelled"} />
         {platform.name}
         {!platform.isActive && <span className="ml-1 text-[11px] text-faint">(retired)</span>}
       </div>

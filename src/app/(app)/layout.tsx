@@ -28,7 +28,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       const mine = open.filter((i) => i.brand?.id === b.id);
       return { id: b.id, name: b.name, slug: b.slug, color: b.color, open: mine.length, late: mine.filter((i) => i.attention === "overdue").length };
     });
-  const myCount = tasksFor(open, user).length + messages.length + myTasks.filter((t) => !t.doneAt).length;
+  // Work sent for approval is with the reviewer, not on the person.
+  const onMe = tasksFor(open, user).filter((i) => !(i.current?.progress === "waiting_approval" && i.current.assignee?.id === user.id));
+  const myCount = onMe.length + messages.length + myTasks.filter((t) => !t.doneAt).length;
   return (
     <ToastProvider>
       <AvatarProvider people={everyone.map((p) => ({ id: p.id, name: p.name, v: p.avatarUpdatedAt?.getTime() ?? null, manager: p.isManager || p.isAdmin, role: p.roleLabel }))}>

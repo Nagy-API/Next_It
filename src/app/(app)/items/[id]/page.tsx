@@ -1,18 +1,22 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import clsx from "clsx";
-import { ArrowLeft, CalendarClock, CheckCircle2, ExternalLink, FolderOpen, Info, MessageSquare, Palette } from "lucide-react";
+import { ArrowLeft, CalendarClock, CheckCircle2, ExternalLink, FolderOpen, Info, MessageSquare, Paperclip, Timer } from "lucide-react";
 import { FlowStepper, healthBadge } from "@/components/flow";
-import { Avatar, Badge, BrandDot, ExternalLink as ExtA, ExtraBadge, TypeTag, btn } from "@/components/ui";
-import { PLATFORM_STATUS_META, STAGE_META, finalLabel } from "@/domain/workflow";
-import { cairoDate, diffDays, formatDateTime, formatDay, formatRelative, monthLabel, plural, todayISO } from "@/lib/dates";
+import { Avatar, Badge, BrandDot, ExternalLink as ExtA, ExtraBadge, ProgressChip, TimeSpent, TypeTag, btn } from "@/components/ui";
+import { PLATFORM_STATUS_META, STAGE_COLOR, STAGE_META, finalLabel } from "@/domain/workflow";
+import { cairoDate, diffDays, formatDateTime, formatDay, formatDuration, formatRelative, formatTime, monthLabel, plural, todayISO } from "@/lib/dates";
+import { openLabel } from "@/lib/links";
 import { requireUser } from "@/server/auth";
 import { getActivePeople } from "@/server/cached";
 import { getItemDetail, type StageView } from "@/server/queries";
+import { attachmentsFor } from "@/server/attachments";
 import { Comments } from "@/components/comments";
+import { Attachments } from "@/components/attachments";
+import { SendBack, backTargetsOf } from "@/components/send-back";
 import { can, isManager } from "@/domain/permissions";
-import { AssignSelect, CancelToggle, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, PlatformRow, SendBack } from "./parts";
-import { DeliverButton, DeliveryTimes, HandOffPanel, HotBadge, ProgressPicker, ShootSummary, TakeButton, VersionPanel } from "@/components/handoff";
+import { AssignSelect, CancelToggle, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, ExtraToggle, PlatformRow } from "./parts";
+import { ChangesBanner, DeliverButton, DeliveryTimes, HandOffPanel, HotBadge, LinkGlyph, ProgressPicker, ShootSummary, SocialPanel, TakeButton, VersionPanel } from "@/components/handoff";
 import { isReviewed } from "@/domain/workflow";
 
 export async function generateMetadata({ params }: PageProps<"/items/[id]">) {
@@ -24,18 +28,15 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
   const me = await requireUser();
   const { id } = await params;
   const wantsEdit = (await searchParams).edit === "1";
-  const [detail, people] = await Promise.all([getItemDetail(id), getActivePeople()]);
+  const [detail, people, files] = await Promise.all([getItemDetail(id), getActivePeople(), attachmentsFor({ itemIds: [id] })]);
   if (!detail) notFound();
-  const { item, history, allPlatforms, comments } = detail;
+  const { item, history, allPlatforms, comments, sessions } = detail;
   const today = todayISO();
   const cur = item.current;
   const pickPeople = people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }));
   const open = !item.cancelledAt;
-  const backTargets = open
-    ? item.stages
-        .filter((s) => (cur ? s.position < cur.position : item.completedAt ? s.status === "done" && s.kind !== "social" && s.kind !== "delivery" : false))
-        .map((s) => ({ kind: s.kind, owner: s.assignee?.name ?? s.completedBy?.name ?? null }))
-    : [];
+  const backTargets = backTargetsOf(item, cur);
+  const manager = isManager(me);
   const canChangeType = item.stages.every((s) => s.kind === "content" || s.status === "waiting");
   const back = item.brand && item.plan ? { href: `/brands/${item.brand.slug}?m=${item.plan.year}-${String(item.plan.month).padStart(2, "0")}`, label: `${item.brand.name} · ${monthLabel(item.plan.year, item.plan.month)}` } : item.project ? { href: `/projects/${item.project.id}`, label: `${item.project.clientName} · ${item.project.name}` } : { href: "/", label: "Home" };
   const social = item.stages.find((s) => s.kind === "social");
@@ -88,13 +89,13 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {item.canvaLink ? (
+          {item.canvaLink && (
             <ExtA href={item.canvaLink} className={btn("secondary")}>
-              <Palette className="size-4 text-[#7d2ae8]" /> Open in Canva{item.slideNumber && !item.canvaUrl ? ` · slide ${item.slideNumber}` : ""} <ExternalLink className="size-3.5 text-faint" />
+              <LinkGlyph url={item.canvaLink} /> {openLabel(item.canvaLink)}
+              {item.slideNumber && !item.canvaUrl ? ` · slide ${item.slideNumber}` : ""} <ExternalLink className="size-3.5 text-faint" />
             </ExtA>
-          ) : (
-            <span className="text-[12.5px] text-faint">No Canva link yet</span>
           )}
+          {manager && item.context === "plan" && open && <ExtraToggle itemId={item.id} extra={!!item.extra} />}
           {item.driveUrl && (
             <ExtA href={item.driveUrl} className={btn("secondary")}>
               <FolderOpen className="size-4 text-[#1a73e8]" /> Drive file <ExternalLink className="size-3.5 text-faint" />
@@ -126,13 +127,22 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                   </div>
                   {cur.activatedAt && <div className="mt-0.5 text-[12.5px] text-muted">Arrived {formatRelative(cur.activatedAt)}{prevHandoff(item.stages, cur)}</div>}
                 </div>
-                {(() => {
-                  const b = healthBadge(cur, today);
-                  return b ? <Badge tone={b.tone}>{b.label}</Badge> : null;
-                })()}
-                {!cur.assignee && may.doCurrent && <TakeButton stageId={cur.id} userId={me.id} size="sm" />}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <ProgressChip progress={cur.progress} scheduledFor={cur.scheduledFor} running={cur.time.running} hideNotStarted />
+                  <TimeSpent ms={cur.time.ms} running={cur.time.running} />
+                  {(() => {
+                    const b = healthBadge(cur, today);
+                    return b ? <Badge tone={b.tone}>{b.label}</Badge> : null;
+                  })()}
+                </div>
+                {!cur.assignee && <TakeButton stageId={cur.id} userId={me.id} size="sm" />}
               </div>
-              {cur.round > 1 && cur.returnedAt && (
+              {may.doCurrent && cur.progress === "changes_requested" && (
+                <div className="border-b border-line px-5 py-3">
+                  <ChangesBanner item={item} stage={cur} />
+                </div>
+              )}
+              {cur.round > 1 && cur.returnedAt && cur.progress !== "changes_requested" && (
                 <div className="flex gap-2 border-b border-line bg-back-soft/30 px-5 py-3 text-[13.5px]">
                   <Info className="mt-0.5 size-4 shrink-0 text-back" />
                   <div>
@@ -144,7 +154,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
               <div className="space-y-5 p-5">
                 {isReviewed(cur.kind) ? (
                   <div className="space-y-5">
-                    {may.doCurrent && (
+                    {may.doCurrent && cur.progress !== "changes_requested" && (
                       <div>
                         <div className="label">Where are you with it?</div>
                         <ProgressPicker stage={cur} />
@@ -157,17 +167,16 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                     This step belongs to the <b>{STAGE_META[cur.kind].label}</b> team. You&rsquo;ll see it move here as soon as they finish. Need something from them? Write them a comment.
                   </p>
                 ) : cur.kind === "social" ? (
-                  <div className="text-[14px] text-ink-2">
-                    {targeted.length ? (
-                      <>Update each platform in <b>Publishing</b> below. When every planned platform is <b>Published</b>, this item finishes by itself.</>
-                    ) : (
-                      <>Choose the platforms in <b>Publishing</b> below and mark them Published — or finish it here if it isn&rsquo;t going on any tracked platform.</>
-                    )}
-                    {!targeted.length && (
-                      <div className="mt-3">
-                        <CompleteStage stageId={cur.id} kind={cur.kind} nextLabel={null} nextOwner={null} needsDrive={false} driveUrl={null} finalLabel={finalLabel(item.context)} />
+                  <div className="space-y-4">
+                    {cur.progress !== "changes_requested" && (
+                      <div>
+                        <div className="label">Where are you with it?</div>
+                        <ProgressPicker stage={cur} />
                       </div>
                     )}
+                    <SocialPanel item={item} allPlatforms={allPlatforms.filter((p) => p.isActive)} canPublish={may.publish} />
+                    <p className="text-[12.5px] text-muted">Paste each app&rsquo;s link once it&rsquo;s live. When every planned app is live, it finishes by itself.</p>
+                    {!targeted.length && <CompleteStage stageId={cur.id} kind={cur.kind} nextLabel={null} nextOwner={null} needsDrive={false} driveUrl={null} finalLabel={finalLabel(item.context)} />}
                   </div>
                 ) : cur.kind === "delivery" ? (
                   <div className="flex flex-wrap items-center gap-3 text-[14px] text-ink-2">
@@ -176,11 +185,13 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                   </div>
                 ) : (
                   <div className="space-y-5">
-                    <div>
-                      <div className="label">Where are you with it?</div>
-                      <ProgressPicker stage={cur} />
-                    </div>
-                    <HandOffPanel item={item} stageId={cur.id} from={cur.kind} people={pickPeople} rights={{ deadline: may.deadline, assign: may.assign, review: may.review }} />
+                    {cur.progress !== "changes_requested" && (
+                      <div>
+                        <div className="label">Where are you with it?</div>
+                        <ProgressPicker stage={cur} />
+                      </div>
+                    )}
+                    <HandOffPanel item={item} stageId={cur.id} from={cur.kind} people={pickPeople} rights={{ deadline: may.deadline, assign: may.assign, review: may.review }} meId={me.id} />
                   </div>
                 )}
                 <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-line pt-4">
@@ -202,7 +213,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                   </div>
                   {may.excuse && (cur.health === "overdue" || cur.health === "overdue_excused") && <ExceptionToggle stageId={cur.id} excused={!!cur.lateExcusedAt} />}
                   <div className="ml-auto">
-                    <SendBack itemId={item.id} targets={backTargets} />
+                    <SendBack itemId={item.id} targets={backTargets} people={pickPeople} meId={me.id} manager={manager} />
                   </div>
                 </div>
                 {cur.shiftDays > 0 && cur.originalDeadline && <ShiftNote s={cur} />}
@@ -217,7 +228,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                 <div className="font-display text-[17px] font-bold">{finalLabel(item.context)}</div>
                 <div className="text-[13px] text-muted">Finished {formatDateTime(item.completedAt)}</div>
               </div>
-              {backTargets.length > 0 && <SendBack itemId={item.id} targets={backTargets} label={item.context === "project" ? "Client wants changes" : "Reopen / send back"} />}
+              {backTargets.length > 0 && <SendBack itemId={item.id} targets={backTargets} people={pickPeople} meId={me.id} manager={manager} label={item.context === "project" ? "Client wants changes" : "Reopen / send back"} />}
             </section>
           )}
 
@@ -240,7 +251,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
           )}
 
           {/* ---------------- Platforms ---------------- */}
-          {item.context === "plan" && (
+          {item.context === "plan" && !(cur?.kind === "social" && may.publish && open) && (
             <section className="card overflow-hidden">
               <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
                 <div>
@@ -256,6 +267,48 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                   <PlatformRow key={p.id} itemId={item.id} platform={p} row={item.platforms.find((ip) => ip.platformId === p.id) ?? null} canPublish={canPublish} readOnly={!may.publish} />
                 ))}
               </div>
+            </section>
+          )}
+
+          {/* ---------------- Files & links ---------------- */}
+          <section className="card p-5">
+            <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
+              <Paperclip className="size-4 text-electric" /> Files & links
+              <span className="text-[12.5px] font-normal text-muted">briefs, scripts, references, any file</span>
+            </h2>
+            <Attachments items={files.get(item.id) ?? []} itemId={item.id} meId={me.id} manager={manager} canAdd={open} />
+          </section>
+
+          {/* ---------------- Time on each step ---------------- */}
+          {sessions.length > 0 && (
+            <section className="card p-5">
+              <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
+                <Timer className="size-4 text-electric" /> Time on each step
+                <span className="text-[12.5px] font-normal text-muted">from In progress until sent</span>
+              </h2>
+              <ul className="space-y-2">
+                {item.stages
+                  .filter((s) => sessions.some((w) => w.stageId === s.id))
+                  .map((s) => (
+                    <li key={s.id} className="rounded-xl border border-line px-3 py-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="size-2 rounded-full" style={{ background: STAGE_COLOR[s.kind].fg }} />
+                        <span className="text-[13.5px] font-semibold">{STAGE_META[s.kind].label}</span>
+                        <TimeSpent ms={s.time.ms} running={s.time.running} prefix="total " />
+                      </div>
+                      <ul className="mt-1.5 space-y-0.5 pl-4 text-[12.5px] text-muted">
+                        {sessions
+                          .filter((w) => w.stageId === s.id)
+                          .map((w) => (
+                            <li key={w.id} className="tabular-nums">
+                              <span className="font-medium text-ink-2">{w.userName}</span> · {w.kind === "adjusting" ? "Adjusting" : "In progress"} · {formatDay(cairoDate(w.startedAt))} {formatTime(w.startedAt)} → {w.endedAt ? `${cairoDate(w.endedAt) === cairoDate(w.startedAt) ? "" : `${formatDay(cairoDate(w.endedAt))} `}${formatTime(w.endedAt)}` : "now"} ·{" "}
+                              {formatDuration((w.endedAt?.getTime() ?? Date.now()) - w.startedAt.getTime())}
+                            </li>
+                          ))}
+                      </ul>
+                    </li>
+                  ))}
+              </ul>
             </section>
           )}
 

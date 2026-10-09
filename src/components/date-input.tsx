@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import clsx from "clsx";
 import { useFormStatus } from "react-dom";
 
@@ -84,10 +84,11 @@ export function DateInput({
   const auto = useId();
 
   // Follow outside changes (a controlled value set by the parent).
-  useEffect(() => {
-    if (controlled && dmyToIso(text) !== value) setText(isoToDmy(value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  const [seen, setSeen] = useState(value);
+  if (controlled && value !== seen) {
+    setSeen(value);
+    if (dmyToIso(text) !== value) setText(isoToDmy(value));
+  }
 
   const validity = (next: string, typed: string) => {
     const el = textRef.current;
