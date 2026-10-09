@@ -30,9 +30,9 @@ describe("Hand-off: the sender chooses where the work goes", () => {
     expect(all[1]).toMatchObject({ assigneeId: gannah.id, deadline: "2026-10-05", originalDeadline: "2026-10-05" });
   });
 
-  it("without a person, the next team sees it unassigned; Stories can go straight to Social", async () => {
+  it("without a person, the next team sees it unassigned; the content link is optional; anyone picks a teammate or themselves", async () => {
     const king = await makeUser("King", ["content"]);
-    await makeUser("Ayman", ["media"]);
+    const ayman = await makeUser("Ayman", ["media"]);
     await makeUser("Jana", ["media"]); // two people in Media → nobody is picked by default
     const brand = await makeBrand("VR", king.id);
     const [reel, story] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [
@@ -40,14 +40,20 @@ describe("Hand-off: the sender chooses where the work goes", () => {
       { title: "Post but skip design", type: "static" },
     ]);
     const [c1] = await stagesOf(reel);
-    await expect(handOff(king, c1.id, {})).rejects.toThrow(/Canva link/);
-    await expect(handOff(king, c1.id, { canvaUrl: "https://canva.link/reel", assigneeId: king.id })).rejects.toThrow(/Only managers choose/);
-    await handOff(king, c1.id, { canvaUrl: "https://canva.link/reel" });
+    // Not someone from another team (a content creator isn't in Media)…
+    const kemo = await makeUser("Kemo", ["content"]);
+    await expect(handOff(king, c1.id, { assigneeId: kemo.id })).rejects.toThrow(/Media|yourself/);
+    // …but no link is needed (it can be a Google Doc, Drive, or nothing).
+    await handOff(king, c1.id, {});
     expect((await stagesOf(reel))[1]).toMatchObject({ kind: "shooting", status: "active", assigneeId: null });
 
+    // Ready posts: straight to Social with the final file, a teammate of that step chosen by a non-manager.
+    const esraa = await makeUser("Esraa", ["social"]);
     const [c2] = await stagesOf(story);
-    await handOff(king, c2.id, { target: "social", canvaUrl: "https://canva.link/post" });
+    await handOff(king, c2.id, { target: "social", canvaUrl: "https://docs.google.com/document/d/x", driveUrl: "https://drive.google.com/file/d/ready", assigneeId: esraa.id });
     expect((await stagesOf(story)).map((s) => s.kind)).toEqual(["content", "social"]);
+    expect((await stagesOf(story))[1]).toMatchObject({ status: "active", assigneeId: esraa.id });
+    void ayman;
   });
 
   it("Shooting goes on to editing; editing is sent as versions for approval", async () => {
@@ -56,7 +62,6 @@ describe("Hand-off: the sender chooses where the work goes", () => {
     const brand = await makeBrand("VR", king.id);
     const [id] = await createItems(king, { kind: "plan", brandId: brand.id, year: 2026, month: 10 }, [{ title: "R", type: "reel" }], { contentReady: true });
     const shoot = (await stagesOf(id))[1];
-    await expect(handOff(ayman, shoot.id, { target: "social" })).rejects.toThrow();
     expect((await handOff(ayman, shoot.id)).next).toBe("media");
     const media = (await stagesOf(id))[2];
     await expect(handOff(ayman, media.id)).rejects.toThrow(/Drive link/);

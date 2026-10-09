@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Archive, Plus } from "lucide-react";
-import { BrandDot, ButtonLink, Empty, PageHeader, Person, ProgressBar } from "@/components/ui";
+import { BrandMark, ButtonLink, Empty, PageHeader, Person, ProgressBar } from "@/components/ui";
 import { cairoDate, formatDay, monthLabel, todayISO, shiftMonth } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
 import { getAllBrands } from "@/server/cached";
@@ -38,7 +38,7 @@ export default async function BrandsPage() {
             return (
               <Link key={b.id} href={`/brands/${b.slug}`} className="grid items-center gap-4 px-5 py-4 transition-colors hover:bg-[#f8faff] md:grid-cols-[1.3fr_1fr_1fr]">
                 <div className="flex items-center gap-3">
-                  <BrandDot color={b.color} className="size-3" />
+                  <BrandMark name={b.name} color={b.color} logoUrl={b.logoUrl} size={36} className="!rounded-xl" />
                   <div>
                     <div className="font-display text-[16px] font-bold">{b.name}</div>
                     <div className="mt-0.5 text-[12.5px] text-muted">
@@ -60,10 +60,10 @@ export default async function BrandsPage() {
             <Archive className="size-4 text-muted" /> Archive
             <span className="text-[13px] font-normal text-muted">— inactive brands. All their history stays available.</span>
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {archived.map((b) => (
               <Link key={b.id} href={`/brands/${b.slug}`} className="card flex items-center gap-3 px-4 py-3 opacity-80 hover:opacity-100">
-                <BrandDot color={b.color} />
+                <BrandMark name={b.name} color={b.color} logoUrl={b.logoUrl} size={24} />
                 <span className="flex-1 font-medium">{b.name}</span>
                 <span className="text-[12px] text-muted">{b.archivedAt ? `Archived ${formatDay(cairoDate(b.archivedAt), { weekday: false })}` : "Archived"}</span>
               </Link>

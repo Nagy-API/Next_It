@@ -1,11 +1,11 @@
 import clsx from "clsx";
 import { AlertTriangle, Check, CornerUpLeft, Flag, Hourglass, Send } from "lucide-react";
-import { STAGE_META, finalLabel, type StageHealth } from "@/domain/workflow";
+import { PROGRESS_META, STAGE_COLOR, STAGE_META, finalLabel, type StageHealth } from "@/domain/workflow";
+import type { StageKind } from "@/db/schema";
 import { diffDays, formatDateTime, formatDay, plural, todayISO } from "@/lib/dates";
 import type { StageView, WorkItem } from "@/server/queries";
 import { Avatar, Badge, type Tone } from "./ui";
 
-const PROGRESS_TEXT = { not_started: "Not started yet", processing: "In progress", adjusting: "Adjusting", waiting_approval: "Waiting approval" } as const;
 
 /* ------------------------------------------------------------------ */
 /* Health → words                                                       */
@@ -62,21 +62,27 @@ function nodeState(s: StageView): NodeState {
   return "active";
 }
 
-function NodeIcon({ state, size = 36 }: { state: NodeState; size?: number }) {
+function NodeIcon({ state, size = 36, kind }: { state: NodeState; size?: number; kind?: StageKind }) {
   const cls = "flex shrink-0 items-center justify-center rounded-full";
   const st = { width: size, height: size };
   const i = "size-[45%]";
+  const c = kind ? STAGE_COLOR[kind] : null;
   switch (state) {
     case "done":
+      return (
+        <span className={cls} style={{ ...st, background: c?.bg ?? "#e6f6ef", color: c?.fg ?? "#0f9d6b", boxShadow: `inset 0 0 0 1.5px ${(c?.fg ?? "#0f9d6b")}40` }}>
+          <Check className={i} strokeWidth={3} />
+        </span>
+      );
     case "final-done":
       return (
         <span className={clsx(cls, "bg-ok text-white")} style={st}>
-          {state === "final-done" ? <Flag className={i} strokeWidth={2.4} /> : <Check className={i} strokeWidth={3} />}
+          <Flag className={i} strokeWidth={2.4} />
         </span>
       );
     case "active":
       return (
-        <span className={clsx(cls, "bg-electric text-white animate-pulse-dot")} style={st}>
+        <span className={clsx(cls, "animate-pulse-dot text-white")} style={{ ...st, background: c?.fg ?? "#3b82f6", boxShadow: `0 0 0 4px ${c?.bg ?? "#eaf2ff"}` }}>
           <span className="size-[30%] rounded-full bg-white" />
         </span>
       );
@@ -115,8 +121,8 @@ export function FlowStepper({ item }: { item: WorkItem }) {
         return (
           <li key={s.id} className="relative min-w-0 pr-3">
             {/* connector */}
-            <div className={clsx("absolute left-[44px] right-2 top-[17px] h-[2px] rounded", s.status === "done" ? "bg-ok" : "bg-line-strong")} />
-            <NodeIcon state={state} />
+            <div className="absolute left-[44px] right-2 top-[17px] h-[2px] rounded" style={{ background: s.status === "done" ? `${STAGE_COLOR[s.kind].fg}55` : "var(--color-line-strong)" }} />
+            <NodeIcon state={state} kind={s.kind} />
             <div className="mt-2.5 min-w-0">
               <div className={clsx("text-[12px] font-semibold uppercase tracking-[0.06em]", s.status === "waiting" ? "text-faint" : "text-muted")}>{STAGE_META[s.kind].label}</div>
               <div className={clsx("mt-1 flex items-center gap-1.5 text-[14px] font-semibold", s.status === "waiting" && "text-muted")}>
@@ -125,7 +131,7 @@ export function FlowStepper({ item }: { item: WorkItem }) {
               </div>
               <div className="mt-1 text-[12px] leading-snug text-muted">
                 {s.status === "done" && s.completedAt && <>Done {formatDateTime(s.completedAt)}</>}
-                {s.status === "active" && (state === "returned" ? <span className="text-back">Sent back — needs changes</span> : state === "late" ? <span className="font-medium text-bad">{healthBadge(s, today)?.label}</span> : <span className="font-medium text-electric">{PROGRESS_TEXT[s.progress]}</span>)}
+                {s.status === "active" && (state === "returned" ? <span className="text-back">Sent back — needs changes</span> : state === "late" ? <span className="font-medium text-bad">{healthBadge(s, today)?.label}</span> : <span className="font-medium" style={{ color: s.progress === "not_started" ? STAGE_COLOR[s.kind].fg : PROGRESS_META[s.progress].fg }}>{s.progress === "not_started" ? "Not started yet" : PROGRESS_META[s.progress].label}{s.progress === "scheduled" && s.scheduledFor ? ` · ${formatDay(s.scheduledFor)}` : ""}</span>)}
                 {s.status === "waiting" && (prevDone ? "Up next" : "Waiting")}
               </div>
             </div>
@@ -154,21 +160,26 @@ export function FlowMini({ item, className }: { item: WorkItem; className?: stri
       {item.stages.map((s, i) => {
         const state = nodeState(s);
         const name = s.status === "done" ? (s.assignee?.name ?? s.completedBy?.name) : s.assignee?.name;
-        const title = `${STAGE_META[s.kind].label} · ${name ?? "Unassigned"} · ${s.status === "done" ? "Done" : s.status === "active" ? (state === "late" ? "Late" : state === "returned" ? "Returned" : "Current") : "Waiting"}`;
+        const title = `${STAGE_META[s.kind].label} · ${name ?? "Unassigned"} · ${s.status === "done" ? "Done" : s.status === "active" ? (state === "late" ? "Late" : state === "returned" ? "Returned" : PROGRESS_META[s.progress].label) : "Waiting"}`;
         const initials = name ? name.slice(0, 1).toUpperCase() : "·";
         return (
           <div key={s.id} className="flex items-center">
-            {i > 0 && <span className={clsx("h-[2px] w-2.5", item.stages[i - 1].status === "done" ? "bg-ok" : "bg-line-strong")} />}
+            {i > 0 && <span className="h-[2px] w-2.5" style={{ background: item.stages[i - 1].status === "done" ? `${STAGE_COLOR[item.stages[i - 1].kind].fg}55` : "var(--color-line-strong)" }} />}
             <span
               title={title}
               className={clsx(
                 "flex size-[22px] items-center justify-center rounded-full text-[10px] font-bold",
-                state === "done" && "bg-ok text-white",
-                state === "active" && "bg-electric text-white ring-3 ring-electric/20",
                 state === "returned" && "bg-back text-white ring-3 ring-back/20",
                 state === "late" && "bg-bad text-white ring-3 ring-bad/20",
                 state === "waiting" && "border border-line-strong bg-white text-faint",
               )}
+              style={
+                state === "done"
+                  ? { background: STAGE_COLOR[s.kind].bg, color: STAGE_COLOR[s.kind].fg }
+                  : state === "active"
+                    ? { background: STAGE_COLOR[s.kind].fg, color: "#fff", boxShadow: `0 0 0 3px ${STAGE_COLOR[s.kind].bg}` }
+                    : undefined
+              }
             >
               {state === "done" ? <Check className="size-3" strokeWidth={3.5} /> : initials}
             </span>

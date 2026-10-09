@@ -10,6 +10,8 @@ import { BrandDot, btn } from "./ui";
 import { TEAM_META, isNewTask } from "@/domain/workflow";
 import type { Team } from "@/db/schema";
 import { formatDay, formatRelative } from "@/lib/dates";
+import { DateInput } from "@/components/date-input";
+import { Attachments, PendingAttachments, type AttachmentItem } from "./attachments";
 
 type P = { id: string; name: string; teams: string[] };
 type B = { id: string; name: string };
@@ -180,7 +182,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
           <label className="label" htmlFor="task-due">
             Deadline
           </label>
-          <input id="task-due" type="date" name="dueDate" className="field" />
+          <DateInput id="task-due" name="dueDate" className="w-full" />
         </div>
         {!brandId && (
           <div>
@@ -215,7 +217,14 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
         <label className="label" htmlFor="task-notes">
           Notes <span className="font-normal text-muted">(optional)</span>
         </label>
-        <input id="task-notes" name="notes" placeholder="Links, details…" className="field" />
+        <input id="task-notes" name="notes" placeholder="Details…" className="field" />
+      </div>
+      <div>
+        <div className="label">
+          Files & links <span className="font-normal text-muted">(optional · PDF, Word, images, or a document link)</span>
+        </div>
+        <PendingAttachments />
+        {!brandId && <p className="mt-1.5 text-[12px] text-muted">Tasks without a brand show in Day tasks, with their files.</p>}
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
         <button type="button" onClick={onDone} className={btn("ghost")}>
@@ -310,7 +319,7 @@ function StatusPicker({ t, today }: { t: TaskRowData; today: string }) {
         <ActionForm action={taskStatusAction} onSuccess={() => setPicking(false)} className="flex items-center gap-1.5">
           <input type="hidden" name="taskId" value={t.id} />
           <input type="hidden" name="status" value="scheduled" />
-          <input type="date" name="scheduledDate" required min={today} defaultValue={t.scheduledDate ?? ""} aria-label="Day you'll do it" className="field !h-8 !w-auto !py-0 text-[12.5px]" />
+          <DateInput name="scheduledDate" required min={today} defaultValue={t.scheduledDate ?? ""} aria-label="Day you'll do it" size="sm" className="w-[140px]" />
           <Submit variant="secondary" className="!h-8 !px-3 text-[12.5px]">
             Save
           </Submit>
@@ -321,7 +330,23 @@ function StatusPicker({ t, today }: { t: TaskRowData; today: string }) {
 }
 
 /** One task with a big tick button. `mode="mine"` for the person doing it, `"given"` for the manager who gave it. */
-export function TaskRow({ t, today, mode, canDelete }: { t: TaskRowData; today: string; mode: "mine" | "given"; canDelete: boolean }) {
+export function TaskRow({
+  t,
+  today,
+  mode,
+  canDelete,
+  files,
+  meId,
+  manager,
+}: {
+  t: TaskRowData;
+  today: string;
+  mode: "mine" | "given";
+  canDelete: boolean;
+  files?: AttachmentItem[];
+  meId?: string;
+  manager?: boolean;
+}) {
   const [confirm, setConfirm] = useState(false);
   const late = !t.doneAt && t.dueDate && t.dueDate < today;
   const soon = !t.doneAt && t.dueDate && !late && t.dueDate <= addDaysISO(today, 2);
@@ -369,6 +394,11 @@ export function TaskRow({ t, today, mode, canDelete }: { t: TaskRowData; today: 
           {t.doneAt ? <span className="text-ok">Done {formatRelative(t.doneAt)}</span> : mode === "given" && <StatusPill t={t} />}
         </div>
         {t.notes && <div className="mt-1 text-[13px] text-ink-2">{t.notes}</div>}
+        {meId && (files?.length || !t.doneAt) ? (
+          <div className="mt-2">
+            <Attachments items={files ?? []} taskId={t.id} meId={meId} manager={manager} canAdd={!t.doneAt} compact />
+          </div>
+        ) : null}
         {mode === "mine" && !t.doneAt && <StatusPicker t={t} today={today} />}
       </div>
       {canDelete && (

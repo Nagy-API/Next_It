@@ -5,7 +5,7 @@ import { formatDateTime, formatDay, monthName } from "@/lib/dates";
 import { Check } from "lucide-react";
 import type { WorkItem } from "@/server/queries";
 import { FlowMini, ItemStatus } from "./flow";
-import { Avatar, BrandDot, ExtraBadge, StageChip, TypeIcon } from "./ui";
+import { Avatar, BrandDot, ExtraBadge, ProgressChip, StageChip, TimeSpent, TypeIcon } from "./ui";
 
 export function itemContextLabel(item: WorkItem) {
   if (item.brand && item.plan) return `${item.brand.name} · ${monthName(item.plan.month, true)} ${item.plan.year}`;
@@ -59,21 +59,34 @@ export function ItemRow({ item, showContext = true, compact, leading, actions }:
             <span className="truncate">{itemContextLabel(item)}</span>
           </div>
         )}
+        {c && (
+          <div className="mt-1 flex flex-wrap items-center gap-1 sm:hidden">
+            <StageChip kind={c.kind} short className="!px-1.5 !py-0 !text-[11px]" />
+            <ProgressChip progress={c.progress} scheduledFor={c.scheduledFor} running={c.time.running} hideNotStarted className="!px-1.5 !py-0 !text-[11px]" />
+            {holder && <span className="text-[11.5px] text-muted">· {holder}</span>}
+          </div>
+        )}
         {last && !compact && (
           <div className="mt-0.5 flex items-center gap-1 truncate text-[12px] text-muted">
             <Check className="size-3 shrink-0 text-ok" strokeWidth={3} /> {STAGE_META[last.kind].short} delivered {formatDateTime(last.completedAt)} · {last.assignee?.name ?? last.completedBy?.name}
           </div>
         )}
       </div>
-      <FlowMini item={item} className="hidden md:flex" />
-      <div className="hidden w-[190px] shrink-0 items-center gap-2 text-[13px] sm:flex">
+      {!compact && <FlowMini item={item} className="hidden xl:flex" />}
+      <div className={clsx("hidden shrink-0 items-center gap-2 text-[13px] sm:flex", compact ? "w-[170px]" : "w-[230px]")}>
         {c ? (
           holder ? (
             <>
               <Avatar name={holder} size={24} />
               <div className="min-w-0 leading-tight">
-                <div className="truncate font-medium">{holder}</div>
-                <div className="mt-0.5 truncate text-[12px]"><StageChip kind={c.kind} className="!px-1.5 !py-0 !text-[11px]" /></div>
+                <div className="flex items-center gap-1.5 truncate font-medium">
+                  {holder}
+                  {c.time.ms > 0 && <TimeSpent ms={c.time.ms} running={c.time.running} className="!text-[11px] !font-normal text-muted" />}
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                  <StageChip kind={c.kind} short className="!px-1.5 !py-0 !text-[11px]" />
+                  <ProgressChip progress={c.progress} scheduledFor={c.scheduledFor} running={c.time.running} hideNotStarted className="!px-1.5 !py-0 !text-[11px]" />
+                </div>
               </div>
             </>
           ) : (
@@ -84,7 +97,7 @@ export function ItemRow({ item, showContext = true, compact, leading, actions }:
           )
         ) : null}
       </div>
-      <div className="hidden w-[150px] shrink-0 justify-end sm:flex">
+      <div className={clsx("hidden shrink-0 justify-end sm:flex", compact ? "w-[130px]" : "w-[150px]")}>
         <ItemStatus item={item} />
       </div>
       {actions && <div className="relative z-10 flex shrink-0 items-center gap-1">{actions}</div>}

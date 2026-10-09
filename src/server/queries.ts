@@ -15,6 +15,7 @@ import {
   stages,
   users,
   versions,
+  workSessions,
   type ContentType,
   type PlatformStatus,
   type StageKind,
@@ -35,6 +36,8 @@ export type Person = {
   isManager: boolean;
   isAdmin: boolean;
   avatarUpdatedAt: Date | null;
+  /** Shown instead of "Manager" (e.g. "IT"). */
+  roleLabel: string | null;
 };
 
 export async function getPeople(opts: { includeInactive?: boolean } = {}): Promise<Person[]> {
@@ -49,6 +52,7 @@ export async function getPeople(opts: { includeInactive?: boolean } = {}): Promi
       isManager: users.isManager,
       isAdmin: users.isAdmin,
       avatarUpdatedAt: users.avatarUpdatedAt,
+      roleLabel: users.roleLabel,
     })
     .from(users)
     .where(opts.includeInactive ? undefined : eq(users.isActive, true))
@@ -77,8 +81,14 @@ export type StageView = {
   lateExcusedBy: { id: string; name: string } | null;
   progress: StageProgress;
   progressAt: Date | null;
+  /** The day they plan to do it (progress "Scheduled"). */
+  scheduledFor: string | null;
+  /** Time worked on this step (In progress / Adjusting until sent), all rounds. */
+  time: StageTime;
   health: StageHealth;
 };
+
+export type StageTime = { ms: number; running: boolean; startedAt: Date | null; endedAt: Date | null };
 
 export type VersionView = {
   id: string;
@@ -92,6 +102,9 @@ export type VersionView = {
   reviewedAt: Date | null;
   reviewedBy: { id: string; name: string } | null;
   reviewNote: string | null;
+  /** More options sent with this version; the reviewer picks one. */
+  altUrls: string[];
+  chosenUrl: string | null;
 };
 
 export type WorkItem = {
@@ -133,6 +146,9 @@ export type WorkItem = {
 };
 
 const brandCols = { id: brands.id, name: brands.name, slug: brands.slug, color: brands.color, isActive: brands.isActive };
+
+/** The brand's logo as a small cached image URL (never the image itself in the page), or null. */
+export const brandLogoSrc = sql<string | null>`case when ${brands.logoUrl} is null then null else '/api/brand-logo/' || ${brands.id} || '?v=' || left(md5(${brands.logoUrl}), 10) end`;
 
 type ItemFilter = {
   ids?: string[];
@@ -194,7 +210,7 @@ async function enrich(
 ): Promise<WorkItem[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.item.id);
-  const [stageRows, people, platRows, versionRows] = await Promise.all([
+  const [stageRows, people, platRows, versionRows, sessionRows] = await Promise.all([
     db.select().from(stages).where(inArray(stages.itemId, ids)).orderBy(asc(stages.position)),
     db.select({ id: users.id, name: users.name }).from(users),
     db
@@ -204,7 +220,21 @@ async function enrich(
       .where(inArray(itemPlatforms.itemId, ids))
       .orderBy(asc(platforms.sortOrder)),
     db.select().from(versions).where(inArray(versions.itemId, ids)).orderBy(asc(versions.submittedAt)),
+    db
+      .select({ stageId: workSessions.stageId, startedAt: workSessions.startedAt, endedAt: workSessions.endedAt })
+      .from(workSessions)
+      .where(inArray(workSessions.itemId, ids)),
   ]);
+  const nowMs = Date.now();
+  const timeByStage = new Map<string, StageTime>();
+  for (const w of sessionRows) {
+    const t = timeByStage.get(w.stageId) ?? { ms: 0, running: false, startedAt: null, endedAt: null };
+    t.ms += Math.max(0, (w.endedAt?.getTime() ?? nowMs) - w.startedAt.getTime());
+    if (!w.endedAt) t.running = true;
+    if (!t.startedAt || w.startedAt < t.startedAt) t.startedAt = w.startedAt;
+    if (w.endedAt && (!t.endedAt || w.endedAt > t.endedAt)) t.endedAt = w.endedAt;
+    timeByStage.set(w.stageId, t);
+  }
   const brandIds = [...new Set(rows.map((r) => r.brand?.id).filter((x): x is string => !!x))];
   const brandDefaults = brandIds.length
     ? await db
@@ -237,6 +267,8 @@ async function enrich(
       lateExcusedBy: person(s.lateExcusedById),
       progress: s.progress,
       progressAt: s.progressAt,
+      scheduledFor: s.scheduledFor,
+      time: timeByStage.get(s.id) ?? { ms: 0, running: false, startedAt: null, endedAt: null },
       health: stageHealth(s, today),
     };
     const list = stagesByItem.get(s.itemId) ?? [];
@@ -258,6 +290,8 @@ async function enrich(
       reviewedAt: v.reviewedAt,
       reviewedBy: person(v.reviewedById),
       reviewNote: v.reviewNote,
+      altUrls: v.altUrls ?? [],
+      chosenUrl: v.chosenUrl,
     });
     versionsByItem.set(v.itemId, list);
   }
@@ -345,7 +379,7 @@ export async function getItemDetail(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [item] = await getWorkItems({ ids: [id], includeDone: true, includeCancelled: true });
   if (!item) return null;
-  const [history, allPlatforms, commentRows] = await Promise.all([
+  const [history, allPlatforms, commentRows, sessions] = await Promise.all([
     db
       .select({ id: activityLog.id, at: activityLog.at, action: activityLog.action, summary: activityLog.summary, actorId: activityLog.actorId, actorName: users.name, stageKind: activityLog.stageKind })
       .from(activityLog)
@@ -369,8 +403,23 @@ export async function getItemDetail(id: string) {
       .innerJoin(users, eq(users.id, comments.authorId))
       .where(and(eq(comments.itemId, id), isNull(comments.deletedAt)))
       .orderBy(desc(comments.createdAt)),
+    db
+      .select({ id: workSessions.id, stageId: workSessions.stageId, kind: workSessions.kind, startedAt: workSessions.startedAt, endedAt: workSessions.endedAt, endReason: workSessions.endReason, userName: users.name })
+      .from(workSessions)
+      .innerJoin(users, eq(users.id, workSessions.userId))
+      .where(eq(workSessions.itemId, id))
+      .orderBy(asc(workSessions.startedAt)),
   ]);
-  return { item, history, allPlatforms, comments: commentRows };
+  return { item, history, allPlatforms, comments: commentRows, sessions };
+}
+
+export async function getActivePlatforms() {
+  return db.select({ id: platforms.id, name: platforms.name }).from(platforms).where(eq(platforms.isActive, true)).orderBy(asc(platforms.sortOrder));
+}
+
+/** Brands where this person is the usual person for a step (Settings → Brands): "my brands", shown first. */
+export function myBrandIds(all: { id: string; defaultCreatorId: string | null; defaultShootId: string | null; defaultMediaId: string | null; defaultDesignId: string | null; defaultSocialId: string | null }[], userId: string) {
+  return new Set(all.filter((b) => [b.defaultCreatorId, b.defaultShootId, b.defaultMediaId, b.defaultDesignId, b.defaultSocialId].includes(userId)).map((b) => b.id));
 }
 
 /* ------------------------------------------------------------------ */
@@ -379,7 +428,7 @@ export async function getItemDetail(id: string) {
 
 export async function getBrands() {
   return db
-    .select({ ...brandCols, logoUrl: brands.logoUrl, defaultCreatorId: brands.defaultCreatorId, defaultShootId: brands.defaultShootId, defaultMediaId: brands.defaultMediaId, defaultDesignId: brands.defaultDesignId, defaultSocialId: brands.defaultSocialId, creatorName: users.name, createdAt: brands.createdAt, archivedAt: brands.archivedAt })
+    .select({ ...brandCols, logoUrl: brandLogoSrc, defaultCreatorId: brands.defaultCreatorId, defaultShootId: brands.defaultShootId, defaultMediaId: brands.defaultMediaId, defaultDesignId: brands.defaultDesignId, defaultSocialId: brands.defaultSocialId, creatorName: users.name, createdAt: brands.createdAt, archivedAt: brands.archivedAt })
     .from(brands)
     .leftJoin(users, eq(users.id, brands.defaultCreatorId))
     .orderBy(asc(brands.name));
@@ -387,7 +436,7 @@ export async function getBrands() {
 
 export async function getBrandBySlug(slug: string) {
   const [b] = await db
-    .select({ ...brandCols, logoUrl: brands.logoUrl, defaultCreatorId: brands.defaultCreatorId, creatorName: users.name, archivedAt: brands.archivedAt })
+    .select({ ...brandCols, logoUrl: brandLogoSrc, defaultCreatorId: brands.defaultCreatorId, creatorName: users.name, archivedAt: brands.archivedAt })
     .from(brands)
     .leftJoin(users, eq(users.id, brands.defaultCreatorId))
     .where(eq(brands.slug, slug));

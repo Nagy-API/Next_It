@@ -57,7 +57,7 @@ describe("Default people per brand", () => {
 });
 
 describe("Notifications for the things people wait on", () => {
-  it("sent back → the person is told and the step shows Adjusting; deadlines and comments notify too", async () => {
+  it("sent back → the person is told and the step shows Changes requested; deadlines and comments notify too", async () => {
     const king = await makeUser("King", ["content"]);
     const ayman = await makeUser("Ayman", ["media"]);
     const assem = await makeManager("Assem", ["account"]);
@@ -71,7 +71,8 @@ describe("Notifications for the things people wait on", () => {
 
     await returnToStage(ayman, id, "content", "Hook is too long");
     const content = (await stagesOf(id))[0];
-    expect(content).toMatchObject({ status: "active", progress: "adjusting", round: 2 });
+    // They read what to change, then press "On it" (Adjusting) or schedule it.
+    expect(content).toMatchObject({ status: "active", progress: "changes_requested", round: 2 });
     const back = (await notesOf(king.id)).filter((n) => n.kind === "sent_back" && n.itemId === id);
     expect(back).toHaveLength(1);
     expect(back[0].body).toMatch(/Hook is too long/);

@@ -45,8 +45,9 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 
-# built-in local database (npm run local)
+# built-in local database (npm run local) and the files people attach
 /local-data/
+/local-data-files/
 
 # portable Node.js downloaded by start-nexora.bat
 /.node/

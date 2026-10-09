@@ -2,7 +2,7 @@
  * Pure workflow rules. No database access here — the server layer calls these
  * so the rules can be unit-tested and reused by every screen.
  */
-import type { ContentType, PlatformStatus, StageKind, StageStatus, Team } from "@/db/schema";
+import type { ContentType, PlatformStatus, StageKind, StageProgress, StageStatus, Team } from "@/db/schema";
 import { addDays, cairoDate, diffDays, todayISO } from "@/lib/dates";
 
 export type WorkContext = "plan" | "project";
@@ -59,11 +59,31 @@ export function routeFor(type: ContentType, context: WorkContext): StageKind[] {
  */
 export function handoffTargets(from: StageKind, context: WorkContext): StageKind[] {
   const final: StageKind = context === "plan" ? "social" : "delivery";
+  // Any later step can be skipped: content can go straight to editing or to Social, a shoot straight to Social.
   if (from === "content") return ["shooting", "media", "design", final];
-  if (from === "shooting") return ["media"];
+  if (from === "shooting") return ["media", "design", final];
   if (from === "media" || from === "design") return [final];
   return [];
 }
+
+/**
+ * Where someone is with their step, in words and in a soft colour (the same everywhere: rows, cards, Overview).
+ * The clock runs while a step is In progress or Adjusting; it stops when the work is sent for approval.
+ */
+export const PROGRESS_META: Record<StageProgress, { label: string; fg: string; bg: string; dot: string }> = {
+  not_started: { label: "Not started", fg: "#5b6478", bg: "#f1f3f7", dot: "#a3abbd" },
+  processing: { label: "In progress", fg: "#1d5fd1", bg: "#e8f0fe", dot: "#3b82f6" },
+  adjusting: { label: "Adjusting", fg: "#b45309", bg: "#fef3e2", dot: "#f59e0b" },
+  changes_requested: { label: "Changes requested", fg: "#c2410c", bg: "#fff0e6", dot: "#f97316" },
+  scheduled: { label: "Scheduled", fg: "#6d28d9", bg: "#f3ecfe", dot: "#8b5cf6" },
+  waiting_approval: { label: "Waiting approval", fg: "#0f766e", bg: "#e3f5f3", dot: "#14b8a6" },
+};
+
+/** Statuses a person picks themselves ("Changes requested" is set by the reviewer). */
+export const PICKABLE_PROGRESS: StageProgress[] = ["not_started", "processing", "adjusting", "scheduled", "waiting_approval"];
+
+/** Statuses whose time counts as worked time. */
+export const TIMED_PROGRESS: StageProgress[] = ["processing", "adjusting"];
 
 /** The route after `from` when work is sent to `target`. */
 export function routeAfter(target: StageKind, context: WorkContext): StageKind[] {

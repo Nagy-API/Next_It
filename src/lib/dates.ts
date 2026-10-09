@@ -191,3 +191,22 @@ export function startOfCairoDay(iso: string): Date {
   const guess = new Date(utcMidnight - cairoOffsetMinutes(new Date(utcMidnight)) * 60_000);
   return new Date(utcMidnight - cairoOffsetMinutes(guess) * 60_000);
 }
+
+/** Worked time: "35 min", "2h 10m", "1d 3h". */
+export function formatDuration(ms: number): string {
+  const mins = Math.round(ms / 60_000);
+  if (mins < 1) return "under 1 min";
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h < 24) return m ? `${h}h ${m}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return rh ? `${d}d ${rh}h` : `${d}d`;
+}
+
+/** 09/10/2026 — day first, as everyone in the team writes it. */
+export function formatDMY(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+}

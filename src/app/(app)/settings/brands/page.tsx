@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Badge, BrandDot } from "@/components/ui";
+import { Badge, BrandMark } from "@/components/ui";
+import { BrandLogoPicker } from "@/components/photo";
 import { requireUser } from "@/server/auth";
 import { getActivePeople, getAllBrands } from "@/server/cached";
 import { BrandActiveToggle, BrandDefaultSelect, BrandEdit, NewBrandForm } from "../forms";
@@ -39,12 +40,13 @@ export default async function BrandSettings() {
           {sorted.map((b) => (
             <div key={b.id} id={b.slug} className="grid scroll-mt-24 grid-cols-[minmax(200px,1fr)_repeat(5,140px)_120px] items-center gap-3 px-4 py-3 target:bg-electric-soft/50">
               <div className="flex min-w-0 items-center gap-2.5">
-                <BrandDot color={b.color} className="size-2.5" />
+                <BrandMark name={b.name} color={b.color} logoUrl={b.logoUrl} size={26} />
                 <Link href={`/brands/${b.slug}`} className="truncate font-medium hover:text-electric">
                   {b.name}
                 </Link>
                 {!b.isActive && <Badge tone="neutral">Inactive</Badge>}
                 <BrandEdit brandId={b.id} name={b.name} color={b.color} />
+                <BrandLogoPicker brandId={b.id} name={b.name} hasLogo={!!b.logoUrl} />
               </div>
               {cols.map((c) => (
                 <BrandDefaultSelect key={c.field} brandId={b.id} field={c.field} value={b[c.field]} people={c.people} label={`${b.name}: default ${c.label}`} empty={c.field === "defaultCreatorId" ? "Nobody" : "Whole team"} />

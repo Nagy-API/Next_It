@@ -8,10 +8,10 @@
  * Runs on every start (src/instrumentation.ts and `npm run db:seed`): seeds only an empty database; on an
  * existing one it applies the one-time upgrades below and never overwrites what people changed in Settings.
  */
-import { eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { activityLog, brands, platforms, users, type Team } from "@/db/schema";
-import { createItems, type NewItemRow } from "./items";
+import { activityLog, brands, contentItems, contentPlans, platforms, users, type Team } from "@/db/schema";
+import { createItems, followPostingMonthTx, type NewItemRow } from "./items";
 import { verify } from "@node-rs/argon2";
 import { hashPassword, slugify } from "./admin";
 import { logActivity } from "./activity";
@@ -130,6 +130,42 @@ async function kingFullAccess() {
   console.log("✓ King has full access (admin + manager)");
 }
 
+/** Account labels (shown instead of "Manager"): King → IT, with full access. Once only. */
+async function accountLabels() {
+  const [done] = await db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.action, "account_labels")).limit(1);
+  if (done) return;
+  const [king] = await db.select({ id: users.id }).from(users).where(eq(users.username, "king"));
+  if (!king) return;
+  await db.update(users).set({ roleLabel: "IT", isAdmin: true, isManager: true }).where(eq(users.id, king.id));
+  await logActivity(db, null, { action: "account_labels", summary: "Account labels updated." });
+}
+
+/**
+ * The month at the top follows the posting date. Items whose date was moved to another month before this rule
+ * existed (e.g. October items re-dated to November) move to that month's plan, once. Nothing else changes.
+ */
+async function plansFollowPostingDate() {
+  const MARKER = "plans_follow_posting_date";
+  const [done] = await db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.action, MARKER)).limit(1);
+  if (done) return;
+  const misplaced = await db
+    .select({ id: contentItems.id })
+    .from(contentItems)
+    .innerJoin(contentPlans, eq(contentPlans.id, contentItems.planId))
+    .where(
+      and(
+        isNotNull(contentItems.postingDate),
+        sql`(extract(year from ${contentItems.postingDate})::int <> ${contentPlans.year} or extract(month from ${contentItems.postingDate})::int <> ${contentPlans.month})`,
+      ),
+    );
+  let moved = 0;
+  await db.transaction(async (tx) => {
+    for (const { id } of misplaced) if (await followPostingMonthTx(tx, null, id)) moved++;
+    await logActivity(tx, null, { action: MARKER, summary: `Each item now sits in the month of its posting date (${moved} moved).` });
+  });
+  if (moved) console.log(`✓ ${moved} item(s) moved to the month of their posting date`);
+}
+
 /**
  * Anyone still using the shared starting password must pick their own at the next sign-in. Checked once
  * per start (cheap: a handful of accounts), so it also covers people an admin creates with a temporary one.
@@ -177,8 +213,10 @@ export async function seed() {
       await fillTeamDefaults();
       await managersAndMediaDefaults();
       await kingFullAccess();
+      await accountLabels();
       if (process.env.SEED_TRACKER !== "0") await importTracker();
     }
+    await plansFollowPostingDate();
     await forceOwnPasswords();
     return;
   }
@@ -191,6 +229,7 @@ export async function seed() {
         ...u,
         isAdmin: !!u.isAdmin,
         isManager: MANAGERS.includes(u.username),
+        roleLabel: u.username === "king" ? "IT" : null,
         passwordHash,
         mustChangePassword: process.env.SEED_FORCE_PASSWORD_CHANGE !== "0",
         createdAt: new Date("2026-09-01T07:00:00Z"),
@@ -245,6 +284,7 @@ export async function seed() {
   await logActivity(db, null, { action: "brand_team_defaults", summary: "Brand defaults set: Graphic Design → Gannah, Social → Esraa." });
   await logActivity(db, null, { action: "managers_media_defaults", summary: "Managers: Shahenda, Ammar, Ayman, Assem. Shooting → Ayman, Editing → Jana." });
   await logActivity(db, null, { action: "king_full_access", summary: "King (IT) has full access: admin and manager." });
+  await logActivity(db, null, { action: "account_labels", summary: "Account labels updated." });
   // Every brand's plan from the Excel tracker, each item at its real step (once; SEED_TRACKER=0 skips it).
   if (process.env.SEED_TRACKER !== "0") await importTracker();
 }

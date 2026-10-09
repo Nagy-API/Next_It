@@ -4,16 +4,18 @@ import clsx from "clsx";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { RANGES, type RangeKey } from "@/lib/ranges";
+import { DateInput } from "@/components/date-input";
 
-export function RangePicker({ current, from, to }: { current: RangeKey; from: string; to: string }) {
+export function RangePicker({ current, from, to, keep }: { current: RangeKey; from: string; to: string; /** Other query params to keep (e.g. the Reports tab). */ keep?: Record<string, string> }) {
   const router = useRouter();
   const pathname = usePathname();
   const [custom, setCustom] = useState({ from, to });
+  const extra = keep ? Object.entries(keep).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("") : "";
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex rounded-xl border border-line bg-white p-1 shadow-card">
         {(Object.keys(RANGES) as (keyof typeof RANGES)[]).map((k) => (
-          <button key={k} type="button" onClick={() => router.push(`${pathname}?range=${k}`)} className={clsx("rounded-lg px-3 py-1.5 text-[13px] font-medium", current === k ? "bg-navy-900 text-white" : "text-muted hover:text-ink")}>
+          <button key={k} type="button" onClick={() => router.push(`${pathname}?range=${k}${extra}`)} className={clsx("rounded-lg px-3 py-1.5 text-[13px] font-medium", current === k ? "bg-navy-900 text-white" : "text-muted hover:text-ink")}>
             {RANGES[k]}
           </button>
         ))}
@@ -22,12 +24,12 @@ export function RangePicker({ current, from, to }: { current: RangeKey; from: st
         className={clsx("flex items-center gap-1.5 rounded-xl border bg-white p-1 pl-2 shadow-card", current === "custom" ? "border-electric" : "border-line")}
         onSubmit={(e) => {
           e.preventDefault();
-          router.push(`${pathname}?range=custom&from=${custom.from}&to=${custom.to}`);
+          router.push(`${pathname}?range=custom&from=${custom.from}&to=${custom.to}${extra}`);
         }}
       >
-        <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className="field field-sm h-8 w-[140px] border-0" aria-label="From" />
+        <DateInput value={custom.from} onChange={(v) => setCustom((c) => ({ ...c, from: v }))} size="sm" className="w-[140px]" aria-label="From" />
         <span className="text-muted">→</span>
-        <input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className="field field-sm h-8 w-[140px] border-0" aria-label="To" />
+        <DateInput value={custom.to} onChange={(v) => setCustom((c) => ({ ...c, to: v }))} size="sm" className="w-[140px]" aria-label="To" />
         <button className="rounded-lg bg-canvas px-2.5 py-1.5 text-[13px] font-medium hover:bg-line">Apply</button>
       </form>
     </div>

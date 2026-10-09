@@ -1,7 +1,7 @@
 /** Numbers for the Dashboard, personal stats and the notification bell. */
-import { and, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, like, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { activityLog, contentItems, contentPlans, notifications, stageCompletions, users, versions, type StageKind } from "@/db/schema";
+import { activityLog, alertDismissals, contentItems, contentPlans, notifications, stageCompletions, users, versions, type StageKind } from "@/db/schema";
 import { STAGE_META } from "@/domain/workflow";
 import { addDays, diffDays, formatDay, monthLabel, monthName, monthRange, shiftMonth, startOfCairoDay, todayISO } from "@/lib/dates";
 import { getBrands, getPeople, getWorkItems, tasksFor, type WorkItem } from "./queries";
@@ -60,7 +60,7 @@ export async function personPerMonth(userId: string, year: number, month: number
 
 type DeptCell = { tasks: number; done: number };
 export type BrandRow = {
-  brand: { id: string; name: string; slug: string; color: string };
+  brand: { id: string; name: string; slug: string; color: string; logoUrl: string | null };
   /** The month's plan (extra tasks given on top are counted on their own). */
   total: number;
   published: number;
@@ -134,7 +134,7 @@ export async function getDashboard(year: number, month: number) {
       const mine = items.filter((i) => i.brand?.id === b.id);
       const planned = mine.filter((i) => !i.extra);
       return {
-        brand: { id: b.id, name: b.name, slug: b.slug, color: b.color },
+        brand: { id: b.id, name: b.name, slug: b.slug, color: b.color, logoUrl: b.logoUrl },
         total: planned.length,
         published: planned.filter((i) => i.completedAt).length,
         extra: mine.length - planned.length,
@@ -279,6 +279,21 @@ export async function getNotifications(userId: string, limit = 30) {
     .from(notifications)
     .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
   return { rows, unread };
+}
+
+/** Reminders someone cleared today (they come back tomorrow if still true). */
+export async function dismissedAlerts(userId: string, today = todayISO()) {
+  const rows = await db.select({ alertId: alertDismissals.alertId }).from(alertDismissals).where(and(eq(alertDismissals.userId, userId), like(alertDismissals.alertId, `%@${today}`)));
+  return new Set(rows.map((r) => r.alertId.slice(0, -(today.length + 1))));
+}
+
+export async function dismissAlerts(userId: string, alertIds: string[], today = todayISO()) {
+  const ids = [...new Set(alertIds.filter((a) => /^[a-z]+-[0-9a-f-]{36}$/i.test(a)))].slice(0, 100);
+  if (!ids.length) return;
+  await db
+    .insert(alertDismissals)
+    .values(ids.map((alertId) => ({ userId, alertId: `${alertId}@${today}` })))
+    .onConflictDoNothing();
 }
 
 export async function markNotificationsRead(userId: string, ids?: string[]) {

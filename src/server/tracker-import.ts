@@ -1,6 +1,6 @@
-import { and, eq, isNull, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { activityLog, brands, contentItems, contentPlans, notifications, platforms, users } from "@/db/schema";
+import { activityLog, brands, contentItems, contentPlans, notifications, platforms, users, workSessions } from "@/db/schema";
 import type { ContentType, StageKind } from "@/db/schema";
 import { cairoDate } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
@@ -50,6 +50,7 @@ export async function importTracker(data: TrackerBrand[] = TRACKER) {
   const today = cairoDate(new Date());
   let created = 0;
   let updated = 0;
+  const touched: string[] = [];
 
   for (const b of data) {
     const [brand] = await db.select().from(brands).where(sql`lower(${brands.name}) = ${b.brand.toLowerCase()}`);
@@ -63,7 +64,8 @@ export async function importTracker(data: TrackerBrand[] = TRACKER) {
       .select({ id: contentItems.id, title: contentItems.title, postingDate: contentItems.postingDate })
       .from(contentItems)
       .innerJoin(contentPlans, eq(contentPlans.id, contentItems.planId))
-      .where(and(eq(contentPlans.brandId, brand.id), eq(contentPlans.year, b.year), eq(contentPlans.month, b.month), isNull(contentItems.cancelledAt)));
+      // Any month: an item dated in the next month lives in that month's plan.
+      .where(and(eq(contentPlans.brandId, brand.id), isNull(contentItems.cancelledAt)));
 
     for (const it of b.items) {
       const match = existing.find((e) => e.title.trim().toLowerCase() === it.title.toLowerCase() && e.postingDate === it.postingDate);
@@ -80,9 +82,12 @@ export async function importTracker(data: TrackerBrand[] = TRACKER) {
         if (it.contentComment) await addComment(creator, id, it.contentComment);
       }
       if (await applyState(id, it, creator, actor, platformRows, today)) updated++;
+      touched.push(id);
     }
   }
 
+  // The sheet doesn't know when people really started: clocks still running count from now, not from the sheet's dates.
+  if (touched.length) await db.update(workSessions).set({ startedAt: new Date() }).where(and(isNull(workSessions.endedAt), inArray(workSessions.itemId, touched)));
   // History, not new work: don't flood everyone's bell with what the import replayed.
   await db
     .update(notifications)

@@ -16,7 +16,7 @@ import {
   type StageKind,
 } from "@/db/schema";
 import { STAGE_META, TYPE_META, routeFor } from "@/domain/workflow";
-import { cairoDate, formatDay, isValidISODate, isValidTime, monthLabel, plural } from "@/lib/dates";
+import { cairoDate, formatDay, isValidISODate, isValidTime, monthLabel, monthOf, plural } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
 import { NOT_ALLOWED, can, isManager } from "@/domain/permissions";
@@ -31,6 +31,7 @@ import {
   normalizeUrl,
   setDriveUrlTx,
   setStageDeadlineTx,
+  stopItemTimeTx,
   truncate,
 } from "./workflow";
 
@@ -45,7 +46,7 @@ export type NewItemRow = {
 
 export type ItemTarget = { kind: "plan"; brandId: string; year: number; month: number } | { kind: "project"; projectId: string };
 
-export async function ensurePlanTx(tx: Tx, actor: Actor, brandId: string, year: number, month: number): Promise<string> {
+export async function ensurePlanTx(tx: Tx, actor: Actor | null, brandId: string, year: number, month: number): Promise<string> {
   assert(month >= 1 && month <= 12 && year > 2000 && year < 2200, "Invalid month.");
   const [existing] = await tx
     .select({ id: contentPlans.id })
@@ -54,13 +55,45 @@ export async function ensurePlanTx(tx: Tx, actor: Actor, brandId: string, year: 
   if (existing) return existing.id;
   const [brand] = await tx.select().from(brands).where(eq(brands.id, brandId));
   assert(brand, "Brand not found.");
-  const [plan] = await tx.insert(contentPlans).values({ brandId, year, month, createdById: actor.id }).returning({ id: contentPlans.id });
+  const [plan] = await tx.insert(contentPlans).values({ brandId, year, month, createdById: actor?.id ?? null }).returning({ id: contentPlans.id });
   await logActivity(tx, actor, {
     action: "plan_created",
     brandId,
-    summary: `${actor.name} started the ${monthLabel(year, month)} content plan for ${brand.name}.`,
+    summary: actor
+      ? `${actor.name} started the ${monthLabel(year, month)} content plan for ${brand.name}.`
+      : `The ${monthLabel(year, month)} content plan for ${brand.name} was started.`,
   });
   return plan.id;
+}
+
+/**
+ * The month at the top follows the posting date: an item dated in November lives in the November plan.
+ * Its slide lives in the old month's Canva presentation, so that exact link is kept on the item.
+ * Returns the new month's label when the item moved.
+ */
+export async function followPostingMonthTx(tx: Tx, actor: Actor | null, itemId: string, at = new Date()): Promise<string | null> {
+  const [item] = await tx.select().from(contentItems).where(eq(contentItems.id, itemId));
+  if (!item?.planId || !item.postingDate || !isValidISODate(item.postingDate)) return null;
+  const [plan] = await tx.select().from(contentPlans).where(eq(contentPlans.id, item.planId));
+  const { year, month } = monthOf(item.postingDate);
+  if (!plan || (plan.year === year && plan.month === month)) return null;
+  const planId = await ensurePlanTx(tx, actor, plan.brandId, year, month);
+  const set: Partial<typeof contentItems.$inferInsert> = { planId };
+  if (!item.canvaUrl && plan.canvaUrl) set.canvaUrl = item.slideNumber ? `${plan.canvaUrl.split("#")[0]}#${item.slideNumber}` : plan.canvaUrl;
+  await tx.update(contentItems).set(set).where(eq(contentItems.id, itemId));
+  const from = monthLabel(plan.year, plan.month);
+  const to = monthLabel(year, month);
+  await logActivity(tx, actor, {
+    action: "item_updated",
+    itemId,
+    brandId: plan.brandId,
+    field: "month",
+    oldValue: from,
+    newValue: to,
+    summary: `“${item.title}” moved from ${from} to ${to} to match its posting date.`,
+    at,
+  });
+  return to;
 }
 
 /**
@@ -127,12 +160,24 @@ export async function createItems(
     // Default people per team for this brand (or the team's only member) — work goes straight to them.
     const defaults: Partial<Record<StageKind, string | null>> = { content: contentAssignee };
     for (const k of ["shooting", "media", "design", "social", "delivery"] as StageKind[]) defaults[k] = await defaultAssigneeTx(tx, brandId, k);
-    // Slide numbers continue after the last one already in this month's Canva presentation.
-    let nextSlide = 1;
-    if (planId) {
-      const [{ max }] = await tx.select({ max: sql<number>`coalesce(max(${contentItems.slideNumber}), 0)::int` }).from(contentItems).where(eq(contentItems.planId, planId));
-      nextSlide = max + 1;
-    }
+    // Each row lives in the plan of its posting month (dated 3 Nov while adding to October → November).
+    // Slide numbers continue after the last one already in that month's Canva presentation.
+    const nextSlide = new Map<string, number>();
+    const planFor = async (r: NewItemRow): Promise<string | null> => {
+      if (!planId || !brandId) return planId;
+      if (!r.postingDate || target.kind !== "plan") return planId;
+      const { year, month } = monthOf(r.postingDate);
+      return year === target.year && month === target.month ? planId : ensurePlanTx(tx, actor, brandId, year, month);
+    };
+    const slideIn = async (pid: string) => {
+      if (!nextSlide.has(pid)) {
+        const [{ max }] = await tx.select({ max: sql<number>`coalesce(max(${contentItems.slideNumber}), 0)::int` }).from(contentItems).where(eq(contentItems.planId, pid));
+        nextSlide.set(pid, max + 1);
+      }
+      const n = nextSlide.get(pid)!;
+      nextSlide.set(pid, n + 1);
+      return n;
+    };
     const readyForTeam = new Map<string, number>();
 
     let platformIds: string[] = [];
@@ -143,17 +188,18 @@ export async function createItems(
 
     const ids: string[] = [];
     for (const r of clean) {
+      const rowPlan = await planFor(r);
       const [item] = await tx
         .insert(contentItems)
         .values({
           title: r.title,
           type: r.type,
-          planId,
+          planId: rowPlan,
           projectId,
           canvaUrl: normalizeUrl(r.canvaUrl),
           postingDate: r.postingDate || null,
           postingTime: r.postingTime || null,
-          slideNumber: planId ? (r.slideNumber ?? nextSlide++) : (r.slideNumber ?? null),
+          slideNumber: rowPlan ? (r.slideNumber ?? (await slideIn(rowPlan))) : (r.slideNumber ?? null),
           createdAt: now,
           createdById: actor.id,
         })
@@ -272,6 +318,7 @@ export async function updateItem(actor: Actor, itemId: string, patch: ItemPatch)
       if (v !== item.postingDate) {
         await tx.update(contentItems).set({ postingDate: v }).where(eq(contentItems.id, itemId));
         await logActivity(tx, actor, { ...base, action: "item_updated", field: "postingDate", oldValue: item.postingDate, newValue: v, summary: `${actor.name} changed the posting date: ${formatDay(item.postingDate)} → ${formatDay(v)}.` });
+        await followPostingMonthTx(tx, actor, itemId);
         changed++;
       }
     }
@@ -343,6 +390,7 @@ export async function setItemCancelled(actor: Actor, itemId: string, cancelled: 
       .update(contentItems)
       .set(cancelled ? { cancelledAt: new Date(), cancelledById: actor.id } : { cancelledAt: null, cancelledById: null })
       .where(eq(contentItems.id, itemId));
+    if (cancelled) await stopItemTimeTx(tx, itemId, new Date(), "cancelled");
     await logActivity(tx, actor, {
       itemId,
       brandId: ctx.brandId,
@@ -350,6 +398,33 @@ export async function setItemCancelled(actor: Actor, itemId: string, cancelled: 
       clientId: ctx.clientId,
       action: cancelled ? "item_deleted" : "item_restored",
       summary: `${actor.name} ${cancelled ? "deleted" : "restored"} “${ctx.item.title}”.`,
+    });
+    return true;
+  });
+}
+
+/**
+ * Managers decide what counts as extra: e.g. a replacement for a rejected post isn't extra, a surprise request is.
+ * Extra work is counted for the person and the brand (on top of the month's plan).
+ */
+export async function setItemExtra(actor: Actor, itemId: string, extra: boolean) {
+  assert(isManager(actor), "Only managers decide what counts as extra.");
+  return db.transaction(async (tx) => {
+    const ctx = await loadItemCtx(tx, itemId);
+    assert(ctx.context === "plan", "Extra work is counted for brand content.");
+    if (!!ctx.item.extraRequestedById === extra) return false;
+    await tx
+      .update(contentItems)
+      .set({ extraRequestedById: extra ? actor.id : null })
+      .where(eq(contentItems.id, itemId));
+    await logActivity(tx, actor, {
+      itemId,
+      brandId: ctx.brandId,
+      action: "item_updated",
+      field: "extra",
+      oldValue: ctx.item.extraRequestedById ? "extra" : "plan",
+      newValue: extra ? "extra" : "plan",
+      summary: extra ? `${actor.name} marked “${ctx.item.title}” as extra work.` : `${actor.name} counted “${ctx.item.title}” as part of the plan (not extra).`,
     });
     return true;
   });
@@ -489,7 +564,7 @@ export async function bulkStageAction(actor: Actor, itemIds: string[], kind: Sta
           }
           if (await setStageDeadlineTx(tx, actor, ctx, stage, action.date)) applied++;
         } else {
-          if (stage.status !== "active" || (STAGE_META[kind].needsDriveLink && !ctx.item.driveUrl) || kind === "social" || (kind === "content" && !ctx.item.canvaUrl)) {
+          if (stage.status !== "active" || (STAGE_META[kind].needsDriveLink && !ctx.item.driveUrl) || kind === "social") {
             skipped.push(ctx.item.title);
             continue;
           }

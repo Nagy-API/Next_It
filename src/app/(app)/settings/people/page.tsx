@@ -33,7 +33,7 @@ export default async function PeopleSettings() {
             <div className="min-w-[180px] flex-1">
               <div className="flex items-center gap-2 font-medium">
                 {p.name}
-                {p.isManager && <ManagerChip />}
+                {(p.isManager || p.roleLabel) && <ManagerChip role={p.roleLabel} />}
                 {admins.has(p.id) && <Badge tone="blue">Admin</Badge>}
                 {!p.isActive && <Badge tone="neutral">Inactive</Badge>}
               </div>

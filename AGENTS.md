@@ -89,8 +89,11 @@ src/
     (app)/               ← everything behind sign-in (shared layout = sidebar/top bar)
       layout.tsx         ← loads user, counts, people; shows FirstPassword screen when a password is temporary
       first-password.tsx ← "choose your own password" screen
-      my-work/           ← My tasks (per person): content tasks, tasks from managers, approvals, filters
-      overview/          ← personal "move now (48h)" + pipeline; agency sections for managers
+      my-work/           ← My tasks (per person): my brands first, each brand by day; approvals; "Sent, waiting approval"
+      overview/          ← Notes (12 h), tiles, "move now (48h)", Team right now (statuses + clocks), pipeline, brands
+      tasks/             ← Day tasks: to-dos without a brand, day by day, with their files
+      quick/             ← Quick update: a whole step at once (paste a list of links → Save all), every team
+      reports/           ← Reports (managers): People / Brands for today, a week, a month; Excel
       chat/              ← Team chat (page + client room with @mentions, polling /api/chat)
       stats/             ← Dashboard (managers)
       activity/          ← Activity log (managers)
@@ -104,18 +107,24 @@ src/
     api/
       notifications/     ← bell feed (GET, polled every 30 s)
       chat/              ← new chat messages since a time (GET, polled every 4 s)
-      avatar/[id]/       ← profile photos (signed-in only)
-      export/dashboard, export/person/[username] ← Excel downloads
+      avatar/[id]/       ← profile photos (signed-in only); brand-logo/[id]/ = brand logos (cached by hash)
+      files/             ← POST upload (25 MB, allowed types only); files/[id]/ = open/download (signed-in only)
+      export/dashboard, export/person/[username] (?from&to), export/report ← Excel downloads
       backup/            ← admin: download a full backup (built-in database)
-  components/            ← UI. handoff.tsx = task cards + step panels (content/shoot/versions/social);
+  components/            ← UI. handoff.tsx = task cards + step panels (content/shoot/versions with options/social),
+                           ProgressPicker + ChangesBanner; send-back.tsx; attachments.tsx; date-input.tsx (dd/mm/yyyy);
+                           platform-icon.tsx (app marks); notes-bar.tsx; report-parts.tsx; scroll-memory.tsx;
                            shell.tsx = sidebar/top bar; bell.tsx; tasks.tsx; comments.tsx; charts.tsx;
-                           avatar.tsx (photos + manager star); client.tsx (ActionForm, Modal, Popover, toasts)
+                           avatar.tsx (photos + manager star / role label); client.tsx (ActionForm, Modal, Popover, toasts)
   domain/                ← PURE rules, no database: workflow.ts (stages, routes, deadlines, health),
                            permissions.ts (who can do what)
   server/                ← everything that reads/writes the database
     workflow.ts          ← stage transitions: complete/hand-off, send back, assign, deadlines, versions, shoot
     items.ts             ← create/update/delete items, comments, bulk actions, month links
-    tasks.ts             ← manager tasks (one-off / repeating)
+    tasks.ts             ← manager tasks (one-off / repeating), Day tasks
+    attachments.ts       ← files & links on items and tasks (files on disk next to the database, see §5)
+    reports.ts           ← people report (finished, time, from–to per day, open) and brands report
+    notes.ts             ← team notes (12 h); quick.ts = Quick update (many rows through the normal workflow)
     chat.ts              ← Team chat + @mention parsing
     admin.ts             ← brands, projects, platforms, people, photos
     queries.ts           ← read models (WorkItem with stages/versions/platforms/health), activity, insights
@@ -126,7 +135,8 @@ src/
     security.ts          ← sign-in lock-outs, client IP; lib/passwords.ts = password rules, safe redirects
     export.ts            ← Excel workbooks
   db/schema.ts           ← ALL tables (Drizzle). db/index.ts = PostgreSQL or PGlite connection; db/local.ts = PGlite lock, backups, self-healing
-  lib/                   ← dates (Cairo timezone), paste parser, ranges, passwords
+  lib/                   ← dates (Cairo timezone, formatDuration, formatDMY), links.ts (name a link: Canva / Google Doc / Drive…),
+                           paste parser, ranges, passwords
 drizzle/                 ← SQL migrations, in order. Never edit an applied migration — add a new one. Embedded in src/db/migrations.generated.ts.
 scripts/                 ← migrate, seed (thin wrapper), local.mjs, production.mjs, restore.mjs, tracker-to-seed.mjs (Excel → import data)
 tests/                   ← *.test.ts (vitest, real PostgreSQL) and e2e/acceptance.spec.ts (Playwright)
@@ -136,19 +146,28 @@ docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
 ## 5. Data model (src/db/schema.ts)
 
 - **users** — username, name, title, `teams[]` (leadership/content/media/design/social/account), `isAdmin`, `isManager`,
-  `passwordHash` (Argon2id), `mustChangePassword`, `avatar` (data URL), `chatReadAt`, `isActive`.
+  `roleLabel` (shown instead of "Manager", e.g. "IT"), `passwordHash` (Argon2id), `mustChangePassword`, `avatar` (data URL), `chatReadAt`, `isActive`.
 - **sessions** — `id` = SHA-256 of the cookie token (raw token never stored), `expiresAt`.
 - **login_attempts** — every sign-in attempt (for lock-outs).
-- **brands** — name, colour, default person per step: `defaultCreatorId` (content), `defaultShootId`, `defaultMediaId` (editing), `defaultDesignId`, `defaultSocialId`.
+- **brands** — name, colour, `logoUrl` (small PNG data URL, uploaded in Settings → Brands; pages get `/api/brand-logo/<id>?v=<hash>`
+  via `brandLogoSrc`, never the image itself), default person per step: `defaultCreatorId` (content), `defaultShootId`, `defaultMediaId` (editing), `defaultDesignId`, `defaultSocialId`.
 - **content_plans** — one per brand + month; month `canvaUrl` and `driveFolderUrl`.
 - **clients / projects** — one-off work; `projects.ownerId` (content person), `deletedAt`.
-- **content_items** — title, type (reel/static/carousel/story), plan XOR project, `canvaUrl`, `driveUrl` (latest file),
+- **content_items** — title, type (reel/static/carousel/story), plan XOR project, `canvaUrl` (the content link: ANY link, optional), `driveUrl` (latest file),
   posting date/time, `slideNumber`, shoot date/time/duration/location, `completedAt`, `cancelledAt` (= deleted).
 - **stages** — one row per step of an item: `kind` (content, shooting, media, design, social, delivery), `position`,
   `status` (waiting/active/done), `assigneeId`, `deadline` + `originalDeadline` + `shiftDays` (automatic delay shifts),
-  `round` (+1 each send-back), `progress` (not_started/processing/adjusting/waiting_approval), exception fields.
+  `round` (+1 each send-back), `progress` (not_started/processing/adjusting/changes_requested/scheduled/waiting_approval),
+  `scheduledFor` (the day, when Scheduled), exception fields.
+- **work_sessions** — the step's clock: one row per stretch of In progress / Adjusting (`kind`), `startedAt`, `endedAt`,
+  `endReason` (sent/done/status/returned/reassigned/cancelled). Written only by `trackTimeTx` (workflow.ts), never by hand.
+- **attachments** — files and links on an item (`itemId`) or a task (`taskId`); files: `storageKey` (random name) in
+  `filesDir()` = `<database folder>-files` (production `~/nexora-ops-data-files`, outside the app folder); `deletedAt`.
+- **notes** — team notes: text, colour, `expiresAt` (12 h); one live note per person. **alert_dismissals** — bell reminders
+  a person cleared today (`<alertId>@<day>`).
 - **stage_completions** — append-only fact per completion (credited person, lateness, round) → fair statistics.
-- **versions** — v1, v2… per media/design step: url, note, status (pending/approved/changes/replaced), reviewer.
+- **versions** — v1, v2… per media/design step: url (+ `altUrls`: more options of the same post), note, status
+  (pending/approved/changes/replaced), reviewer, `chosenUrl` (the option approved → becomes the item's `driveUrl`).
 - **platforms / item_platforms** — per-platform publishing status, date, live link.
 - **comments** — threads (one level), `mentionUserId` (waits for their reply), `resolvedAt`, `deletedAt`.
 - **tasks** — manager-given tasks: assignee, due, `recurrence` (none/daily/weekly/monthly), `seriesId`, `status`
@@ -165,24 +184,35 @@ Routes by type (`routeFor`):
 - Story: **content → social**
 - One-off project: same, but the last step is **delivery** (no social) → **Delivered**.
 
-Hand-off (`handOff`): the person finishes their step and it goes to the next one. Content may choose the target
-(`handoffTargets`: shooting, media (skip shooting), design, social/delivery); the route is rebuilt (`rerouteTx`).
+Hand-off (`handOff`): the person finishes their step and it goes to the next one. Steps can be skipped: content may
+choose shooting, media (skip shooting), design or social/delivery; a shoot may go to media, design or social
+(`handoffTargets`); the route is rebuilt (`rerouteTx`). The content link is optional and can be any link; content sent
+straight to Social can carry the final file (`driveUrl`). Anyone sending work on may pick the next person: themselves or
+someone in that step's team (managers: anyone) — `assertMayChoose`.
 Completing a step (`completeStageTx`) records who/when, credits the assignee, measures lateness, shifts downstream
 deadlines by the delay (once — `propagatedDelayDays`), activates the next step, resets its progress, notifies the
 next person (or the whole team if nobody is assigned), and logs everything.
 
 Versions & approval (post-production and design, `isReviewed(kind)`): the editor/designer calls `submitVersion`
-(Drive link) → progress becomes *Waiting approval* and the reviewer is notified (the item's content creator / project
-owner, else managers). `reviewVersion` approve → the step completes automatically (lateness measured at upload time);
-request changes (note required) → progress *Adjusting*, a comment is added, the next version opens. Completing a
+(Drive link, optionally more options in `altUrls`) → progress becomes *Waiting approval* and the reviewer is notified (the
+item's content creator / project owner, else managers). `reviewVersion` approve (with several options the reviewer must
+pick one: `chosenUrl`) → the step completes automatically (lateness measured at upload time); request changes (note
+required) → progress *Changes requested*, a comment is added; the person reads it and presses "OK, I'm on it"
+(*Adjusting*, the clock runs) or schedules it for a day (*Scheduled*). Completing a
 reviewed step directly (`completeStage`/`handOff`) is allowed only for reviewers (managers/content) as an override.
 
 Deadlines: only managers set them; once set only the admin changes them (`setStageDeadlineTx`). A step that hasn't
 received the work is never "late" (`stageHealth` → blocked/waiting). Admin can mark lateness as an exception.
-Send back (`returnToStage`): anyone, to an earlier step, optional note → that step reopens (round+1, *Adjusting*),
-later steps go back to waiting, the person is notified.
+Send back (`returnToStage`): anyone, to an earlier step, optional note, optionally choosing who fixes it (themselves or that
+team; managers anyone) → that step reopens (round+1, *Changes requested*), later steps go back to waiting, the person is notified.
+Time: `trackTimeTx` keeps one open `work_sessions` row while a step is In progress / Adjusting for its person; it closes on
+Waiting approval (version sent), done, Scheduled, send-back, reassignment or delete. `StageView.time` = total + running.
+My tasks hides work that's *Waiting approval* (it's with the reviewer) in "Sent, waiting approval" with the time it took.
+The month follows the posting date: an item dated in another month lives in that month's plan (`followPostingMonthTx`,
+on create and on date change; a one-time upgrade moved older items — marker `plans_follow_posting_date`).
 Social: pasting a live link marks that platform Published; when every planned platform is published the item is
-done automatically; un-publishing reopens Social.
+done automatically; un-publishing reopens Social. Every planned platform scheduled (or live) → the Social step reads
+*Scheduled* (with the first date) from outside.
 "Hot": posting or current deadline within 48 hours (`isHot` in queries.ts) → highlighted and sorted first.
 Reviewer of a version: the item's content creator, else the brand's default content creator (`reviewersFor`, `WorkItem.reviewerId`).
 
@@ -193,11 +223,16 @@ person with the deadline, and then works like any item (links, versions, approva
 brands list, the Overview and the Dashboard count the plan WITHOUT extras and show extras on their own ("+N extra").
 A task without a brand stays a simple to-do (tasks.ts, can repeat).
 
-**Order in My tasks**: new work first (`isNewWork`: reached the person in the last 3 days, not started; newest on top), then late,
-then posting/due within 48h, then sent back, then by deadline/posting date. Manager to-dos: new first, then by deadline.
-Every card shows when it was received (and from whom) and its deadline.
+**Order in My tasks**: one group per brand — "My brands" first (brands where the person is a default person for any step,
+`myBrandIds`), then the other brands, then one-off projects; inside a brand, by day (posting date, else the step's deadline)
+with a small day heading. Manager to-dos: new first, then by deadline. Every card shows when it arrived (and from whom),
+its status, its clock and its deadline, and has Send back.
 Phones/tablets get a bottom tab bar (My tasks, Overview, Chat, Brands, More) in `shell.tsx`; toasts sit above it.
-Look: every step has one colour everywhere (`STAGE_COLOR` in domain/workflow.ts → `StageChip` in ui.tsx); cards and rows
+Every page remembers its scroll position (`scroll-memory.tsx`, sessionStorage, 3 h). Every date field is `DateInput`
+(dd/mm/yyyy, the form still sends YYYY-MM-DD).
+Look: every step has one soft colour everywhere (`STAGE_COLOR` in domain/workflow.ts → `StageChip`, the stepper, `FlowMini`,
+the pipeline); every status has one (`PROGRESS_META` → `ProgressChip`); brands show their logo or a colour initial
+(`BrandMark`); cards and rows
 carry their brand's colour as a left stripe; `/` or Ctrl/⌘+K focuses search. `(app)/error.tsx` and `global-error.tsx`
 show a calm "Try again" page instead of a blank error (Next 16 passes `retry`, not `reset`).
 Delight: an action can return `{ message, celebrate: "small" | "big" }` from `run()`; `ActionForm` then calls `celebrate()`
@@ -218,14 +253,15 @@ steps finished late. Per brand and per person too; all read-only from existing d
 | Action | Who |
 | --- | --- |
 | Do a step (`doStage`) | the assignee, the step's team, admin; delivery: account/content/managers |
-| Choose who does a step (`assign`) | managers (anyone can "take" unassigned work of their own team) |
+| Choose who does a step (`assign`) | managers (anyone can take unassigned work; when sending on / back anyone picks themselves or that team) |
 | Set a deadline | managers — change/remove a set one: admin only |
 | Approve versions (`review`) | managers + content team (each version is sent to the item's content creator; managers see all) |
 | Add/edit/delete content (`editContent`) | managers + content |
 | Posting date | managers + content + social |
 | Shoot plan | managers + media + content |
 | Publishing (platforms) | managers + social |
-| Give tasks, Dashboard, Activity log, everyone's numbers, dashboard export | managers |
+| Give tasks, Dashboard, Reports, Activity log, everyone's numbers, exports, mark extra / not extra | managers |
+| Attach files & links | anyone on items; on a task: its person, who gave it, managers. Remove: who attached it or managers |
 | Brands, people, platforms, backups | admin |
 | Comment, chat, send back | everyone |
 
@@ -234,9 +270,10 @@ not allowed (e.g. `/activity`, `/stats`). Add new permissions to `can` and use t
 
 ## 8. Things that happen automatically (don't make people do them)
 
-Content with a Canva link is delivered on creation; next step activates on completion; brand default person per
+Content with a link is delivered on creation (when "ready" is ticked); next step activates on completion; brand default person per
 step is assigned; the only member of a team gets the work; whoever finishes an unassigned step gets the credit;
-deadlines shift for upstream delays; *Adjusting* on send-back / changes; *Waiting approval* on version upload;
+deadlines shift for upstream delays; *Changes requested* on send-back / changes; *Waiting approval* on version upload;
+the clock starts/stops with the status; Social reads *Scheduled* when every app is scheduled; an item moves to the month of its posting date;
 Published when all platforms are live; repeating tasks create the next one; slide numbers continue per month;
 notifications for new work, approvals, changes, mentions, deadlines, finished; bell alerts for late / due / 48h.
 
@@ -260,7 +297,10 @@ There is intentionally **no** in-app branding screen.
 - Headers: per-request CSP with nonce + `strict-dynamic` (`src/proxy.ts`), no framing, nosniff, HSTS, strict referrer,
   permissions policy (`next.config.ts`). Pages render per request (root layout reads headers) so the nonce works.
 - Server actions only (Next checks Origin); every write goes through `run()` → permission checks in src/server/*.
-- Inputs: links go through `normalizeUrl` (http/https only); uploads are image data URLs with type+size checks; SVG not allowed.
+- Inputs: links go through `normalizeUrl` (http/https only); photos/logos are image data URLs with type+size checks; SVG not allowed.
+- Attached files: extension allow-list mapped to our own Content-Type (never the browser's), 25 MB, random file names,
+  same-origin check on upload, served only to signed-in people with `nosniff` and a sandbox CSP (`/api/files` skips the
+  proxy so big uploads aren't buffered twice — the routes check the session themselves).
 - Activity log is append-only at the database level. Deleting = soft delete; history kept.
 - No third-party scripts, analytics or trackers; fonts self-hosted by next/font.
 - Secrets only in environment variables — never commit `.env`. The repo is private.

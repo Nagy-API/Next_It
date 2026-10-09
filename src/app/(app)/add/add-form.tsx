@@ -11,6 +11,9 @@ import type { ContentType } from "@/db/schema";
 import { TYPE_META, guessTypeFromTitle } from "@/domain/workflow";
 import { formatDay, monthLabel, monthName } from "@/lib/dates";
 import { parsePastedList } from "@/lib/paste";
+import { DateInput } from "@/components/date-input";
+import { PendingAttachments } from "@/components/attachments";
+import { PlatformIcon } from "@/components/platform-icon";
 
 type Brand = { id: string; name: string; slug: string; color: string; defaultCreatorId: string | null };
 type Project = { id: string; name: string; clientName: string };
@@ -176,7 +179,7 @@ export function AddForm({
 
         {pasting && (
           <div className="border-b border-line bg-electric-soft/40 px-5 py-4">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div>
                 <label className="label" htmlFor="paste-box">
                   Paste or type your list — <b>one line = one post</b>
@@ -217,7 +220,7 @@ export function AddForm({
                     ⏰ <b>Time</b>: <code className="rounded bg-canvas px-1">19:00</code> or <code className="rounded bg-canvas px-1">7pm</code>
                   </li>
                   <li>
-                    🔗 <b>Canva link</b>: paste it anywhere on the line
+                    🔗 <b>Link</b> (Canva, Google Doc, Drive…): paste it anywhere on the line
                   </li>
                   <li>
                     🎬 <b>Type</b>: the words Reel, Post, Carousel or Story
@@ -241,7 +244,7 @@ export function AddForm({
                         <td className="px-2 py-1.5">{TYPE_META[r.type].label}</td>
                         <td className="px-2 py-1.5 tabular-nums">{r.postingDate ? formatDay(r.postingDate) : <span className="text-faint">no date</span>}</td>
                         <td className="px-2 py-1.5 tabular-nums">{r.postingTime || <span className="text-faint">—</span>}</td>
-                        <td className="px-2 py-1.5">{r.canvaUrl ? <span className="font-semibold text-ok">✓ Canva</span> : <span className="text-faint">no link</span>}</td>
+                        <td className="px-2 py-1.5">{r.canvaUrl ? <span className="font-semibold text-ok">✓ Link</span> : <span className="text-faint">no link</span>}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -258,7 +261,7 @@ export function AddForm({
           <span>Type</span>
           <span>{mode === "plan" ? "Posting date" : "Due date"}</span>
           <span>Time</span>
-          <span>Canva link (this page)</span>
+          <span>Content link (optional)</span>
           <span />
         </div>
         <div className="divide-y divide-line">
@@ -292,9 +295,9 @@ export function AddForm({
                   </button>
                 ))}
               </div>
-              <input type="date" value={r.postingDate} onChange={(e) => update(r.key, { postingDate: e.target.value })} aria-label="Date" className="field field-sm h-9" />
+              <DateInput value={r.postingDate} onChange={(v) => update(r.key, { postingDate: v })} aria-label="Date" size="sm" className="w-full" />
               <input type="time" value={r.postingTime} onChange={(e) => update(r.key, { postingTime: e.target.value })} aria-label="Time" className="field field-sm h-9" />
-              <input value={r.canvaUrl} onChange={(e) => update(r.key, { canvaUrl: e.target.value })} placeholder="https://canva.link/…" aria-label="Canva link" className="field field-sm h-9" />
+              <input value={r.canvaUrl} onChange={(e) => update(r.key, { canvaUrl: e.target.value })} placeholder="Canva, Doc, Drive…" aria-label="Content link (optional)" className="field field-sm h-9" />
               <button type="button" onClick={() => setRows((rs) => (rs.length > 1 ? rs.filter((x) => x.key !== r.key) : [blank()]))} className="flex size-8 items-center justify-center rounded-md text-faint hover:bg-bad-soft hover:text-bad" aria-label="Remove row">
                 <Trash2 className="size-4" />
               </button>
@@ -320,7 +323,7 @@ export function AddForm({
       {/* 3. Who & how */}
       <section className="card p-5">
         <div className="eyebrow mb-3">3 · Starting point</div>
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <div>
             <label className="label">Content owner</label>
             <select
@@ -344,7 +347,7 @@ export function AddForm({
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line p-3 hover:border-line-strong">
             <input type="checkbox" checked={sendWithCanva} onChange={(e) => setSendWithCanva(e.target.checked)} className="mt-0.5 size-4 accent-[var(--color-electric)]" />
             <span>
-              <span className="block text-[14px] font-medium">Rows with a Canva link are ready</span>
+              <span className="block text-[14px] font-medium">Rows with a link are ready</span>
               <span className="block text-[12.5px] text-muted">They go straight to their team (Reels → Media, Posts & Carousels → Design) and the delivery time is saved. Rows without a link wait with you.</span>
             </span>
           </label>
@@ -359,8 +362,9 @@ export function AddForm({
                       key={p.id}
                       type="button"
                       onClick={() => setPlatformIds((ids) => (on ? ids.filter((x) => x !== p.id) : [...ids, p.id]))}
-                      className={clsx("rounded-full border px-3 py-1 text-[13px] font-medium", on ? "border-electric bg-electric-soft text-[#1d5fd1]" : "border-line text-muted hover:border-line-strong")}
+                      className={clsx("inline-flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 text-[13px] font-medium", on ? "border-electric bg-electric-soft text-[#1d5fd1]" : "border-line text-muted hover:border-line-strong")}
                     >
+                      <PlatformIcon name={p.name} size={18} muted={!on} />
                       {p.name}
                     </button>
                   );
@@ -372,7 +376,15 @@ export function AddForm({
         </div>
       </section>
 
-      <div className="flex items-center justify-end gap-3">
+      {/* 4. Files */}
+      <section className="card p-5">
+        <div className="eyebrow mb-1">4 · Files & links <span className="font-normal normal-case tracking-normal text-muted">(optional)</span></div>
+        <p className="mb-3 text-[12.5px] text-muted">A brief, a script, references: attached to every item above. You can add more on each item later.</p>
+        <PendingAttachments />
+      </section>
+
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {mode === "plan" && <span className="mr-auto text-[12.5px] text-muted">Items dated in another month go to that month by themselves.</span>}
         <span className="text-[13px] text-muted">
           {mode === "plan" && brand ? `${brand.name} · ${monthName(month)} ${year}` : ""}
         </span>

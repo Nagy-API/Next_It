@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { BarChart3, Briefcase, Camera, History, Home, KeyRound, LogOut, Menu, MessagesSquare, Plus, Search, Settings, Tags, UserRound, Users, X } from "lucide-react";
+import { BarChart3, Briefcase, Camera, CalendarCheck2, FileText, History, Home, KeyRound, LogOut, Menu, MessagesSquare, Plus, Search, Settings, Tags, UserRound, Users, X, Zap } from "lucide-react";
 import { GiveTaskButton } from "./tasks";
 import { ManagerChip } from "./avatar";
 import { BRAND } from "@/config/brand";
 import { logoutAction } from "@/app/actions";
 import { NotificationBell } from "./bell";
-import { Avatar, btn } from "./ui";
+import { ScrollMemory } from "./scroll-memory";
+import { Avatar, BrandMark, btn } from "./ui";
 
-type NavBrand = { id: string; name: string; slug: string; color: string; open: number; late: number };
+type NavBrand = { id: string; name: string; slug: string; color: string; logoUrl: string | null; open: number; late: number };
 
 export function Shell({
   user,
@@ -24,7 +25,7 @@ export function Shell({
   taskBrands,
   children,
 }: {
-  user: { name: string; title: string | null; isAdmin: boolean; username: string; manager: boolean };
+  user: { name: string; title: string | null; isAdmin: boolean; username: string; manager: boolean; roleLabel: string | null };
   brands: NavBrand[];
   myCount: number;
   chatUnread: number;
@@ -41,6 +42,9 @@ export function Shell({
 
   return (
     <div className="min-h-dvh lg:pl-[248px]">
+      <Suspense fallback={null}>
+        <ScrollMemory />
+      </Suspense>
       {/* Sidebar */}
       <aside
         className={clsx(
@@ -61,13 +65,25 @@ export function Shell({
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 pb-4 pt-2">
+        <nav className="flex-1 overflow-y-auto px-3 pb-4 pt-2 [scrollbar-width:thin]">
           {user.manager && <GiveTaskButton people={taskPeople} brands={taskBrands} />}
-          <NavItem href="/my-work" icon={UserRound} label="My tasks" active={pathname.startsWith("/my-work")} count={myCount} />
-          <NavItem href="/overview" icon={Home} label="Overview" active={pathname.startsWith("/overview") || pathname.startsWith("/work")} />
-          <NavItem href="/chat" icon={MessagesSquare} label="Team chat" active={pathname.startsWith("/chat")} count={pathname.startsWith("/chat") ? 0 : chatUnread} highlight />
-          {user.manager && <NavItem href="/stats" icon={BarChart3} label="Dashboard" active={pathname.startsWith("/stats")} />}
-          {user.manager && <NavItem href="/activity" icon={History} label="Activity log" active={pathname.startsWith("/activity")} />}
+          <div className="space-y-0.5">
+            <NavItem href="/my-work" icon={UserRound} label="My tasks" active={pathname.startsWith("/my-work")} count={myCount} />
+            <NavItem href="/overview" icon={Home} label="Overview" active={pathname.startsWith("/overview") || pathname.startsWith("/work")} />
+            <NavItem href="/tasks" icon={CalendarCheck2} label="Day tasks" active={pathname.startsWith("/tasks")} />
+            <NavItem href="/quick" icon={Zap} label="Quick update" active={pathname.startsWith("/quick")} />
+            <NavItem href="/chat" icon={MessagesSquare} label="Team chat" active={pathname.startsWith("/chat")} count={pathname.startsWith("/chat") ? 0 : chatUnread} highlight />
+          </div>
+          {user.manager && (
+            <>
+              <NavHeading>Manage</NavHeading>
+              <div className="space-y-0.5">
+                <NavItem href="/stats" icon={BarChart3} label="Dashboard" active={pathname.startsWith("/stats")} />
+                <NavItem href="/reports" icon={FileText} label="Reports" active={pathname.startsWith("/reports")} />
+                <NavItem href="/activity" icon={History} label="Activity log" active={pathname.startsWith("/activity")} />
+              </div>
+            </>
+          )}
 
           <div className="mt-5 mb-1.5 flex items-center justify-between px-3">
             <Link href="/brands" className={clsx("text-[11px] font-semibold uppercase tracking-[0.12em] hover:text-white", pathname === "/brands" ? "text-white" : "text-white/45")}>
@@ -84,11 +100,11 @@ export function Shell({
                 key={b.id}
                 href={`/brands/${b.slug}`}
                 className={clsx(
-                  "group flex items-center gap-2.5 rounded-lg px-3 py-[7px] text-[13.5px] transition-colors",
+                  "group flex items-center gap-2.5 rounded-lg px-2.5 py-[6px] text-[13.5px] transition-colors",
                   active ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/5 hover:text-white",
                 )}
               >
-                <span className="size-2 shrink-0 rounded-full" style={{ background: b.color }} />
+                <BrandMark name={b.name} color={b.color} logoUrl={b.logoUrl} size={20} className={clsx("!rounded-[6px]", !b.logoUrl && "opacity-90")} />
                 <span className="flex-1 truncate">{b.name}</span>
                 {b.late > 0 ? (
                   <span className="rounded-full bg-bad px-1.5 text-[11px] font-semibold leading-[18px] text-white" title={`${b.late} late`}>
@@ -137,7 +153,7 @@ export function Shell({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={BRAND.logos.markOnLight} alt="" className="size-full object-contain drop-shadow-[0_18px_30px_rgba(11,22,57,0.5)]" />
       </div>
-      <main className="relative z-[1] mx-auto max-w-[1320px] px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-16">{children}</main>
+      <main className="relative z-[1] mx-auto max-w-[1320px] overflow-x-clip px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-16">{children}</main>
 
       {/* Phones & tablets: the main places one tap away, like an app. */}
       <nav
@@ -172,12 +188,16 @@ function TabItem({ href, icon: Icon, label, active, count }: { href: string; ico
   );
 }
 
+function NavHeading({ children }: { children: React.ReactNode }) {
+  return <div className="mb-1.5 mt-5 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">{children}</div>;
+}
+
 function NavItem({ href, icon: Icon, label, active, count, highlight }: { href: string; icon: typeof Home; label: string; active: boolean; count?: number; highlight?: boolean }) {
   return (
     <Link
       href={href}
       className={clsx(
-        "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[14px] font-medium transition-colors",
+        "flex items-center gap-2.5 rounded-lg px-3 py-[7px] text-[14px] font-medium transition-colors",
         active ? "bg-electric text-white shadow-[0_4px_14px_-4px_rgb(59_130_246/0.6)]" : "text-white/75 hover:bg-white/5 hover:text-white",
       )}
     >
@@ -190,7 +210,7 @@ function NavItem({ href, icon: Icon, label, active, count, highlight }: { href: 
   );
 }
 
-function UserMenu({ user }: { user: { name: string; title: string | null; username: string; manager: boolean } }) {
+function UserMenu({ user }: { user: { name: string; title: string | null; username: string; manager: boolean; roleLabel: string | null } }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -205,14 +225,14 @@ function UserMenu({ user }: { user: { name: string; title: string | null; userna
         <Avatar name={user.name} size={30} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[14px] font-semibold text-white">{user.name}</span>
-          <span className="block truncate text-[12px] text-white/50">{user.manager ? "Manager · " : ""}{user.title ?? `@${user.username}`}</span>
+          <span className="block truncate text-[12px] text-white/50">{user.roleLabel ? `${user.roleLabel} · ` : user.manager ? "Manager · " : ""}{user.title ?? `@${user.username}`}</span>
         </span>
       </button>
       {open && (
         <div className="absolute bottom-full left-0 right-0 mb-2 animate-in overflow-hidden rounded-xl border border-line bg-white py-1 text-ink shadow-pop">
-          {user.manager && (
+          {(user.manager || user.roleLabel) && (
             <div className="border-b border-line px-3 pb-2 pt-1.5">
-              <ManagerChip />
+              <ManagerChip role={user.roleLabel} />
             </div>
           )}
           <Link href="/settings/account" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-2 text-[14px] hover:bg-canvas">

@@ -4,18 +4,20 @@ import ExcelJS from "exceljs";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { contentPlans, users } from "@/db/schema";
-import { STAGE_META, TEAM_META, TYPE_META, finalLabel } from "@/domain/workflow";
-import { cairoDate, formatDateTime, monthLabel, monthRange, todayISO } from "@/lib/dates";
+import { PROGRESS_META, STAGE_META, TEAM_META, TYPE_META, finalLabel } from "@/domain/workflow";
+import { cairoDate, formatDMY, formatDateTime, formatTime, monthLabel, monthRange, todayISO } from "@/lib/dates";
 import { getDashboard, personPerMonth } from "./stats";
 import { BRAND as brand } from "@/config/brand";
 import { getPersonCompletions, getPersonWork, getWorkItems, type WorkItem } from "./queries";
+import { brandsReport, peopleReport, type PersonReport } from "./reports";
 
 const NAVY = `FF${brand.colors.dark.slice(1).toUpperCase()}`;
 const fileSafe = (s: string) => s.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "report";
 const BLUE = `FF${brand.colors.primary.slice(1).toUpperCase()}`;
 const SOFT = "FFEFF5FF";
 
-function sheet(wb: ExcelJS.Workbook, name: string, columns: { header: string; key: string; width: number }[]) {
+const sheet = baseSheet;
+function baseSheet(wb: ExcelJS.Workbook, name: string, columns: { header: string; key: string; width: number }[]) {
   const ws = wb.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1 }] });
   ws.columns = columns;
   const head = ws.getRow(1);
@@ -57,7 +59,7 @@ function itemRow(i: WorkItem) {
     posting: i.postingDate ?? "",
     time: i.postingTime ?? "",
     status: i.cancelledAt ? "Deleted" : i.completedAt ? finalLabel(i.context) : cur ? STAGE_META[cur.kind].label : "",
-    progress: cur ? { not_started: "Not started", processing: "In progress", adjusting: "Adjusting", waiting_approval: "Waiting approval" }[cur.progress] : "",
+    progress: cur ? PROGRESS_META[cur.progress].label : "",
     withWho: cur?.assignee?.name ?? (cur ? `${STAGE_META[cur.kind].label} team` : ""),
     deadline: cur?.deadline ?? "",
     late: cur?.health === "overdue" ? "LATE" : "",
@@ -214,7 +216,7 @@ export async function dashboardWorkbook(year: number, month: number) {
   return { wb, filename: `${fileSafe(brand.name)}-dashboard-${year}-${String(month).padStart(2, "0")}.xlsx` };
 }
 
-export async function personWorkbook(username: string) {
+export async function personWorkbook(username: string, range?: { from: string; to: string }) {
   const [u] = await db.select().from(users).where(eq(users.username, username));
   if (!u) return null;
   const today = todayISO();
@@ -264,6 +266,12 @@ export async function personWorkbook(username: string) {
   styleItemSheet(open);
   zebra(open);
 
+  // The chosen period (day / week / month): finished with the time each took, from–to per day, worked on.
+  if (range) {
+    const [r] = await peopleReport(range.from, range.to, { userIds: [u.id] });
+    if (r) addPeopleSheets(wb, [r], { prefix: "Period · ", only: ["Day by day", "Finished", "Worked on"] });
+  }
+
   return { wb, filename: `${fileSafe(brand.name)}-${u.username}-${cairoDate(new Date())}.xlsx`, name: u.name };
 }
 
@@ -276,4 +284,113 @@ export async function workbookResponse(wb: ExcelJS.Workbook, filename: string) {
       "Cache-Control": "no-store",
     },
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* Reports: people (finished, time, from–to, open) and brands           */
+/* ------------------------------------------------------------------ */
+
+const hours = (ms: number) => (ms ? Math.round((ms / 3_600_000) * 100) / 100 : "");
+
+function addPeopleSheets(wb: ExcelJS.Workbook, rows: PersonReport[], opts: { prefix?: string; only?: string[] } = {}) {
+  const sheet = (w: ExcelJS.Workbook, name: string, cols: { header: string; key: string; width: number }[]) =>
+    baseSheet(opts.only && !opts.only.includes(name) ? new ExcelJS.Workbook() : w, `${opts.prefix ?? ""}${name}`, cols);
+  const sum = sheet(wb, "People", [
+    { header: "Person", key: "name", width: 18 },
+    { header: "Finished", key: "finished", width: 10 },
+    { header: "Extra finished", key: "extra", width: 13 },
+    { header: "Hours worked", key: "hours", width: 13 },
+    { header: "Days", key: "days", width: 7 },
+    { header: "Still open", key: "open", width: 11 },
+  ]);
+  for (const r of rows) sum.addRow({ name: r.person.name, finished: r.finished.length + r.tasksDone.length, extra: r.extrasDone, hours: hours(r.workedMs), days: r.days.length, open: r.open.length });
+  zebra(sum);
+
+  const days = sheet(wb, "Day by day", [
+    { header: "Person", key: "name", width: 18 },
+    { header: "Day", key: "day", width: 12 },
+    { header: "From", key: "from", width: 9 },
+    { header: "To", key: "to", width: 9 },
+    { header: "Hours worked", key: "hours", width: 13 },
+    { header: "Finished", key: "finished", width: 10 },
+  ]);
+  for (const r of rows) for (const d of r.days) days.addRow({ name: r.person.name, day: formatDMY(d.day), from: d.from ? formatTime(d.from) : "", to: d.to ? formatTime(d.to) : "", hours: hours(d.workedMs), finished: d.finished });
+  zebra(days);
+
+  const fin = sheet(wb, "Finished", [
+    { header: "Person", key: "name", width: 16 },
+    { header: "Title", key: "title", width: 36 },
+    { header: "Brand / client", key: "brand", width: 22 },
+    { header: "Step", key: "step", width: 16 },
+    { header: "Extra", key: "extra", width: 7 },
+    { header: "Started", key: "started", width: 18 },
+    { header: "Finished", key: "at", width: 18 },
+    { header: "Hours it took", key: "hours", width: 13 },
+    { header: "Late days", key: "late", width: 10 },
+  ]);
+  for (const r of rows) {
+    for (const f of r.finished)
+      fin.addRow({ name: r.person.name, title: f.title, brand: f.brand?.name ?? f.client ?? "", step: STAGE_META[f.kind].label, extra: f.extra ? "yes" : "", started: f.startedAt ? formatDateTime(f.startedAt) : "", at: formatDateTime(f.completedAt), hours: hours(f.workedMs), late: f.lateDays || "" });
+    for (const t of r.tasksDone) fin.addRow({ name: r.person.name, title: t.title, brand: "", step: `Task from ${t.createdByName}`, extra: "", started: "", at: formatDateTime(t.doneAt), hours: "", late: "" });
+  }
+  zebra(fin);
+
+  const work = sheet(wb, "Worked on", [
+    { header: "Person", key: "name", width: 16 },
+    { header: "Title", key: "title", width: 36 },
+    { header: "Brand / client", key: "brand", width: 22 },
+    { header: "Step", key: "step", width: 16 },
+    { header: "Status", key: "status", width: 12 },
+    { header: "From", key: "from", width: 18 },
+    { header: "To", key: "to", width: 18 },
+    { header: "Hours", key: "hours", width: 9 },
+  ]);
+  for (const r of rows)
+    for (const w of r.sessions)
+      work.addRow({ name: r.person.name, title: w.title, brand: w.brand?.name ?? w.client ?? "", step: w.kind ? STAGE_META[w.kind].label : "", status: w.status === "adjusting" ? "Adjusting" : "In progress", from: formatDateTime(w.startedAt), to: w.endedAt ? formatDateTime(w.endedAt) : "now", hours: hours(w.ms) });
+  zebra(work);
+
+  const open = sheet(wb, "Not finished", [{ header: "Person", key: "person", width: 16 }, ...ITEM_COLUMNS]);
+  for (const r of rows) for (const i of r.open) open.addRow({ person: r.person.name, ...itemRow(i) });
+  styleItemSheet(open);
+  zebra(open);
+}
+
+export async function reportWorkbook(view: "people" | "brands", from: string, to: string, dueBy: string, onlyUserId?: string) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = brand.appName;
+  const span = from === to ? from : `${from}_${to}`;
+  if (view === "people") {
+    addPeopleSheets(wb, await peopleReport(from, to, onlyUserId ? { userIds: [onlyUserId] } : {}));
+    return { wb, filename: `${fileSafe(brand.name)}-people-${span}.xlsx` };
+  }
+  const rows = await brandsReport(from, to, dueBy);
+  const sum = sheet(wb, "Brands", [
+    { header: "Brand", key: "brand", width: 24 },
+    { header: "Things that happened", key: "happened", width: 20 },
+    { header: "Steps finished", key: "steps", width: 14 },
+    { header: "Published", key: "published", width: 11 },
+    { header: "Not finished", key: "open", width: 13 },
+    { header: `Due by ${formatDMY(dueBy)}`, key: "due", width: 16 },
+  ]);
+  for (const b of rows) sum.addRow({ brand: b.brand.name, happened: b.happenedCount, steps: b.finishedSteps.length, published: b.published.length, open: b.notFinished.length, due: b.dueSoon.length });
+  zebra(sum);
+  const due = sheet(wb, "Due soon", ITEM_COLUMNS);
+  for (const b of rows) for (const i of b.dueSoon) due.addRow(itemRow(i));
+  styleItemSheet(due);
+  zebra(due);
+  const steps = sheet(wb, "Finished steps", [
+    { header: "Brand", key: "brand", width: 22 },
+    { header: "Title", key: "title", width: 36 },
+    { header: "Step", key: "step", width: 16 },
+    { header: "By", key: "by", width: 16 },
+    { header: "At", key: "at", width: 18 },
+  ]);
+  for (const b of rows) for (const s of b.finishedSteps) steps.addRow({ brand: b.brand.name, title: s.title, step: STAGE_META[s.kind].label, by: s.by ?? "", at: formatDateTime(s.at) });
+  zebra(steps);
+  const open = sheet(wb, "Not finished", ITEM_COLUMNS);
+  for (const b of rows) for (const i of b.notFinished) open.addRow(itemRow(i));
+  styleItemSheet(open);
+  zebra(open);
+  return { wb, filename: `${fileSafe(brand.name)}-brands-${span}.xlsx` };
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { AlertTriangle, AtSign, Bell, BellRing, CheckCheck, ClipboardCheck, Clock, CornerUpLeft, Inbox, MessageSquare, PartyPopper, ThumbsUp, UserPlus } from "lucide-react";
+import { AlertTriangle, AtSign, Bell, BellRing, Check, CheckCheck, ClipboardCheck, Clock, CornerUpLeft, Inbox, MessageSquare, PartyPopper, ThumbsUp, UserPlus } from "lucide-react";
 import { markReadAction } from "@/app/actions";
 import { formatRelative } from "@/lib/dates";
 
@@ -99,11 +99,27 @@ export function NotificationBell() {
     };
   }, [open]);
 
-  const markRead = async (ids?: string[]) => {
+  const markRead = async (ids?: string[], alerts?: string[]) => {
+    // Clear it on screen right away; the server catches up.
+    setFeed((f) =>
+      f
+        ? {
+            unread: ids ? Math.max(0, f.unread - f.notifications.filter((n) => ids.includes(n.id) && !n.read).length) : alerts ? f.unread : 0,
+            notifications: f.notifications.map((n) => (!ids && !alerts) || ids?.includes(n.id) ? { ...n, read: true } : n),
+            alerts: alerts ? f.alerts.filter((a) => !alerts.includes(a.id)) : ids ? f.alerts : [],
+          }
+        : f,
+    );
     const fd = new FormData();
     for (const id of ids ?? []) fd.append("id", id);
+    for (const a of alerts ?? []) fd.append("alert", a);
     await markReadAction(null, fd);
     load();
+  };
+  const markAll = async () => {
+    const alerts = feed?.alerts.map((a) => a.id) ?? [];
+    if (alerts.length) await markRead(undefined, alerts);
+    await markRead();
   };
 
   const count = (feed?.unread ?? 0) + (feed?.alerts.length ?? 0);
@@ -133,8 +149,8 @@ export function NotificationBell() {
         <div className="absolute right-0 z-50 mt-2 w-[min(92vw,400px)] animate-in overflow-hidden rounded-2xl border border-line bg-white shadow-pop">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <span className="font-display text-[15px] font-bold">Notifications</span>
-            {!!feed?.unread && (
-              <button type="button" onClick={() => markRead()} className="inline-flex cursor-pointer items-center gap-1 text-[12.5px] font-semibold text-electric hover:underline">
+            {!!count && (
+              <button type="button" onClick={markAll} className="inline-flex cursor-pointer items-center gap-1 text-[12.5px] font-semibold text-electric hover:underline">
                 <CheckCheck className="size-3.5" /> Mark all read
               </button>
             )}
@@ -144,13 +160,16 @@ export function NotificationBell() {
               <div className="border-b border-line bg-[#fffaf5] py-1">
                 <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Needs attention</div>
                 {feed.alerts.map((a) => (
-                  <Link key={a.id} href={a.href ?? `/items/${a.itemId}`} onClick={() => setOpen(false)} className="flex gap-3 px-4 py-2.5 hover:bg-white">
-                    <AlertTriangle className={clsx("mt-0.5 size-4 shrink-0", a.tone === "bad" ? "text-bad" : "text-warn")} />
-                    <span className="min-w-0">
-                      <span className={clsx("block text-[13.5px] font-semibold", a.tone === "bad" && "text-bad")}>{a.title}</span>
-                      <span className="block text-[12.5px] text-muted">{a.body}</span>
-                    </span>
-                  </Link>
+                  <div key={a.id} className="flex items-start hover:bg-white">
+                    <Link href={a.href ?? `/items/${a.itemId}`} onClick={() => setOpen(false)} className="flex min-w-0 flex-1 gap-3 py-2.5 pl-4">
+                      <AlertTriangle className={clsx("mt-0.5 size-4 shrink-0", a.tone === "bad" ? "text-bad" : "text-warn")} />
+                      <span className="min-w-0">
+                        <span className={clsx("block text-[13.5px] font-semibold", a.tone === "bad" && "text-bad")}>{a.title}</span>
+                        <span className="block text-[12.5px] text-muted">{a.body}</span>
+                      </span>
+                    </Link>
+                    <ReadButton label="Got it, hide until tomorrow" onClick={() => markRead(undefined, [a.id])} />
+                  </div>
                 ))}
               </div>
             ) : null}
@@ -166,14 +185,14 @@ export function NotificationBell() {
               feed.notifications.map((n) => {
                 const Icon = ICON[n.kind] ?? Bell;
                 return (
+                  <div key={n.id} className={clsx("flex items-start border-b border-line/70 last:border-0 hover:bg-canvas", !n.read && "bg-electric-soft/40")}>
                   <Link
-                    key={n.id}
                     href={noteHref(n)}
                     onClick={() => {
                       setOpen(false);
                       if (!n.read) markRead([n.id]);
                     }}
-                    className={clsx("flex gap-3 border-b border-line/70 px-4 py-3 last:border-0 hover:bg-canvas", !n.read && "bg-electric-soft/40")}
+                    className="flex min-w-0 flex-1 gap-3 py-3 pl-4"
                   >
                     <span className={clsx("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", n.kind === "sent_back" ? "bg-back-soft text-back" : n.kind === "finished" || n.kind === "approved" ? "bg-ok-soft text-ok" : n.kind === "mention" || n.kind === "task" ? "bg-[#fff1c2] text-[#8a5a00]" : "bg-electric-soft text-electric")}>
                       <Icon className="size-3.5" />
@@ -183,8 +202,9 @@ export function NotificationBell() {
                       {n.body && <span className="mt-0.5 block truncate text-[12.5px] text-muted">{n.body}</span>}
                       <span className="mt-0.5 block text-[11.5px] text-faint">{formatRelative(new Date(n.createdAt))}</span>
                     </span>
-                    {!n.read && <span className="mt-2 size-2 shrink-0 rounded-full bg-electric" aria-label="Unread" />}
                   </Link>
+                  {!n.read ? <ReadButton label="Mark as read" onClick={() => markRead([n.id])} dot /> : <span className="w-11 shrink-0" />}
+                  </div>
                 );
               })
             )}
@@ -201,5 +221,23 @@ export function NotificationBell() {
         </div>
       )}
     </div>
+  );
+}
+
+/** The small round button on each row: tap to mark it read (the count goes down right away). */
+function ReadButton({ label, onClick, dot }: { label: string; onClick: () => void; dot?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} title={label} aria-label={label} className="group/read flex size-11 shrink-0 cursor-pointer items-center justify-center">
+      <span className="flex size-6 items-center justify-center rounded-full border border-line bg-white text-faint transition-colors group-hover/read:border-ok group-hover/read:text-ok">
+        {dot ? (
+          <>
+            <span className="size-2 rounded-full bg-electric group-hover/read:hidden" />
+            <Check className="hidden size-3.5 group-hover/read:block" strokeWidth={3} />
+          </>
+        ) : (
+          <Check className="size-3.5" strokeWidth={3} />
+        )}
+      </span>
+    </button>
   );
 }

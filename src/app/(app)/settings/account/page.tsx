@@ -18,7 +18,7 @@ export default async function AccountPage() {
         <Avatar name={me.name} size={84} />
         <div className="min-w-[200px] flex-1">
           <div className="flex items-center gap-2 font-display text-[20px] font-bold">
-            {me.name} {isManager(me) && <ManagerChip />}
+            {me.name} {(isManager(me) || me.roleLabel) && <ManagerChip role={me.roleLabel} />}
           </div>
           <div className="text-[13.5px] text-muted">
             @{me.username}

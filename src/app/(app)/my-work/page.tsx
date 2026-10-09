@@ -1,31 +1,25 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { AlarmClock, ClipboardCheck, Coffee, Flame, Hourglass, Inbox, MessageSquareText, ThumbsUp, Trophy, type LucideIcon } from "lucide-react";
+import { AlarmClock, ClipboardCheck, Coffee, Flame, Hourglass, Inbox, MessageSquareText, Send, Star, ThumbsUp, Trophy, type LucideIcon } from "lucide-react";
 import { TaskCard } from "@/components/handoff";
 import { TaskRow } from "@/components/tasks";
-import { Avatar, Badge, BrandDot, SectionTitle, TypeIcon } from "@/components/ui";
+import { Avatar, Badge, BrandDot, BrandMark, ProgressChip, SectionTitle, StageChip, TimeSpent, TypeIcon } from "@/components/ui";
 import { can, isManager } from "@/domain/permissions";
-import { STAGE_META, isNewTask, isNewWork } from "@/domain/workflow";
-import { addDays, formatDateTime, formatRelative, monthName, monthRange, todayISO, weekRange } from "@/lib/dates";
+import { STAGE_META, isNewTask } from "@/domain/workflow";
+import { addDays, formatDateTime, formatDay, formatRelative, monthName, monthRange, todayISO, weekRange } from "@/lib/dates";
 import { personPerMonth } from "@/server/stats";
 import { requireUser } from "@/server/auth";
-import { getActivePeople, getOpenItems } from "@/server/cached";
-import { getMyMessages, getPersonCompletions, getPersonWork, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
+import { getActivePeople, getAllBrands, getOpenItems } from "@/server/cached";
+import { getActivePlatforms, getMyMessages, getPersonCompletions, getPersonWork, myBrandIds, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
 import { getTasksFor, getTasksGivenBy } from "@/server/tasks";
+import { attachmentsFor } from "@/server/attachments";
 import { BRAND } from "@/config/brand";
 import { dailyLine, teamEmoji } from "@/lib/cheer";
 
 export const metadata = { title: "My tasks" };
 
-/** New work first, then late, then posting within 48h, then sent-back, then by deadline / posting date. */
-function urgency(i: WorkItem) {
-  const c = i.current!;
-  if (isNewWork(i)) return 0;
-  if (c.health === "overdue") return 1;
-  if (i.hot) return 2;
-  if (c.round > 1 && c.returnedAt) return 3;
-  return 4;
-}
+/** The day a piece of work belongs to: its posting date, else the step's deadline. */
+const dayOf = (i: WorkItem) => i.postingDate ?? i.current?.deadline ?? null;
 
 const PERIODS = [
   { key: "", label: "Everything" },
@@ -44,7 +38,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const sp = await searchParams;
   const today = todayISO();
   const manager = isManager(user);
-  const [{ next }, recent, open, people, messages, myTasks, given] = await Promise.all([
+  const [{ next }, recent, open, people, messages, myTasks, given, brands, platforms] = await Promise.all([
     getPersonWork(user.id, today),
     getPersonCompletions(user.id, addDays(today, -13), today),
     getOpenItems(),
@@ -52,6 +46,8 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
     getMyMessages(user.id),
     getTasksFor(user.id, today),
     manager ? getTasksGivenBy(user.id, today) : Promise.resolve([]),
+    getAllBrands(),
+    getActivePlatforms(),
   ]);
   const pick = people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }));
   const rights = { deadline: can.setDeadline(user), assign: can.assign(user), review: can.review(user) };
@@ -62,13 +58,13 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
     period === "today" ? today : period === "week" ? weekRange(today).end : period === "month" ? monthRange(Number(today.slice(0, 4)), Number(today.slice(5, 7))).end : null;
   const inPeriod = (d: string | null | undefined) => !until || (!!d && d <= until);
 
-  const allItems = tasksFor(open, user).sort(
-    (a, b) =>
-      urgency(a) - urgency(b) ||
-      (urgency(a) === 0 ? (b.current?.activatedAt?.getTime() ?? 0) - (a.current?.activatedAt?.getTime() ?? 0) : 0) ||
-      (a.current?.deadline ?? a.postingDate ?? "9").localeCompare(b.current?.deadline ?? b.postingDate ?? "9"),
-  );
-  const reviews = reviewsFor(open, user).filter((i) => !allItems.includes(i));
+  // Sent for approval = no longer on you (it's with the reviewer); shown apart with the time it took.
+  const mine = tasksFor(open, user);
+  const sent = mine.filter((i) => i.current?.progress === "waiting_approval" && i.current.assignee?.id === user.id);
+  const allItems = mine
+    .filter((i) => !sent.includes(i))
+    .sort((a, b) => (dayOf(a) ?? "9").localeCompare(dayOf(b) ?? "9") || (b.current?.activatedAt?.getTime() ?? 0) - (a.current?.activatedAt?.getTime() ?? 0));
+  const reviews = reviewsFor(open, user).filter((i) => !mine.includes(i));
   const openTasks = myTasks.filter((t) => !t.doneAt);
   // Manager to-dos: new ones first (newest on top), then by deadline; finished ones last.
   const taskOrder = (t: (typeof myTasks)[number]) => (t.doneAt ? 2 : isNewTask(t) ? 0 : 1);
@@ -78,18 +74,22 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
       (taskOrder(a) === 0 ? b.createdAt.getTime() - a.createdAt.getTime() : (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9")),
   );
 
-  // Brand filter (brands + one-off projects), only for places that actually have tasks.
-  const places = new Map<string, { key: string; label: string; color?: string; n: number }>();
-  for (const i of allItems) {
+  // One group per brand: my brands first (where I'm the usual person), then the others, then one-off projects.
+  const myBrands = myBrandIds(brands, user.id);
+  const logoOf = new Map(brands.map((b) => [b.id, b.logoUrl]));
+  const items = allItems.filter((i) => inPeriod(i.current?.deadline ?? i.postingDate));
+  type Group = { key: string; label: string; color: string | null; logoUrl: string | null; mine: boolean; items: WorkItem[] };
+  const groups = new Map<string, Group>();
+  for (const i of items) {
     const key = i.brand ? i.brand.slug : "projects";
-    const p = places.get(key) ?? { key, label: i.brand ? i.brand.name : "One-off projects", color: i.brand?.color, n: 0 };
-    p.n++;
-    places.set(key, p);
+    const g = groups.get(key) ?? { key, label: i.brand ? i.brand.name : "One-off projects", color: i.brand?.color ?? null, logoUrl: i.brand ? (logoOf.get(i.brand.id) ?? null) : null, mine: !!i.brand && myBrands.has(i.brand.id), items: [] };
+    g.items.push(i);
+    groups.set(key, g);
   }
-  const filter = typeof sp.brand === "string" && places.has(sp.brand) ? sp.brand : "";
-  const items = allItems
-    .filter((i) => !filter || (i.brand ? i.brand.slug : "projects") === filter)
-    .filter((i) => inPeriod(i.current?.deadline ?? i.postingDate));
+  const ordered = [...groups.values()].sort((a, b) => Number(b.mine) - Number(a.mine) || Number(a.key === "projects") - Number(b.key === "projects") || a.label.localeCompare(b.label));
+  const mineGroups = ordered.filter((g) => g.mine);
+  const otherGroups = ordered.filter((g) => !g.mine);
+  const files = await attachmentsFor({ itemIds: [...items, ...reviews].map((i) => i.id), taskIds: [...myTasks, ...given].map((t) => t.id) });
   const tasksShown = myTasks.filter((t) => t.doneAt || inPeriod(t.dueDate));
   const lateCount = allItems.filter((i) => i.current?.health === "overdue").length + openTasks.filter((t) => t.dueDate && t.dueDate < today).length;
   const hotCount = allItems.filter((i) => i.hot).length;
@@ -99,7 +99,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const total = allItems.length + reviews.length + openTasks.length;
   const q = (patch: Record<string, string>) => {
     const p = new URLSearchParams();
-    const merged = { when: period, brand: filter, ...patch };
+    const merged = { when: period, ...patch };
     for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
     return `/my-work${p.size ? `?${p}` : ""}`;
   };
@@ -184,7 +184,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
           </SectionTitle>
           <div className="space-y-3">
             {reviews.map((i) => (
-              <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} mode="review" />
+              <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} mode="review" attachments={files.get(i.id)} manager={manager} />
             ))}
           </div>
         </section>
@@ -199,59 +199,110 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
           </SectionTitle>
           <div className="card divide-y divide-line">
             {tasksShown.map((t) => (
-              <TaskRow key={t.id} t={t} today={today} mode="mine" canDelete={manager} />
+              <TaskRow key={t.id} t={t} today={today} mode="mine" canDelete={manager} files={files.get(t.id)} meId={user.id} manager={manager} />
             ))}
           </div>
         </section>
       )}
 
-      <section>
-        <SectionTitle right={<span className="text-[13px] text-muted">{items.length}</span>}>
-          <span className="inline-flex items-center gap-2">
-            {hotCount > 0 && <Flame className="size-4 text-[#ff8a1f]" />} Content to do
-          </span>
-        </SectionTitle>
-        {places.size > 1 && (
-          <div className="mb-3 flex flex-wrap gap-2">
-            <Link href={q({ brand: "" })} className={chip(!filter)}>
-              All <span className="opacity-60">{allItems.length}</span>
-            </Link>
-            {[...places.values()].map((p) => (
-              <Link key={p.key} href={q({ brand: p.key })} className={chip(filter === p.key)}>
-                {p.color && <BrandDot color={p.color} />} {p.label} <span className="opacity-60">{p.n}</span>
+      {items.length === 0 && reviews.length === 0 && tasksShown.length === 0 && (
+        <div className="card flex flex-col items-center px-6 py-12 text-center">
+          <Coffee className="mb-3 size-8 text-electric" />
+          <div className="font-display text-[16px] font-bold">{period ? "Nothing due in this period" : "You’re all caught up"}</div>
+          <div className="mt-1 text-[13px] text-muted">New work sent to you or your team shows up here automatically, and in the bell.</div>
+        </div>
+      )}
+
+      {ordered.length > 1 && (
+        <nav aria-label="Jump to a brand" className="-mt-4 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+          {ordered.map((g) => (
+            <a key={g.key} href={`#b-${g.key}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-white py-1 pl-1 pr-2.5 text-[12.5px] font-medium text-ink-2 transition-colors hover:border-line-strong">
+              {g.color ? <BrandMark name={g.label} color={g.color} logoUrl={g.logoUrl} size={18} className="!rounded-full" /> : <span className="size-[18px] rounded-full bg-canvas" />}
+              {g.label} <span className="text-faint">{g.items.length}</span>
+            </a>
+          ))}
+        </nav>
+      )}
+
+      {mineGroups.length > 0 && (
+        <section className="space-y-6">
+          <SectionTitle right={<span className="text-[13px] text-muted">{mineGroups.reduce((n, g) => n + g.items.length, 0)}</span>}>
+            <span className="inline-flex items-center gap-2">
+              <Star className="size-4 fill-[#f5b301] text-[#f5b301]" /> My brands
+            </span>
+          </SectionTitle>
+          {mineGroups.map((g) => (
+            <BrandGroup key={g.key} g={g} render={(i) => <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} allPlatforms={platforms} attachments={files.get(i.id)} manager={manager} />} />
+          ))}
+        </section>
+      )}
+
+      {otherGroups.length > 0 && (
+        <section className="space-y-6">
+          {mineGroups.length > 0 && (
+            <SectionTitle right={<span className="text-[13px] text-muted">{otherGroups.reduce((n, g) => n + g.items.length, 0)}</span>}>
+              <span className="inline-flex items-center gap-2">
+                {hotCount > 0 && <Flame className="size-4 text-[#ff8a1f]" />} Other brands
+              </span>
+            </SectionTitle>
+          )}
+          {otherGroups.map((g) => (
+            <BrandGroup key={g.key} g={g} render={(i) => <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} allPlatforms={platforms} attachments={files.get(i.id)} manager={manager} />} />
+          ))}
+        </section>
+      )}
+
+      {sent.length > 0 && (
+        <section>
+          <SectionTitle right={<span className="text-[13px] text-muted">With the reviewer now, not on you</span>}>
+            <span className="inline-flex items-center gap-2">
+              <Send className="size-4 text-[#0f766e]" /> Sent, waiting approval
+              <span className="rounded-full bg-[#e3f5f3] px-2 py-0.5 text-[12px] text-[#0f766e]">{sent.length}</span>
+            </span>
+          </SectionTitle>
+          <div className="card divide-y divide-line">
+            {sent.map((i) => (
+              <Link key={i.id} href={`/items/${i.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 hover:bg-[#f8faff]">
+                <TypeIcon type={i.type} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{i.title}</div>
+                  <div className="flex items-center gap-1.5 text-[12.5px] text-muted">
+                    {i.brand && <BrandDot color={i.brand.color} />}
+                    {i.brand?.name ?? i.project?.clientName}
+                    {i.current?.progressAt && <> · sent {formatRelative(i.current.progressAt)}</>}
+                  </div>
+                </div>
+                {i.current && <StageChip kind={i.current.kind} short />}
+                {i.current && <TimeSpent ms={i.current.time.ms} prefix="took " />}
+                <ProgressChip progress="waiting_approval" />
               </Link>
             ))}
           </div>
-        )}
-        {items.length ? (
-          <div className="space-y-3">
-            {items.map((i) => (
-              <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} />
-            ))}
-          </div>
-        ) : (
-          <div className="card flex flex-col items-center px-6 py-12 text-center">
-            <Coffee className="mb-3 size-8 text-electric" />
-            <div className="font-display text-[16px] font-bold">{period ? "Nothing due in this period" : "You’re all caught up"}</div>
-            <div className="mt-1 text-[13px] text-muted">New work sent to you or your team shows up here automatically — and in the bell.</div>
-          </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {manager && given.length > 0 && (
         <section id="given" className="scroll-mt-24">
           <SectionTitle right={<span className="text-[13px] text-muted">{given.filter((t) => !t.doneAt).length} still open</span>}>Tasks I gave</SectionTitle>
           <div className="card divide-y divide-line">
             {given.map((t) => (
-              <TaskRow key={t.id} t={t} today={today} mode="given" canDelete />
+              <TaskRow key={t.id} t={t} today={today} mode="given" canDelete files={files.get(t.id)} meId={user.id} manager={manager} />
             ))}
           </div>
         </section>
       )}
 
       {next.length > 0 && (
-        <section>
-          <SectionTitle right={<span className="text-[13px] text-muted">Not late — it hasn&rsquo;t reached you yet</span>}>Coming to you next</SectionTitle>
+        <details className="group">
+          <summary className="mb-3 flex cursor-pointer list-none items-center justify-between gap-3">
+            <h2 className="font-display text-[15px] font-bold text-ink">
+              Coming to you next <span className="ml-1 rounded-full bg-canvas px-2 py-0.5 text-[12px] font-semibold text-muted ring-1 ring-line">{next.length}</span>
+            </h2>
+            <span className="text-[13px] text-muted">
+              Not late, it hasn&rsquo;t reached you yet · <span className="font-medium text-electric group-open:hidden">show</span>
+              <span className="hidden font-medium text-electric group-open:inline">hide</span>
+            </span>
+          </summary>
           <div className="card divide-y divide-line">
             {next.map((i) => (
               <Link key={i.id} href={`/items/${i.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-[#f8faff]">
@@ -269,7 +320,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
               </Link>
             ))}
           </div>
-        </section>
+        </details>
       )}
 
       <section>
@@ -295,6 +346,31 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
           <p className="text-[13px] text-muted">Nothing finished in the last two weeks.</p>
         )}
       </section>
+    </div>
+  );
+}
+
+/** One brand's work, by day: a small day heading whenever the day changes. */
+function BrandGroup({ g, render }: { g: { key: string; label: string; color: string | null; logoUrl: string | null; items: WorkItem[] }; render: (i: WorkItem) => React.ReactNode }) {
+  return (
+    <div id={`b-${g.key}`} className="scroll-mt-24">
+      <div className="mb-2.5 flex items-center gap-2.5">
+        {g.color ? <BrandMark name={g.label} color={g.color} logoUrl={g.logoUrl} size={26} /> : <span className="grid size-[26px] place-items-center rounded-md bg-canvas text-[12px]">◆</span>}
+        <h3 className="font-display text-[16px] font-bold">{g.label}</h3>
+        <span className="rounded-full bg-white px-2 py-0.5 text-[12px] font-semibold text-muted ring-1 ring-line">{g.items.length}</span>
+      </div>
+      <div className="space-y-3 border-l-2 pl-3 sm:pl-4" style={{ borderColor: g.color ? `${g.color}40` : "var(--color-line)" }}>
+        {g.items.map((i, n) => {
+          const day = dayOf(i);
+          const head = n === 0 || day !== dayOf(g.items[n - 1]);
+          return (
+            <div key={i.id} className="space-y-2">
+              {head && <div className="pt-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">{day ? formatDay(day, { weekday: true }) : "No date"}</div>}
+              {render(i)}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

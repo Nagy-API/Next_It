@@ -5,16 +5,18 @@ import { eq } from "drizzle-orm";
 import { ArrowLeft, FileSpreadsheet } from "lucide-react";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { ItemList } from "@/components/item-row";
 import { RangePicker } from "@/components/range-picker";
-import { Avatar, Badge, BrandDot, SectionTitle, Stat, TypeIcon } from "@/components/ui";
-import { STAGE_META, TEAM_META } from "@/domain/workflow";
-import { formatDateTime, formatDay, todayISO } from "@/lib/dates";
+import { PersonReportBody, PersonReportHead } from "@/components/report-parts";
+import { Avatar, ManagerChip, Stat } from "@/components/ui";
+import { TEAM_META } from "@/domain/workflow";
+import { formatDay, todayISO } from "@/lib/dates";
 import { Delta, MonthColumns } from "@/components/charts";
 import { personPerMonth } from "@/server/stats";
 import { resolveRange } from "@/lib/ranges";
 import { requireUser } from "@/server/auth";
-import { getInsights, getPersonCompletions, getPersonWork } from "@/server/queries";
+import { getInsights } from "@/server/queries";
+import { peopleReport } from "@/server/reports";
+import { getOpenItems } from "@/server/cached";
 
 export default async function PersonPage({ params, searchParams }: PageProps<"/team/[username]">) {
   const me = await requireUser();
@@ -23,15 +25,17 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
   if (!isManager(me) && username !== me.username) redirect(`/team/${me.username}`);
   const [person] = await db.select().from(users).where(eq(users.username, username));
   if (!person) notFound();
-  const range = resolveRange(await searchParams);
+  const range = resolveRange({ range: "today", ...(await searchParams) });
+  const single = range.from === range.to;
   const today = todayISO();
-  const [insights, completions, work, months] = await Promise.all([
+  const [insights, months, open] = await Promise.all([
     getInsights(range.from, range.to),
-    getPersonCompletions(person.id, range.from, range.to),
-    getPersonWork(person.id),
     personPerMonth(person.id, Number(today.slice(0, 4)), Number(today.slice(5, 7)), 6),
+    getOpenItems(),
   ]);
+  const [rep] = await peopleReport(range.from, range.to, { userIds: [person.id], open });
   const r = insights.find((x) => x.person.id === person.id)!;
+  const label = single ? (range.from === today ? "today" : formatDay(range.from)) : `${formatDay(range.from, { weekday: false })} to ${formatDay(range.to, { weekday: false })}`;
   return (
     <div className="space-y-7">
       <div>
@@ -41,7 +45,9 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
         <div className="mt-3 flex flex-wrap items-center gap-4">
           <Avatar name={person.name} size={52} />
           <div>
-            <h1 className="font-display text-[26px] font-bold">{person.name}</h1>
+            <h1 className="flex flex-wrap items-center gap-2 font-display text-[26px] font-bold">
+              {person.name} {(person.isManager || person.isAdmin || person.roleLabel) && <ManagerChip role={person.roleLabel} className="font-sans" />}
+            </h1>
             <div className="text-[13px] text-muted">
               {person.title}
               {person.teams.length > 0 && ` · ${person.teams.map((t) => TEAM_META[t].label).join(", ")}`}
@@ -49,7 +55,7 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
             </div>
           </div>
           <a
-            href={`/api/export/person/${person.username}`}
+            href={`/api/export/person/${person.username}?from=${range.from}&to=${range.to}`}
             className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[14px] font-semibold text-ink shadow-card hover:border-[#1d6f42] hover:text-[#1d6f42]"
           >
             <FileSpreadsheet className="size-4 text-[#1d6f42]" /> Export to Excel
@@ -73,52 +79,24 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
         </div>
       </section>
       <RangePicker current={range.key} from={range.from} to={range.to} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Stat label="Stages completed" value={r.completed} hint={`${formatDay(range.from, { weekday: false })} – ${formatDay(range.to, { weekday: false })}`} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Stat label="Steps finished" value={r.completed} hint={label} />
         <Stat label="On time" value={r.onTime} tone={r.onTime ? "ok" : undefined} hint={`${r.noDeadline} had no deadline`} />
         <Stat label="Missed deadlines" value={r.late} tone={r.late ? "bad" : undefined} hint={r.excused ? `+${r.excused} excused (not counted)` : "Exceptions never count"} />
+        <Stat label="Extra finished" value={rep?.extrasDone ?? 0} hint="On top of the month's plan" />
         <Stat label="With them now" value={r.openNow} hint={r.overdueNow ? `${r.overdueNow} late now` : "None late"} tone={r.overdueNow ? "bad" : undefined} />
-        <Stat label="Waiting to reach them" value={r.waitingNow} hint="Not their delay" />
       </div>
 
-      <section>
-        <SectionTitle>With {person.name} now</SectionTitle>
-        <ItemList items={work.now} showContext empty={<p className="text-[13px] text-muted">Nothing right now.</p>} />
-      </section>
-
-      <section>
-        <SectionTitle right={<span className="text-[13px] text-muted">{completions.length}</span>}>Completed in this period</SectionTitle>
-        {completions.length ? (
-          <div className="card divide-y divide-line">
-            {completions.map((c) => (
-              <Link key={c.id} href={`/items/${c.itemId}`} className="grid items-center gap-3 px-4 py-2.5 text-[13.5px] hover:bg-[#f8faff] md:grid-cols-[minmax(0,1fr)_180px_170px_150px]">
-                <span className="flex min-w-0 items-center gap-2">
-                  <TypeIcon type={c.type} />
-                  <span className="truncate font-medium">{c.title}</span>
-                </span>
-                <span className="flex items-center gap-1.5 truncate text-muted">
-                  {c.brandColor && <BrandDot color={c.brandColor} />}
-                  {c.brandName ?? c.clientName} · {STAGE_META[c.kind].short}
-                </span>
-                <span className="text-[12.5px] text-muted">{formatDateTime(c.completedAt)}</span>
-                <span className="flex justify-end">
-                  {c.round > 1 ? (
-                    <Badge tone="back">Revision</Badge>
-                  ) : !c.deadline ? (
-                    <Badge tone="neutral">No deadline</Badge>
-                  ) : c.lateDays > 0 ? (
-                    <Badge tone={c.excused ? "neutral" : "bad"}>{c.excused ? `${c.lateDays}d late · exception` : `${c.lateDays}d late`}</Badge>
-                  ) : (
-                    <Badge tone="ok">On time</Badge>
-                  )}
-                </span>
-              </Link>
-            ))}
+      {rep && (
+        <section className="card overflow-hidden">
+          <div className="border-b border-line bg-[#fafbfe] px-5 py-3.5">
+            <PersonReportHead r={rep} single={single} />
           </div>
-        ) : (
-          <p className="text-[13px] text-muted">No completed stages in this period.</p>
-        )}
-      </section>
+          <div className="p-5">
+            <PersonReportBody r={rep} single={single} />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

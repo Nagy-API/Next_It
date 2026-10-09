@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { Archive, CalendarDays, ChevronLeft, ChevronRight, List, Plus, Settings2 } from "lucide-react";
 import { BulkList } from "@/components/bulk-list";
 import { MonthCalendar } from "@/components/month-calendar";
-import { Badge, BrandDot, ButtonLink, Empty, Person, ProgressBar, Stat } from "@/components/ui";
+import { Badge, BrandMark, ButtonLink, Empty, Person, ProgressBar, Stat } from "@/components/ui";
 import { TYPE_META } from "@/domain/workflow";
 import type { ContentType } from "@/db/schema";
 import { monthKey, monthLabel, monthName, parseMonthKey, shiftMonth, todayISO } from "@/lib/dates";
@@ -91,8 +91,8 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
           <Link href="/brands" className="text-[13px] text-muted hover:text-electric">
             Brands
           </Link>
-          <h1 className="mt-1 flex items-center gap-2.5 font-display text-[28px] font-bold tracking-[-0.01em]">
-            <BrandDot color={brand.color} className="size-3.5" />
+          <h1 className="mt-1 flex items-center gap-3 font-display text-[26px] font-bold tracking-[-0.01em] sm:text-[28px]">
+            <BrandMark name={brand.name} color={brand.color} logoUrl={brand.logoUrl} size={38} className="!rounded-xl" />
             {brand.name}
             {!brand.isActive && (
               <Badge tone="neutral" icon={Archive}>

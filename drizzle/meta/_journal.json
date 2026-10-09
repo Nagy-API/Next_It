@@ -71,6 +71,13 @@
       "when": 1791335092971,
       "tag": "0009_friendly_iron_lad",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791538752449,
+      "tag": "0010_needy_lady_mastermind",
+      "breakpoints": true
     }
   ]
 }

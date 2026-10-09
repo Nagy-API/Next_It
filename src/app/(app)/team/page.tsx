@@ -51,7 +51,7 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
             <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
               {g.label} <span className="rounded-full bg-canvas px-2 text-[12px] font-semibold text-muted">{g.list.length}</span>
             </h2>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {g.list.map((r) => (
                 <PersonCard key={r.person.id} r={r} showStats={manager || r.person.id === me.id} q={`?range=${range.key}${range.key === "custom" ? `&from=${range.from}&to=${range.to}` : ""}`} />
               ))}
@@ -70,7 +70,7 @@ function PersonCard({ r, q, showStats }: { r: PersonInsight; q: string; showStat
       <Avatar name={r.person.name} size={44} />
       <div className="min-w-0">
         <div className="flex items-center gap-2 font-display text-[16px] font-bold group-hover:text-electric">
-          {r.person.name} {(r.person.isManager || r.person.isAdmin) && <ManagerChip />}
+          {r.person.name} {(r.person.isManager || r.person.isAdmin || r.person.roleLabel) && <ManagerChip role={r.person.roleLabel} />}
         </div>
         <div className="truncate text-[12.5px] text-muted">
           {r.person.isActive ? r.person.title || r.person.teams.map((t) => TEAM_META[t].label).join(" · ") : "Inactive"}
