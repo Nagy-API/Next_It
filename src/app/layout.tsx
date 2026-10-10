@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Inter, Montserrat } from "next/font/google";
 import { brandCss } from "@/config/brand";
 import { getWorkspace } from "@/server/settings";
@@ -21,8 +21,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   // Every page renders per request so Next.js can put the CSP nonce (src/proxy.ts) on its scripts.
   await headers();
   const ws = await getWorkspace();
+  // Light by default; each device remembers its own choice (cookie set by the theme toggle), so there's no flash.
+  const dark = (await cookies()).get("theme")?.value === "dark";
   return (
-    <html lang="en" className={`${inter.variable} ${montserrat.variable}`}>
+    <html lang="en" className={`${inter.variable} ${montserrat.variable}${dark ? " dark" : ""}`}>
       <head>
         {/* Brand colours: Settings → Workspace, else src/config/brand.ts */}
         <style dangerouslySetInnerHTML={{ __html: brandCss(ws) }} />

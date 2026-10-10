@@ -101,7 +101,7 @@ export function QuickTable({ step, hint, items, platforms }: { step: StageKind; 
               <div className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
                 <span className="text-muted">into</span>
                 {cols.map((p) => (
-                  <button key={p.id} type="button" onClick={() => setPasteTarget(p.id)} className={clsx("inline-flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 font-medium", target === p.id ? "border-electric bg-electric-soft" : "border-line bg-white")}>
+                  <button key={p.id} type="button" onClick={() => setPasteTarget(p.id)} className={clsx("inline-flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 font-medium", target === p.id ? "border-electric bg-electric-soft" : "border-line bg-surface")}>
                     <PlatformIcon name={p.name} size={18} /> {p.name}
                   </button>
                 ))}
@@ -134,7 +134,7 @@ export function QuickTable({ step, hint, items, platforms }: { step: StageKind; 
 
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[640px] text-[13px]">
-          <thead className="bg-[#fafbfd] text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+          <thead className="bg-subtle text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
             <tr>
               <th className="px-3 py-2">Item</th>
               <th className="w-[90px] px-2 py-2">Posting</th>

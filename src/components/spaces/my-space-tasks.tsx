@@ -19,7 +19,7 @@ export function MySpaceTasks({ tasks }: { tasks: MySpaceTask[] }) {
       <div className="space-y-4">
         {spaces.map((s) => (
           <div key={s.id} className="card overflow-hidden" style={{ borderLeft: `4px solid ${s.color}` }}>
-            <Link href={`/spaces/${s.id}`} className="flex items-center gap-2 border-b border-line bg-[#fafbfd] px-4 py-2 text-[13px] font-semibold text-ink-2 hover:text-electric">
+            <Link href={`/spaces/${s.id}`} className="flex items-center gap-2 border-b border-line bg-subtle px-4 py-2 text-[13px] font-semibold text-ink-2 hover:text-electric">
               <span>{s.icon}</span> {s.name}
             </Link>
             <ul className="divide-y divide-line/70">

@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
-export type SettingsTab = "workspace" | "access" | "brands" | "people" | "platforms" | "account";
+export type SettingsTab = "workspace" | "messages" | "access" | "brands" | "people" | "platforms" | "account";
 const TABS: { key: SettingsTab; href: string; label: string }[] = [
   { key: "workspace", href: "/settings/workspace", label: "Workspace" },
+  { key: "messages", href: "/settings/messages", label: "Messages" },
   { key: "access", href: "/settings/access", label: "Access" },
   { key: "brands", href: "/settings/brands", label: "Brands" },
   { key: "people", href: "/settings/people", label: "People" },

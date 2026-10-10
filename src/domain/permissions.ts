@@ -51,7 +51,8 @@ export const PERMISSIONS = {
   "deadline.change": { group: "Managing", label: "Change set deadlines", hint: "And excuse missed ones", rule: admin },
   "time.edit": { group: "Managing", label: "Edit worked time", hint: "Correct the clock on any step", rule: admin },
   "extra.mark": { group: "Managing", label: "Mark work as extra", hint: "Or not extra", rule: isManager },
-  "announce": { group: "Managing", label: "Post the message of the day", hint: "Pinned for everyone", rule: isManager },
+  "announce": { group: "Managing", label: "Write the daily message", hint: "The line at the top of every page (Settings → Messages)", rule: admin },
+  "updates.post": { group: "Managing", label: "Post Big updates", hint: "Meetings, thanks, news: shown big on the Overview", rule: admin },
   // Seeing numbers
   "dashboard.see": { group: "Numbers", label: "See the Dashboard", hint: "Every brand, team and person", rule: isManager },
   "reports.see": { group: "Numbers", label: "See Reports", hint: "People and brands, any period, Excel", rule: isManager },
@@ -162,6 +163,13 @@ export const can = {
   announce(w: Who) {
     return allowed(w, "announce");
   },
+  postUpdates(w: Who) {
+    return allowed(w, "updates.post");
+  },
+  /** Download a brand's month plan in Excel (content people and managers). */
+  exportPlan(w: Who) {
+    return allowed(w, "content.edit") || allowed(w, "reports.see");
+  },
   manageWorkflow(w: Who) {
     return allowed(w, "workflow.manage");
   },
@@ -176,7 +184,7 @@ export const can = {
   },
   /** Anything in Settings beyond "My account". */
   seeSettings(w: Who) {
-    return (["workspace.customize", "access.manage", "people.manage", "brands.manage", "platforms.manage", "workflow.manage"] as PermissionKey[]).some((k) => allowed(w, k));
+    return (["workspace.customize", "access.manage", "people.manage", "brands.manage", "platforms.manage", "workflow.manage", "announce", "updates.post"] as PermissionKey[]).some((k) => allowed(w, k));
   },
 };
 

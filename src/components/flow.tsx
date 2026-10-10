@@ -1,8 +1,8 @@
 import clsx from "clsx";
-import { AlertTriangle, Check, CornerUpLeft, Flag, Hourglass, Send } from "lucide-react";
+import { AlertTriangle, Check, CornerUpLeft, Flag, Flame, Hourglass, Send } from "lucide-react";
 import { PROGRESS_META, STAGE_COLOR, STAGE_META, finalLabel, type StageHealth } from "@/domain/workflow";
 import type { StageKind } from "@/db/schema";
-import { diffDays, formatDateTime, formatDay, plural, todayISO } from "@/lib/dates";
+import { addDays, diffDays, formatDateTime, formatDay, plural, todayISO } from "@/lib/dates";
 import type { StageView, WorkItem } from "@/server/queries";
 import { Avatar, Badge, type Tone } from "./ui";
 
@@ -70,7 +70,7 @@ function NodeIcon({ state, size = 36, kind }: { state: NodeState; size?: number;
   switch (state) {
     case "done":
       return (
-        <span className={cls} style={{ ...st, background: c?.bg ?? "#e6f6ef", color: c?.fg ?? "#0f9d6b", boxShadow: `inset 0 0 0 1.5px ${(c?.fg ?? "#0f9d6b")}40` }}>
+        <span className={cls} style={{ ...st, background: `color-mix(in srgb, ${c?.fg ?? "#0f9d6b"} 16%, var(--color-surface))`, color: c?.fg ?? "#0f9d6b", boxShadow: `inset 0 0 0 1.5px ${(c?.fg ?? "#0f9d6b")}40` }}>
           <Check className={i} strokeWidth={3} />
         </span>
       );
@@ -82,8 +82,8 @@ function NodeIcon({ state, size = 36, kind }: { state: NodeState; size?: number;
       );
     case "active":
       return (
-        <span className={clsx(cls, "animate-pulse-dot text-white")} style={{ ...st, background: c?.fg ?? "#3b82f6", boxShadow: `0 0 0 4px ${c?.bg ?? "#eaf2ff"}` }}>
-          <span className="size-[30%] rounded-full bg-white" />
+        <span className={clsx(cls, "animate-pulse-dot text-white")} style={{ ...st, background: c?.fg ?? "#3b82f6", boxShadow: `0 0 0 4px color-mix(in srgb, ${c?.fg ?? "#3b82f6"} 18%, var(--color-surface))` }}>
+          <span className="size-[30%] rounded-full bg-surface" />
         </span>
       );
     case "returned":
@@ -100,12 +100,12 @@ function NodeIcon({ state, size = 36, kind }: { state: NodeState; size?: number;
       );
     case "final-waiting":
       return (
-        <span className={clsx(cls, "border-2 border-dashed border-line-strong bg-white text-faint")} style={st}>
+        <span className={clsx(cls, "border-2 border-dashed border-line-strong bg-surface text-faint")} style={st}>
           <Flag className={i} strokeWidth={2} />
         </span>
       );
     default:
-      return <span className={clsx(cls, "border-2 border-line-strong bg-white")} style={st} />;
+      return <span className={clsx(cls, "border-2 border-line-strong bg-surface")} style={st} />;
   }
 }
 
@@ -171,13 +171,13 @@ export function FlowMini({ item, className }: { item: WorkItem; className?: stri
                 "flex size-[22px] items-center justify-center rounded-full text-[10px] font-bold",
                 state === "returned" && "bg-back text-white ring-3 ring-back/20",
                 state === "late" && "bg-bad text-white ring-3 ring-bad/20",
-                state === "waiting" && "border border-line-strong bg-white text-faint",
+                state === "waiting" && "border border-line-strong bg-surface text-faint",
               )}
               style={
                 state === "done"
-                  ? { background: STAGE_COLOR[s.kind].bg, color: STAGE_COLOR[s.kind].fg }
+                  ? { background: `color-mix(in srgb, ${STAGE_COLOR[s.kind].fg} 16%, var(--color-surface))`, color: STAGE_COLOR[s.kind].fg }
                   : state === "active"
-                    ? { background: STAGE_COLOR[s.kind].fg, color: "#fff", boxShadow: `0 0 0 3px ${STAGE_COLOR[s.kind].bg}` }
+                    ? { background: STAGE_COLOR[s.kind].fg, color: "#fff", boxShadow: `0 0 0 3px color-mix(in srgb, ${STAGE_COLOR[s.kind].fg} 18%, var(--color-surface))` }
                     : undefined
               }
             >
@@ -203,6 +203,26 @@ export function ItemStatus({ item }: { item: WorkItem }) {
   if (item.completedAt) return <Badge tone="ok" icon={item.context === "plan" ? Send : Check}>{finalLabel(item.context)}</Badge>;
   const c = item.current;
   if (!c) return null;
+  // Posting today / tomorrow is the loudest thing on a row: nothing should slip.
+  const today = todayISO();
+  if (item.context === "plan" && item.postingDate === today)
+    return (
+      <span className="inline-flex animate-pulse-dot items-center gap-1 whitespace-nowrap rounded-full bg-electric px-2.5 py-0.5 text-[12px] font-bold text-white" title="It posts today and isn't published yet">
+        <Flame className="size-3.5" /> Posts today{item.postingTime ? ` · ${item.postingTime}` : ""}
+      </span>
+    );
+  if (item.context === "plan" && item.postingDate && item.postingDate === addDays(today, 1))
+    return (
+      <Badge tone="warn" icon={Flame} title="It posts tomorrow">
+        Posts tomorrow{item.postingTime ? ` · ${item.postingTime}` : ""}
+      </Badge>
+    );
+  if (item.context === "plan" && item.postingDate && item.postingDate < today && c.kind === "social")
+    return (
+      <Badge tone="bad" icon={Hourglass} title="The posting date has passed and it isn't published yet">
+        Not published yet
+      </Badge>
+    );
   if (item.attention === "at_risk" && c.health !== "overdue")
     return item.postingDate && item.postingDate < todayISO() ? (
       <Badge tone="bad" icon={Hourglass} title="The posting date has passed and it isn't with Social Media yet">

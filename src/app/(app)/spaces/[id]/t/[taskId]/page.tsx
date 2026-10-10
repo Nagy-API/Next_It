@@ -4,10 +4,10 @@ import clsx from "clsx";
 import { ChevronRight, CircleCheck, MessageSquare, Paperclip, Timer, Zap } from "lucide-react";
 import { Attachments } from "@/components/attachments";
 import { Avatar } from "@/components/avatar";
-import { AssigneePicker, DuePicker, FieldEditor, PriorityPicker, QuickAdd, StatusPicker } from "@/components/spaces/controls";
+import { AssigneePicker, DuePicker, FieldContext, FieldEditor, PriorityPicker, QuickAdd, StatusPicker } from "@/components/spaces/controls";
 import { ClockButton, CommentBox, DeleteComment, DeleteTask, DescriptionEdit, MarkStatus, MoveList, TitleEdit } from "@/components/spaces/task-parts";
 import { can } from "@/domain/permissions";
-import { isFinishedKind, type FieldOption, type FieldType } from "@/domain/spaces";
+import { isFinishedKind, type FieldConfig, type FieldOption, type FieldType } from "@/domain/spaces";
 import { cairoDate, formatDateTime, formatDuration, formatRelative, formatTime } from "@/lib/dates";
 import { attachmentsFor } from "@/server/attachments";
 import { requireUser } from "@/server/auth";
@@ -38,7 +38,7 @@ export default async function TaskPage({ params }: PageProps<"/spaces/[id]/t/[ta
   const list = page.lists.find((l) => l.id === task.listId);
   const parent = task.parentId ? page.tasks.find((t) => t.id === task.parentId) : null;
   const statuses = page.statuses.map((s) => ({ id: s.id, name: s.name, color: s.color, kind: s.kind }));
-  const fields = page.fields.map((f) => ({ id: f.id, name: f.name, type: f.type as FieldType, options: f.options as FieldOption[] }));
+  const fields = page.fields.map((f) => ({ id: f.id, name: f.name, type: f.type as FieldType, options: f.options as FieldOption[], config: f.config as FieldConfig | null }));
   const doneStatus = page.statuses.find((s) => s.kind === "done");
   const openStatus = page.statuses.find((s) => s.kind === "open");
   const myClock = page.sessions.find((s) => s.userId === me.id && !s.endedAt);
@@ -114,11 +114,13 @@ export default async function TaskPage({ params }: PageProps<"/spaces/[id]/t/[ta
                 <MoveList taskId={task.id} listId={task.listId} lists={page.lists.map((l) => ({ id: l.id, name: l.name }))} />
               </Prop>
             )}
-            {fields.map((f) => (
-              <Prop key={f.id} label={f.name}>
-                <FieldEditor taskId={task.id} field={f} value={task.values[f.id]} people={people} disabled={!work} />
-              </Prop>
-            ))}
+            <FieldContext meId={me.id} tasks={page.tasks.map((t) => ({ id: t.id, title: t.title }))}>
+              {fields.map((f) => (
+                <Prop key={f.id} label={f.name}>
+                  <FieldEditor taskId={task.id} field={f} value={task.values[f.id]} people={people} disabled={!work} />
+                </Prop>
+              ))}
+            </FieldContext>
           </section>
 
           {/* Description */}
@@ -136,7 +138,7 @@ export default async function TaskPage({ params }: PageProps<"/spaces/[id]/t/[ta
                 </h2>
                 {page.subtasks.length > 0 && (
                   <>
-                    <div className="h-1.5 max-w-[200px] flex-1 overflow-hidden rounded-full bg-[#e8ecf3]">
+                    <div className="h-1.5 max-w-[200px] flex-1 overflow-hidden rounded-full bg-track">
                       <div className="h-full rounded-full bg-ok transition-[width]" style={{ width: `${(subDone / page.subtasks.length) * 100}%` }} />
                     </div>
                     <span className="text-[12.5px] tabular-nums text-muted">

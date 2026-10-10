@@ -6,13 +6,18 @@ import { requireUser } from "@/server/auth";
 import { getActivePeople, getAllBrands } from "@/server/cached";
 import { BrandActiveToggle, BrandDefaultSelect, BrandEdit, NewBrandForm } from "../forms";
 import { can } from "@/domain/permissions";
+import { deletedBrands } from "@/server/admin";
+import { RestoreList } from "@/components/danger";
+import { restoreBrandAction } from "@/app/people-actions";
+import { formatDateTime } from "@/lib/dates";
 
 export const metadata = { title: "Brands · Settings" };
 
 export default async function BrandSettings() {
   const me = await requireUser();
   if (!can.manageBrands(me)) redirect("/settings/account");
-  const [brands, people] = await Promise.all([getAllBrands(), getActivePeople()]);
+  const [all, people, gone] = await Promise.all([getAllBrands(), getActivePeople(), deletedBrands()]);
+  const brands = all.filter((b) => !gone.some((g) => g.id === b.id));
   const pickable = people.map((p) => ({ id: p.id, name: p.name }));
   const inTeam = (t: string) => people.filter((p) => (p.teams as string[]).includes(t)).map((p) => ({ id: p.id, name: p.name }));
   const cols = [
@@ -26,6 +31,7 @@ export default async function BrandSettings() {
   return (
     <div className="space-y-4">
       <NewBrandForm people={pickable} />
+      <RestoreList title="Deleted brands" field="brandId" action={restoreBrandAction} rows={gone.map((g) => ({ id: g.id, name: g.name, color: g.color, when: g.deletedAt ? formatDateTime(g.deletedAt) : "" }))} />
       <div className="card overflow-x-auto">
         <p className="border-b border-line px-4 py-3 text-[13px] text-muted">
           New work on a brand goes to these people automatically. Anyone can still pass a single task to someone else. &ldquo;Whole team&rdquo; means everyone in that team sees it and one of them takes it.

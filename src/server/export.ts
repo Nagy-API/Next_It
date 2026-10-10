@@ -398,3 +398,60 @@ export async function reportWorkbook(view: "people" | "brands", from: string, to
   zebra(open);
   return { wb, filename: `${fileSafe(brand.name)}-brands-${span}.xlsx` };
 }
+
+/* ------------------------------------------------------------------ */
+/* One brand's month plan (title, posting date, Canva slide link…)      */
+/* ------------------------------------------------------------------ */
+
+export async function planWorkbook(brand: { id: string; name: string }, year: number, month: number) {
+  const [plan] = await db.select().from(contentPlans).where(and(eq(contentPlans.brandId, brand.id), eq(contentPlans.year, year), eq(contentPlans.month, month)));
+  const items = plan ? await getWorkItems({ planIds: [plan.id], includeDone: true }) : [];
+  const ws0 = await getWorkspace();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = ws0.name;
+  const ws = baseSheet(wb, `${monthLabel(year, month)}`.slice(0, 31), [
+    { header: "#", key: "n", width: 5 },
+    { header: "Title", key: "title", width: 42 },
+    { header: "Type", key: "type", width: 11 },
+    { header: "Posting date", key: "posting", width: 14 },
+    { header: "Time", key: "time", width: 8 },
+    { header: "Canva slide", key: "canva", width: 14 },
+    { header: "Final file", key: "drive", width: 12 },
+    { header: "Step / status", key: "status", width: 20 },
+    { header: "With", key: "withWho", width: 18 },
+    { header: "Shoot", key: "shoot", width: 18 },
+    { header: "Live on", key: "platforms", width: 22 },
+    { header: "Extra", key: "extra", width: 14 },
+  ]);
+  items.forEach((i, idx) => {
+    const cur = i.current;
+    ws.addRow({
+      n: idx + 1,
+      title: i.title,
+      type: TYPE_META[i.type].label,
+      posting: i.postingDate ? formatDMY(i.postingDate) : "",
+      time: i.postingTime ?? "",
+      canva: link(i.canvaLink, "Open slide"),
+      drive: link(i.driveUrl, "Open file"),
+      status: i.completedAt ? finalLabel(i.context) : cur ? `${STAGE_META[cur.kind].label} · ${PROGRESS_META[cur.progress].label}` : "",
+      withWho: i.completedAt ? "" : (cur?.assignee?.name ?? (cur ? `${STAGE_META[cur.kind].label} team` : "")),
+      shoot: i.shoot.date ? `${formatDMY(i.shoot.date)}${i.shoot.time ? ` ${i.shoot.time}` : ""}` : "",
+      platforms: i.platforms.filter((p) => p.status === "published").map((p) => p.name).join(", "),
+      extra: i.extra ? `Extra${i.extra.by ? ` · ${i.extra.by.name}` : ""}` : "",
+    });
+  });
+  zebra(ws);
+  ws.eachRow((row, n) => {
+    if (n === 1) return;
+    for (const k of ["canva", "drive"]) {
+      const c = row.getCell(k);
+      if (c.value) c.font = { color: { argb: BLUE }, underline: true };
+    }
+  });
+  if (plan?.canvaUrl || plan?.driveFolderUrl) {
+    ws.addRow({});
+    if (plan.canvaUrl) ws.addRow({ title: "Month Canva", canva: link(plan.canvaUrl, "Open Canva") });
+    if (plan.driveFolderUrl) ws.addRow({ title: "Month Drive folder", canva: link(plan.driveFolderUrl, "Open folder") });
+  }
+  return { wb, filename: `${fileSafe(brand.name)}-${year}-${String(month).padStart(2, "0")}.xlsx` };
+}

@@ -1,12 +1,13 @@
 "use client";
 
+import { TASK_PRIORITIES } from "@/domain/priority";
 import { useState } from "react";
 import clsx from "clsx";
 import { CalendarCheck, CalendarClock, Check, CircleDashed, ClipboardPlus, Hourglass, Loader, Repeat, Trash2, type LucideIcon } from "lucide-react";
 import { createTaskAction, deleteTaskAction, taskDoneAction, taskStatusAction } from "@/app/actions";
 import { ActionForm, Modal, Submit } from "./client";
 import { Avatar } from "./avatar";
-import { BrandDot, btn } from "./ui";
+import { BrandDot, PriorityChip, btn } from "./ui";
 import { TEAM_META, isNewTask } from "@/domain/workflow";
 import type { Team } from "@/db/schema";
 import { formatDay, formatRelative } from "@/lib/dates";
@@ -63,6 +64,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
   const [brandId, setBrandId] = useState("");
   const [step, setStep] = useState<string>("");
   const [type, setType] = useState<string>("reel");
+  const [priority, setPriority] = useState<string>("");
   const toggle = (id: string) => setWho((w) => (w.includes(id) ? w.filter((x) => x !== id) : [...w, id]));
   // The step follows the first person's team until the manager picks one.
   const firstTeam = people.find((p) => p.id === who[0])?.teams.find((t) => STEP_FOR_TEAM[t]);
@@ -82,6 +84,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
         <input key={id} type="hidden" name="assigneeId" value={id} />
       ))}
       <input type="hidden" name="recurrence" value={brandId ? "none" : repeat} />
+      <input type="hidden" name="priority" value={priority} />
       {brandId && <input type="hidden" name="step" value={stepNow} />}
       {brandId && <input type="hidden" name="type" value={typeNow} />}
       <div>
@@ -107,7 +110,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
                       onClick={() => toggle(p.id)}
                       className={clsx(
                         "inline-flex cursor-pointer items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 text-[13px] font-medium transition-colors",
-                        on ? "border-electric bg-electric-soft text-[#1d5fd1]" : "border-line bg-white text-ink-2 hover:border-line-strong",
+                        on ? "border-electric bg-electric-soft text-[#1d5fd1]" : "border-line bg-surface text-ink-2 hover:border-line-strong",
                       )}
                     >
                       <Avatar name={p.name} size={22} badge={false} /> {p.name}
@@ -137,7 +140,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
         <div className="space-y-3 rounded-xl border border-[#f6d9ad] bg-[#fffaf2] p-3">
           <div>
             <div className="label">Starts at</div>
-            <div className="inline-flex flex-wrap rounded-xl border border-line bg-white p-0.5" role="radiogroup" aria-label="Starts at">
+            <div className="inline-flex flex-wrap rounded-xl border border-line bg-surface p-0.5" role="radiogroup" aria-label="Starts at">
               {STEPS.map((x) => (
                 <button
                   key={x.v}
@@ -145,7 +148,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
                   role="radio"
                   aria-checked={stepNow === x.v}
                   onClick={() => setStep(x.v)}
-                  className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", stepNow === x.v ? "bg-navy-900 text-white" : "text-muted hover:bg-canvas hover:text-ink")}
+                  className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", stepNow === x.v ? "bg-strong text-white" : "text-muted hover:bg-canvas hover:text-ink")}
                 >
                   {x.label}
                 </button>
@@ -155,7 +158,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
           {stepMeta.types.length > 1 && (
             <div>
               <div className="label">Type</div>
-              <div className="inline-flex flex-wrap rounded-xl border border-line bg-white p-0.5" role="radiogroup" aria-label="Type">
+              <div className="inline-flex flex-wrap rounded-xl border border-line bg-surface p-0.5" role="radiogroup" aria-label="Type">
                 {stepMeta.types.map((t) => (
                   <button
                     key={t}
@@ -163,7 +166,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
                     role="radio"
                     aria-checked={typeNow === t}
                     onClick={() => setType(t)}
-                    className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", typeNow === t ? "bg-navy-900 text-white" : "text-muted hover:bg-canvas hover:text-ink")}
+                    className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", typeNow === t ? "bg-strong text-white" : "text-muted hover:bg-canvas hover:text-ink")}
                   >
                     {TYPE_LABEL[t]}
                   </button>
@@ -196,7 +199,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
       {!brandId && (
       <div>
         <div className="label">Repeat</div>
-        <div className="inline-flex flex-wrap rounded-xl border border-line bg-white p-0.5" role="radiogroup" aria-label="Repeat">
+        <div className="inline-flex flex-wrap rounded-xl border border-line bg-surface p-0.5" role="radiogroup" aria-label="Repeat">
           {REPEAT.map((r) => (
             <button
               key={r.v}
@@ -204,7 +207,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
               role="radio"
               aria-checked={repeat === r.v}
               onClick={() => setRepeat(r.v)}
-              className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", repeat === r.v ? "bg-navy-900 text-white" : "text-muted hover:bg-canvas hover:text-ink")}
+              className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", repeat === r.v ? "bg-strong text-white" : "text-muted hover:bg-canvas hover:text-ink")}
             >
               {r.label}
             </button>
@@ -213,6 +216,30 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
         {repeat !== "none" && <p className="mt-1.5 text-[12.5px] text-muted">When it&rsquo;s done, the next one is created by itself.</p>}
       </div>
       )}
+      <div>
+        <div className="label">
+          Priority <span className="font-normal text-muted">(optional)</span>
+        </div>
+        <div className="inline-flex flex-wrap rounded-xl border border-line bg-surface p-0.5" role="radiogroup" aria-label="Priority">
+          {[
+            { v: "", label: "Normal", dot: "var(--color-faint)" },
+            { v: "important", label: "Important", dot: TASK_PRIORITIES.important.color },
+            { v: "urgent", label: "Urgent", dot: TASK_PRIORITIES.urgent.color },
+          ].map((x) => (
+            <button
+              key={x.v || "normal"}
+              type="button"
+              role="radio"
+              aria-checked={priority === x.v}
+              onClick={() => setPriority(x.v)}
+              className={clsx("inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] px-3 py-1.5 text-[13px] font-medium", priority === x.v ? "bg-strong text-white" : "text-muted hover:bg-canvas hover:text-ink")}
+            >
+              <span className="size-2 rounded-full" style={{ background: x.dot }} />
+              {x.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div>
         <label className="label" htmlFor="task-notes">
           Notes <span className="font-normal text-muted">(optional)</span>
@@ -253,11 +280,12 @@ export type TaskRowData = {
   createdAt: Date;
   status: string;
   scheduledDate: string | null;
+  priority?: string | null;
 };
 
 /** What the person is doing with a task. Done is the round check button. */
 const TASK_STATUS: { v: string; label: string; icon: LucideIcon; on: string }[] = [
-  { v: "todo", label: "Not started", icon: CircleDashed, on: "bg-[#eef1f7] text-ink-2 ring-line-strong" },
+  { v: "todo", label: "Not started", icon: CircleDashed, on: "bg-sunken text-ink-2 ring-line-strong" },
   { v: "in_progress", label: "In progress", icon: Loader, on: "bg-electric-soft text-[#1d5fd1] ring-electric/40" },
   { v: "scheduled", label: "Scheduled", icon: CalendarCheck, on: "bg-[#f1e8fd] text-[#6d28d9] ring-[#6d28d9]/30" },
   { v: "waiting", label: "Waiting", icon: Hourglass, on: "bg-warn-soft text-warn ring-warn/30" },
@@ -291,7 +319,7 @@ function StatusPicker({ t, today }: { t: TaskRowData; today: string }) {
               onClick={() => setPicking((p) => !p)}
               className={clsx(
                 "inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium ring-1 transition-colors",
-                on ? x.on : "bg-white text-muted ring-line hover:text-ink hover:ring-line-strong",
+                on ? x.on : "bg-surface text-muted ring-line hover:text-ink hover:ring-line-strong",
               )}
             >
               <Icon className="size-3.5" /> {x.label}
@@ -307,7 +335,7 @@ function StatusPicker({ t, today }: { t: TaskRowData; today: string }) {
               aria-pressed={on}
               className={clsx(
                 "inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium ring-1 transition-colors",
-                on ? x.on : "bg-white text-muted ring-line hover:text-ink hover:ring-line-strong",
+                on ? x.on : "bg-surface text-muted ring-line hover:text-ink hover:ring-line-strong",
               )}
             >
               <Icon className="size-3.5" /> {x.label}
@@ -361,7 +389,7 @@ export function TaskRow({
           aria-label={t.doneAt ? `Reopen ${t.title}` : `Done: ${t.title}`}
           className={clsx(
             "mt-0.5 flex size-6 cursor-pointer items-center justify-center rounded-full border-2 transition-colors",
-            t.doneAt ? "animate-pop border-ok bg-ok text-white" : "border-line-strong bg-white text-transparent hover:border-ok hover:text-ok",
+            t.doneAt ? "animate-pop border-ok bg-ok text-white" : "border-line-strong bg-surface text-transparent hover:border-ok hover:text-ok",
           )}
         >
           <Check className="size-3.5" strokeWidth={3.2} />
@@ -371,6 +399,7 @@ export function TaskRow({
         <div className={clsx("text-[14.5px] font-semibold", t.doneAt && "line-through")}>{t.title}</div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-muted">
           {isNewTask(t) && <span className="rounded-full bg-electric px-2 py-0.5 text-[11px] font-semibold text-white">NEW</span>}
+          {!t.doneAt && <PriorityChip priority={t.priority} />}
           {mode === "mine" ? <span>from {t.createdByName}</span> : <span className="inline-flex items-center gap-1"><Avatar name={t.assigneeName} size={18} badge={false} /> {t.assigneeName}</span>}
           <span>· given {formatRelative(t.createdAt)}</span>
           {t.dueDate ? (

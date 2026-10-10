@@ -1,7 +1,7 @@
-import Link from "next/link";
+import { BackLink } from "@/components/back-link";
 import { notFound } from "next/navigation";
 import clsx from "clsx";
-import { ArrowLeft, CalendarClock, CheckCircle2, ExternalLink, FolderOpen, Info, MessageSquare, Paperclip, Timer } from "lucide-react";
+import { CalendarClock, CheckCircle2, ExternalLink, FolderOpen, Info, MessageSquare, Paperclip, Timer } from "lucide-react";
 import { FlowStepper, healthBadge } from "@/components/flow";
 import { Avatar, Badge, BrandDot, ExternalLink as ExtA, ExtraBadge, ProgressChip, TimeSpent, TypeTag, btn } from "@/components/ui";
 import { PLATFORM_STATUS_META, STAGE_COLOR, STAGE_META, finalLabel } from "@/domain/workflow";
@@ -62,11 +62,9 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
 
   return (
     <div className="mx-auto max-w-[1180px]">
-      <Link href={back.href} className="inline-flex items-center gap-1.5 text-[13px] text-muted hover:text-electric">
-        <ArrowLeft className="size-4" />
+      <BackLink fallback={back.href} label={back.label}>
         {item.brand && <BrandDot color={item.brand.color} />}
-        {back.label}
-      </Link>
+      </BackLink>
 
       {/* ---------------- Header ---------------- */}
       <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
@@ -80,7 +78,6 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                 {item.postingTime && ` · ${item.postingTime}`}
               </span>
             )}
-            {item.slideNumber && <span className="rounded-md bg-[#f1e8fd] px-1.5 py-0.5 text-[12px] font-bold text-[#6d28d9]">Slide {item.slideNumber}</span>}
             <HotBadge item={item} today={today} />
             <ShootSummary shoot={item.shoot} />
             {item.cancelledAt && <Badge tone="bad">Deleted</Badge>}
@@ -188,7 +185,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                   </div>
                 ) : (
                   <div className="space-y-5">
-                    {cur.progress !== "changes_requested" && (
+                    {cur.progress !== "changes_requested" && cur.kind !== "shooting" && (
                       <div>
                         <div className="label">Where are you with it?</div>
                         <ProgressPicker stage={cur} showTime={false} />
@@ -321,7 +318,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
 
           {/* ---------------- All steps (plan ahead) — tucked away ---------------- */}
           <details className="card group overflow-hidden">
-            <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 hover:bg-[#fafbfd]">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 hover:bg-subtle">
               <span>
                 <span className="font-display text-[15px] font-bold">More details</span>
                 <span className="ml-2 text-[12.5px] text-muted">Every step, who did it, when, and deadlines</span>
@@ -353,7 +350,14 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
             <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
               <MessageSquare className="size-4 text-electric" /> Comments
             </h2>
-            <Comments itemId={item.id} comments={comments} people={people.map((p) => ({ id: p.id, name: p.name }))} meId={me.id} isAdmin={isManager(me)} />
+            <Comments
+              itemId={item.id}
+              comments={comments}
+              people={people.map((p) => ({ id: p.id, name: p.name }))}
+              meId={me.id}
+              isAdmin={isManager(me)}
+              files={(files.get(item.id) ?? []).filter((f) => f.commentId).map((f) => ({ id: f.id, kind: f.kind, name: f.name, href: f.href, commentId: f.commentId }))}
+            />
           </section>
           <details className="card group p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between">

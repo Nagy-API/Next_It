@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Columns3, Info, ListTree, ShieldAlert, Users, Workflow, Zap } from "lucide-react";
 import { ArchiveSpace, Automations, Columns, DetailsForm, ListsAndFolders, Members, Statuses } from "@/components/spaces/setup";
-import type { Action, FieldOption, Trigger } from "@/domain/spaces";
+import type { Action, FieldConfig, FieldOption, Trigger } from "@/domain/spaces";
 import { requireUser } from "@/server/auth";
 import { getActivePeople, getAllBrands } from "@/server/cached";
 import { UserError } from "@/server/errors";
@@ -41,7 +41,7 @@ export default async function SpaceSettings({ params }: PageProps<"/spaces/[id]/
       </h1>
       <nav className="sticky top-16 z-10 -mx-1 mt-3 flex gap-1 overflow-x-auto bg-canvas/90 px-1 py-2 backdrop-blur [scrollbar-width:none]">
         {sections.map((s) => (
-          <a key={s.id} href={`#${s.id}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-[13px] font-medium text-ink-2 hover:border-electric hover:text-electric">
+          <a key={s.id} href={`#${s.id}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1 text-[13px] font-medium text-ink-2 hover:border-electric hover:text-electric">
             <s.icon className="size-3.5" /> {s.title}
           </a>
         ))}
@@ -66,7 +66,13 @@ export default async function SpaceSettings({ params }: PageProps<"/spaces/[id]/
                 people={people.map((p) => ({ id: p.id, name: p.name }))}
               />
             )}
-            {s.id === "columns" && <Columns spaceId={id} fields={page.fields.map((f) => ({ id: f.id, name: f.name, type: f.type, options: f.options as FieldOption[] }))} />}
+            {s.id === "columns" && (
+              <Columns
+                spaceId={id}
+                fields={page.fields.map((f) => ({ id: f.id, name: f.name, type: f.type, options: f.options as FieldOption[], config: f.config as FieldConfig | null }))}
+                statuses={page.statuses.map((x) => ({ id: x.id, name: x.name, color: x.color }))}
+              />
+            )}
             {s.id === "lists" && <ListsAndFolders spaceId={id} folders={page.folders.map((f) => ({ id: f.id, name: f.name }))} lists={page.lists.map((l) => ({ id: l.id, name: l.name, folderId: l.folderId }))} />}
             {s.id === "members" && <Members spaceId={id} members={page.members} people={people.map((p) => ({ id: p.id, name: p.name }))} />}
             {s.id === "details" && (

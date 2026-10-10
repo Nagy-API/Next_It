@@ -22,6 +22,7 @@ export const MODULES = {
   quick: { label: "Quick update", hint: "Update a whole step at once" },
   chat: { label: "Team chat", hint: "One room for the whole team, with @mentions" },
   notes: { label: "Notes", hint: "Short team notes that disappear after 12 hours" },
+  fun: { label: "Team fun", hint: "Kudos, today's mood, birthdays and the stars of the week on the Overview" },
 } as const;
 export type ModuleKey = keyof typeof MODULES;
 export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
@@ -49,6 +50,8 @@ export type Workspace = {
   modules: Record<ModuleKey, boolean>;
   /** "HH:MM" (Cairo): running clocks pause themselves at this time. "" = off. */
   autoPauseAt: string;
+  /** The daily message at the top of every page: one line per day, in turn (Settings → Messages). Empty = friendly defaults. */
+  dailyMessages: string[];
 };
 
 export type WorkspaceView = Workspace & {
@@ -67,8 +70,9 @@ export const DEFAULT_WORKSPACE: Workspace = {
   dark: BRAND.colors.dark,
   watermark: "logo",
   watermarkOpacity: 5,
-  modules: { content: true, projects: true, spaces: true, quick: true, chat: true, notes: true },
+  modules: { content: true, projects: true, spaces: true, quick: true, chat: true, notes: true, fun: true },
   autoPauseAt: "21:00",
+  dailyMessages: [],
 };
 
 const BUILT_IN: Record<ImageKey, string> = {
@@ -147,6 +151,11 @@ export async function updateWorkspace(actor: Actor, input: Partial<Workspace>) {
   }
   if (input.watermarkOpacity !== undefined) next.watermarkOpacity = Math.max(0, Math.min(30, Math.round(Number(input.watermarkOpacity) || 0)));
   if (input.modules) for (const k of MODULE_KEYS) if (typeof input.modules[k] === "boolean") next.modules[k] = input.modules[k];
+  if (input.dailyMessages !== undefined)
+    next.dailyMessages = input.dailyMessages
+      .map((x) => String(x).trim().slice(0, 200))
+      .filter(Boolean)
+      .slice(0, 100);
   if (input.autoPauseAt !== undefined) {
     assert(input.autoPauseAt === "" || TIME.test(input.autoPauseAt), "The auto pause time looks like 21:00.");
     next.autoPauseAt = input.autoPauseAt;
@@ -185,5 +194,20 @@ export async function setWorkspaceImage(actor: Actor, k: ImageKey, dataUrl: stri
 
 /** Tests and the auto pause job. */
 export function forgetWorkspaceCache() {
+  cache = null;
+}
+
+/** Settings → Messages: the daily message lines (people with "Write the daily message"). */
+export async function setDailyMessages(actor: Actor, lines: string[]) {
+  assert(can.announce(actor), "Only people allowed to write the daily message can change it (Settings → Access).");
+  const [row] = await db.select().from(workspaceSettings).where(eq(workspaceSettings.key, "workspace"));
+  const next = { ...merge(row?.value), dailyMessages: lines.map((x) => String(x).trim().slice(0, 200)).filter(Boolean).slice(0, 100) };
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(workspaceSettings)
+      .values({ key: "workspace", value: next, updatedById: actor.id })
+      .onConflictDoUpdate({ target: workspaceSettings.key, set: { value: next, updatedById: actor.id, updatedAt: new Date() } });
+    await logActivity(tx, actor, { action: "workspace_updated", field: "dailyMessages", summary: `${actor.name} updated the daily messages (${next.dailyMessages.length}).` });
+  });
   cache = null;
 }

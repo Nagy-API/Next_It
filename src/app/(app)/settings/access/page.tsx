@@ -78,7 +78,7 @@ export default async function AccessSettings({ searchParams }: PageProps<"/setti
 
         {groups.map((g) => (
           <div key={g} className="card overflow-hidden">
-            <div className="border-b border-line bg-[#fafbfd] px-4 py-2.5 font-display text-[13.5px] font-bold">{g}</div>
+            <div className="border-b border-line bg-subtle px-4 py-2.5 font-display text-[13.5px] font-bold">{g}</div>
             <ul className="divide-y divide-line">
               {PERMISSION_KEYS.filter((k) => PERMISSIONS[k].group === g).map((k) => {
                 const def = defaultAllowed(person, k);

@@ -14,7 +14,7 @@ export default function PageError({ error, retry }: { error: Error & { digest?: 
     console.error(error);
   }, [error]);
   return (
-    <div className="mx-auto mt-10 max-w-[520px] rounded-2xl border border-line bg-white p-8 text-center shadow-card">
+    <div className="mx-auto mt-10 max-w-[520px] rounded-2xl border border-line bg-surface p-8 text-center shadow-card">
       <LifeBuoy className="mx-auto mb-3 size-9 text-electric" />
       <h1 className="font-display text-[20px] font-bold">This page didn&rsquo;t load</h1>
       <p className="mt-2 text-[14px] text-muted">Nothing was lost — your work is saved. Try again, or go back to your tasks.</p>

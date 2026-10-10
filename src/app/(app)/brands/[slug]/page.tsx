@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import clsx from "clsx";
-import { Archive, CalendarDays, ChevronLeft, ChevronRight, List, Plus, Settings2 } from "lucide-react";
+import { Archive, CalendarDays, Camera, ChevronLeft, ChevronRight, Download, List, Plus, Settings2 } from "lucide-react";
+import { InlineTitle } from "@/components/inline-edit";
+import { updateBrandAction } from "@/app/actions";
 import { BulkList } from "@/components/bulk-list";
 import { MonthCalendar } from "@/components/month-calendar";
-import { Badge, BrandMark, ButtonLink, Empty, Person, ProgressBar, Stat } from "@/components/ui";
+import { Badge, BrandMark, ButtonLink, Empty, Person, ProgressBar, Stat, btn } from "@/components/ui";
 import { TYPE_META } from "@/domain/workflow";
 import type { ContentType } from "@/db/schema";
 import { monthKey, monthLabel, monthName, parseMonthKey, shiftMonth, todayISO } from "@/lib/dates";
@@ -93,7 +95,13 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
           </Link>
           <h1 className="mt-1 flex items-center gap-3 font-display text-[26px] font-bold tracking-[-0.01em] sm:text-[28px]">
             <BrandMark name={brand.name} color={brand.color} logoUrl={brand.logoUrl} size={38} className="!rounded-xl" />
-            {brand.name}
+            {can.manageBrands(me) ? (
+              <InlineTitle value={brand.name} fields={{ brandId: brand.id }} name="name" action={updateBrandAction} label="Rename the brand" inputClassName="!h-10 !text-[20px] font-bold">
+                <span>{brand.name}</span>
+              </InlineTitle>
+            ) : (
+              brand.name
+            )}
             {!brand.isActive && (
               <Badge tone="neutral" icon={Archive}>
                 Archived
@@ -104,7 +112,15 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
             Content by default: <Person name={brand.creatorName} size={20} />
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <ButtonLink href={`/shoots?brand=${brand.slug}`} variant="secondary" size="md">
+            <Camera className="size-4" /> Shoots
+          </ButtonLink>
+          {can.exportPlan(me) && (
+            <a href={`/api/export/plan?brand=${brand.slug}&m=${monthKey(sel.year, sel.month)}`} className={btn("secondary", "md")} title="Title, posting date, Canva slide link and more">
+              <Download className="size-4" /> Excel
+            </a>
+          )}
           {can.manageBrands(me) && (
             <ButtonLink href={`/settings/brands#${brand.slug}`} variant="ghost" size="md">
               <Settings2 className="size-4" /> Brand settings
@@ -120,7 +136,7 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
 
       {/* Month navigation: Brand → Year → Month */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        <div className="flex items-center rounded-xl border border-line bg-white p-1 shadow-card">
+        <div className="flex items-center rounded-xl border border-line bg-surface p-1 shadow-card">
           <Link href={q({ m: monthKey(prev.year, prev.month) })} className="rounded-lg p-1.5 text-muted hover:bg-canvas hover:text-ink" aria-label="Previous month">
             <ChevronLeft className="size-4" />
           </Link>
@@ -129,11 +145,11 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
             <ChevronRight className="size-4" />
           </Link>
         </div>
-        <div className="flex rounded-xl border border-line bg-white p-1 shadow-card">
-          <Link href={q({ view: "list" })} className={clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium", view === "list" ? "bg-navy-900 text-white" : "text-muted hover:text-ink")}>
+        <div className="flex rounded-xl border border-line bg-surface p-1 shadow-card">
+          <Link href={q({ view: "list" })} className={clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium", view === "list" ? "bg-strong text-white" : "text-muted hover:text-ink")}>
             <List className="size-4" /> List
           </Link>
-          <Link href={q({ view: "calendar" })} className={clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium", view === "calendar" ? "bg-navy-900 text-white" : "text-muted hover:text-ink")}>
+          <Link href={q({ view: "calendar" })} className={clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium", view === "calendar" ? "bg-strong text-white" : "text-muted hover:text-ink")}>
             <CalendarDays className="size-4" /> Calendar
           </Link>
         </div>
@@ -232,7 +248,7 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
                     href={q({ team: c.key })}
                     className={clsx(
                       "rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition-colors",
-                      team === c.key ? "border-navy-900 bg-navy-900 text-white" : "border-line bg-white text-ink-2 hover:border-line-strong",
+                      team === c.key ? "border-strong bg-strong text-white" : "border-line bg-surface text-ink-2 hover:border-line-strong",
                     )}
                   >
                     {c.label} <span className={team === c.key ? "text-white/60" : "text-faint"}>{c.n}</span>
@@ -256,7 +272,7 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
             {shown.length === 0 ? (
               <Empty title="Nothing here with these filters" />
             ) : view === "calendar" ? (
-              <MonthCalendar year={sel.year} month={sel.month} items={shown} />
+              <MonthCalendar year={sel.year} month={sel.month} items={shown} editable={canAdd && brand.isActive} />
             ) : (
               <BulkList items={shown} people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))} selectable={canAdd} canDeadline={can.setDeadline(me)} />
             )}

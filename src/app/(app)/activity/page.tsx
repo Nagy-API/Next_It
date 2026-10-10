@@ -138,6 +138,6 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
 function chip(on: boolean) {
   return clsx(
     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors",
-    on ? "border-navy-900 bg-navy-900 text-white" : "border-line bg-white text-ink-2 hover:border-line-strong",
+    on ? "border-strong bg-strong text-white" : "border-line bg-surface text-ink-2 hover:border-line-strong",
   );
 }

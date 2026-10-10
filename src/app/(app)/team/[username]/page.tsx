@@ -56,7 +56,7 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
           </div>
           <a
             href={`/api/export/person/${person.username}?from=${range.from}&to=${range.to}`}
-            className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[14px] font-semibold text-ink shadow-card hover:border-[#1d6f42] hover:text-[#1d6f42]"
+            className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[14px] font-semibold text-ink shadow-card hover:border-[#1d6f42] hover:text-[#1d6f42]"
           >
             <FileSpreadsheet className="size-4 text-[#1d6f42]" /> Export to Excel
           </a>
@@ -89,7 +89,7 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
 
       {rep && (
         <section className="card overflow-hidden">
-          <div className="border-b border-line bg-[#fafbfe] px-5 py-3.5">
+          <div className="border-b border-line bg-subtle px-5 py-3.5">
             <PersonReportHead r={rep} single={single} />
           </div>
           <div className="p-5">

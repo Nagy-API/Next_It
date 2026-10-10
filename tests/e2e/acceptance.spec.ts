@@ -57,7 +57,8 @@ test.describe.serial("NEXORA acceptance", () => {
     await openItem(page, "vanilla-roza", "The Ampoule");
     await expect(page.getByText("With Ayman")).toBeVisible();
     await page.getByLabel("Shoot day").fill(dmy("2026-10-03"));
-    await page.getByLabel("How long").selectOption("2 hours");
+    await page.getByLabel("From", { exact: true }).fill("10:00");
+    await page.getByLabel("To", { exact: true }).fill("12:00");
     await page.getByRole("button", { name: "Save shoot" }).click();
     await toast(page, "Shoot saved.");
     await expect(page.getByText(/Shoot Sat 3 Oct/).first()).toBeVisible();
@@ -357,7 +358,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.getByRole("link", { name: /Team chat/ }).click();
     const box = page.getByLabel("Message");
     await box.fill("Morning team! @Gan");
-    await page.getByRole("button", { name: /Gannah/ }).click();
+    await page.getByRole("group", { name: "People to mention" }).getByRole("button", { name: /Gannah/ }).click();
     await box.pressSequentially("the new carousel is ready");
     await box.press("Enter");
     await expect(page.getByText("the new carousel is ready")).toBeVisible();
@@ -501,7 +502,7 @@ test.describe.serial("NEXORA acceptance", () => {
 
   test("Search and the activity log reflect the work", async ({ page }) => {
     await login(page, "shahenda");
-    await page.getByPlaceholder(/Search content/).fill("ampoule");
+    await page.getByLabel(/Search content/).fill("ampoule");
     await page.keyboard.press("Enter");
     await expect(page.getByRole("link", { name: "The Ampoule" })).toBeVisible();
     await page.goto("/activity");
@@ -526,7 +527,9 @@ test.describe.serial("NEXORA acceptance", () => {
     await toast(page, "2 tasks added.");
     await page.getByRole("button", { name: /Mark Fix the office Wi-Fi Done/ }).click();
     await toast(page, "Done! 🎉");
-    await page.getByLabel(/Show done/).check();
+    await page.getByRole("button", { name: "Filter and group" }).click();
+    await page.getByLabel(/Show finished/).check();
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("link", { name: "Fix the office Wi-Fi" })).toBeVisible();
     await page.getByRole("tab", { name: "Board" }).click();
     await expect(page.getByText("New laptop for Jana")).toBeVisible();

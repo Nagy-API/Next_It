@@ -1,8 +1,8 @@
 /** Brands, clients, projects, platforms and people. All changes are logged. */
-import { and, eq, ilike, ne, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { hash } from "@node-rs/argon2";
 import { db } from "@/db";
-import { brands, clients, platforms, projects, sessions, users, type Team, TEAMS } from "@/db/schema";
+import { activityLog, brands, clients, contentItems, contentPlans, platforms, projects, sessions, users, workSessions, type Team, TEAMS } from "@/db/schema";
 import { TEAM_META } from "@/domain/workflow";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
@@ -417,4 +417,66 @@ export async function setUserPassword(actor: Actor, userId: string, password: st
       summary: actor.id === userId ? `${actor.name} changed their password.` : `${actor.name} reset ${u.name}'s password.`,
     });
   });
+}
+
+/* --------------------------- Delete a brand --------------------------- */
+
+/**
+ * Delete a brand with everything in it: it leaves the sidebar, lists, My tasks and stats; its items are cancelled.
+ * Soft: the rows and the Activity log stay, and "Restore" brings the brand and the same items back.
+ * The person must type the brand's name to confirm.
+ */
+export async function deleteBrand(actor: Actor, brandId: string, typedName: string) {
+  assert(can.manageBrands(actor), ADMIN_ONLY);
+  return db.transaction(async (tx) => {
+    const [b] = await tx.select().from(brands).where(eq(brands.id, brandId)).for("update");
+    assert(b && !b.deletedAt, "Brand not found.");
+    assert(typedName.trim().toLowerCase() === b.name.trim().toLowerCase(), `Type the brand's name (${b.name}) exactly to confirm.`);
+    const now = new Date();
+    const plans = await tx.select({ id: contentPlans.id }).from(contentPlans).where(eq(contentPlans.brandId, brandId));
+    const planIds = plans.map((p) => p.id);
+    const items = planIds.length
+      ? await tx
+          .update(contentItems)
+          .set({ cancelledAt: now, cancelledById: actor.id })
+          .where(and(inArray(contentItems.planId, planIds), isNull(contentItems.cancelledAt)))
+          .returning({ id: contentItems.id })
+      : [];
+    if (items.length)
+      await tx
+        .update(workSessions)
+        .set({ endedAt: now, endReason: "cancelled" })
+        .where(and(inArray(workSessions.itemId, items.map((i) => i.id)), isNull(workSessions.endedAt)));
+    await tx.update(brands).set({ deletedAt: now, isActive: false }).where(eq(brands.id, brandId));
+    await logActivity(tx, actor, {
+      action: "brand_deleted",
+      brandId,
+      summary: `${actor.name} deleted the brand ${b.name} with its ${items.length} item(s). It can be restored from Settings → Brands.`,
+      meta: { itemIds: items.map((i) => i.id), wasActive: b.isActive },
+    });
+    return items.length;
+  });
+}
+
+export async function restoreBrand(actor: Actor, brandId: string) {
+  assert(can.manageBrands(actor), ADMIN_ONLY);
+  return db.transaction(async (tx) => {
+    const [b] = await tx.select().from(brands).where(eq(brands.id, brandId)).for("update");
+    assert(b?.deletedAt, "That brand isn't deleted.");
+    const [log] = await tx
+      .select({ meta: activityLog.meta })
+      .from(activityLog)
+      .where(and(eq(activityLog.action, "brand_deleted"), eq(activityLog.brandId, brandId)))
+      .orderBy(desc(activityLog.id))
+      .limit(1);
+    const meta = (log?.meta ?? {}) as { itemIds?: string[]; wasActive?: boolean };
+    const ids = (meta.itemIds ?? []).filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+    if (ids.length) await tx.update(contentItems).set({ cancelledAt: null, cancelledById: null }).where(inArray(contentItems.id, ids));
+    await tx.update(brands).set({ deletedAt: null, isActive: meta.wasActive ?? true, archivedAt: meta.wasActive === false ? b.archivedAt : null }).where(eq(brands.id, brandId));
+    await logActivity(tx, actor, { action: "brand_restored", brandId, summary: `${actor.name} restored the brand ${b.name} with its ${ids.length} item(s).` });
+  });
+}
+
+export async function deletedBrands() {
+  return db.select({ id: brands.id, name: brands.name, color: brands.color, deletedAt: brands.deletedAt }).from(brands).where(isNotNull(brands.deletedAt)).orderBy(desc(brands.deletedAt));
 }

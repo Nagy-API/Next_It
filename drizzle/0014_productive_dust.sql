@@ -1,0 +1,1 @@
+ALTER TABLE "space_fields" ADD COLUMN "config" jsonb;

@@ -48,6 +48,7 @@ import { cairoDate, formatDay, isValidISODate, isValidTime, monthLabel, plural }
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
 import { NOT_ALLOWED, can, isManager } from "@/domain/permissions";
+import { shootSpan, shootWindow } from "@/domain/shoot";
 import { notify, soleTeamMember, stageAudience } from "./notify";
 
 /* ------------------------------------------------------------------ */
@@ -199,6 +200,13 @@ export async function completeStageTx(
     .set({ status: "done", completedAt: now, completedById: actor.id, assigneeId: stage.assigneeId, scheduledFor: null })
     .where(eq(stages.id, stage.id));
   await trackTimeTx(tx, stage, { progress: "done", userId: null }, now, "done");
+  // A shoot isn't clocked: its time is the planned window (when nobody pressed In progress).
+  if (stage.kind === "shooting") {
+    const w = shootWindow(ctx.item);
+    const [clocked] = await tx.select({ id: workSessions.id }).from(workSessions).where(eq(workSessions.stageId, stage.id)).limit(1);
+    if (w && !clocked && w.start <= now)
+      await tx.insert(workSessions).values({ stageId: stage.id, itemId: ctx.item.id, userId: stage.assigneeId ?? actor.id, kind: "processing", startedAt: w.start, endedAt: w.end < now ? w.end : now, endReason: "shoot" });
+  }
 
   await tx.insert(stageCompletions).values({
     stageId: stage.id,
@@ -1032,6 +1040,8 @@ export async function setShootDetails(
   input: {
     shootDate?: string | null;
     shootTime?: string | null;
+    /** Until when ("HH:MM"). */
+    shootEndTime?: string | null;
     shootDuration?: string | null;
     shootLocation?: string | null;
     /** What the shoot needs (all optional): how many people appear, what to rent / buy, and whether each is ready. */
@@ -1040,6 +1050,10 @@ export async function setShootDetails(
     shootRentalsReady?: boolean;
     shootPurchases?: string | null;
     shootPurchasesReady?: boolean;
+    /** Notes for the crew: what to wear, who to call, what to bring… */
+    shootNotes?: string | null;
+    /** Who goes to the shoot (besides the shooting step's person). */
+    shootCrewIds?: string[];
   },
 ) {
   return db.transaction(async (tx) => {
@@ -1047,9 +1061,15 @@ export async function setShootDetails(
     ensureOpen(ctx);
     assert(can.planShoot(actor), NOT_ALLOWED);
     const text = (v: string | null | undefined, cur: string | null, max = 500) => (v !== undefined ? v?.trim().slice(0, max) || null : cur);
+    let crew = ctx.item.shootCrewIds;
+    if (input.shootCrewIds !== undefined) {
+      const ids = [...new Set(input.shootCrewIds.filter((x) => /^[0-9a-f-]{36}$/i.test(x)))];
+      crew = ids.length ? (await tx.select({ id: users.id }).from(users).where(and(inArray(users.id, ids), eq(users.isActive, true)))).map((r) => r.id) : [];
+    }
     const next = {
       shootDate: input.shootDate !== undefined ? input.shootDate || null : ctx.item.shootDate,
       shootTime: text(input.shootTime, ctx.item.shootTime, 10),
+      shootEndTime: text(input.shootEndTime, ctx.item.shootEndTime, 10),
       shootDuration: text(input.shootDuration, ctx.item.shootDuration, 40),
       shootLocation: text(input.shootLocation, ctx.item.shootLocation, 200),
       shootPeople: input.shootPeople !== undefined ? input.shootPeople : ctx.item.shootPeople,
@@ -1057,17 +1077,24 @@ export async function setShootDetails(
       shootRentalsReady: input.shootRentalsReady ?? ctx.item.shootRentalsReady,
       shootPurchases: text(input.shootPurchases, ctx.item.shootPurchases),
       shootPurchasesReady: input.shootPurchasesReady ?? ctx.item.shootPurchasesReady,
+      shootNotes: text(input.shootNotes, ctx.item.shootNotes, 2000),
+      shootCrewIds: crew,
     };
     if (next.shootDate) assert(isValidISODate(next.shootDate), "Invalid shoot date.");
     if (next.shootTime) assert(isValidTime(next.shootTime), "Time must look like 14:30.");
+    if (next.shootEndTime) assert(isValidTime(next.shootEndTime), "Time must look like 16:30.");
+    if (next.shootTime && next.shootEndTime) assert(next.shootEndTime > next.shootTime, "The shoot must end after it starts.");
+    // A set end time replaces the old "how long" choice.
+    if (input.shootEndTime !== undefined && next.shootEndTime) next.shootDuration = null;
     if (next.shootPeople !== null) assert(Number.isInteger(next.shootPeople) && next.shootPeople >= 0 && next.shootPeople <= 999, "How many people: a whole number.");
     // Nothing to rent / buy can't be "ready".
     if (!next.shootRentals) next.shootRentalsReady = false;
     if (!next.shootPurchases) next.shootPurchasesReady = false;
-    const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => next[k] !== ctx.item[k]);
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => !same(next[k], ctx.item[k]));
     if (!changed.length) return false;
     await tx.update(contentItems).set(next).where(eq(contentItems.id, itemId));
-    const planChanged = changed.some((k) => ["shootDate", "shootTime", "shootDuration", "shootLocation"].includes(k));
+    const planChanged = changed.some((k) => ["shootDate", "shootTime", "shootEndTime", "shootDuration", "shootLocation"].includes(k));
     if (!planChanged) {
       const bits = [
         changed.includes("shootPeople") ? (next.shootPeople ? `${next.shootPeople} ${next.shootPeople === 1 ? "person" : "people"} on camera` : "no people count") : null,
@@ -1075,26 +1102,30 @@ export async function setShootDetails(
         changed.includes("shootRentalsReady") && next.shootRentals ? (next.shootRentalsReady ? "rentals are ready ✓" : "rentals not ready yet") : null,
         changed.includes("shootPurchases") ? (next.shootPurchases ? `to buy: ${next.shootPurchases}` : "nothing to buy") : null,
         changed.includes("shootPurchasesReady") && next.shootPurchases ? (next.shootPurchasesReady ? "purchases are ready ✓" : "purchases not ready yet") : null,
+        changed.includes("shootNotes") ? (next.shootNotes ? "notes for the crew" : "removed the crew notes") : null,
+        changed.includes("shootCrewIds") ? "who goes" : null,
       ].filter(Boolean);
-      await logActivity(tx, actor, { ...refs(ctx), action: "shoot_needs", stageKind: "shooting", summary: `${actor.name} updated what the shoot needs: ${bits.join("; ")}.`, meta: next });
+      await logActivity(tx, actor, { ...refs(ctx), action: "shoot_needs", stageKind: "shooting", summary: `${actor.name} updated the shoot: ${bits.join("; ")}.`, meta: next });
+      if (changed.includes("shootCrewIds")) {
+        const added = next.shootCrewIds.filter((x) => !ctx.item.shootCrewIds.includes(x));
+        if (added.length && next.shootDate)
+          await notify(tx, actor, added, { kind: "deadline", title: `You're on the shoot ${formatDay(next.shootDate)}: ${ctx.item.title}`, body: `${ctx.where} · ${shootSpan(next)}`, itemId });
+      }
       return true;
     }
-    const parts = [
-      next.shootDate ? `${formatDay(next.shootDate)}${next.shootTime ? ` ${next.shootTime}` : ""}` : null,
-      next.shootDuration ? `for ${next.shootDuration}` : null,
-      next.shootLocation ? `at ${next.shootLocation}` : null,
-    ].filter(Boolean);
+    const parts = [next.shootDate ? `${formatDay(next.shootDate)} ${shootSpan(next)}`.trim() : null, next.shootLocation ? `at ${next.shootLocation}` : null].filter(Boolean);
     const all = await loadStages(tx, itemId);
     const shoot = all.find((s) => s.kind === "shooting");
-    // Planning the shoot means the step has started.
-    if (shoot?.status === "active" && shoot.progress === "not_started" && next.shootDate) {
+    // A planned shoot reads "Scheduled" for its day; the person never has to press In progress for a shoot.
+    if (shoot?.status === "active" && ["not_started", "scheduled", "paused"].includes(shoot.progress)) {
       const now = new Date();
-      await tx.update(stages).set({ progress: "processing", progressAt: now, assigneeId: shoot.assigneeId ?? actor.id }).where(eq(stages.id, shoot.id));
-      await trackTimeTx(tx, shoot, { progress: "processing", userId: shoot.assigneeId ?? actor.id }, now, "status");
+      if (next.shootDate)
+        await tx.update(stages).set({ progress: "scheduled", scheduledFor: next.shootDate, progressAt: now, assigneeId: shoot.assigneeId ?? actor.id }).where(eq(stages.id, shoot.id));
+      else if (shoot.progress === "scheduled") await tx.update(stages).set({ progress: "not_started", scheduledFor: null, progressAt: now }).where(eq(stages.id, shoot.id));
     }
     const editor = all.find((s) => s.kind === "media");
     if (next.shootDate) {
-      await notify(tx, actor, [shoot?.assigneeId, editor?.assigneeId], {
+      await notify(tx, actor, [shoot?.assigneeId, editor?.assigneeId, ...next.shootCrewIds], {
         kind: "deadline",
         title: `Shoot ${parts.join(" ")}: ${ctx.item.title}`,
         body: `${ctx.where} · planned by ${actor.name}`,
@@ -1111,3 +1142,5 @@ export async function setShootDetails(
     return true;
   });
 }
+
+

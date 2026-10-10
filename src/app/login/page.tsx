@@ -31,7 +31,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           <p className="text-[12px] uppercase tracking-[0.2em] text-white/35">{[ws.name, ws.tagline].filter(Boolean).join(" · ")}</p>
         </div>
       </div>
-      <div className="flex items-center justify-center bg-white px-6 py-12">
+      <div className="flex items-center justify-center bg-surface px-6 py-12">
         <div className="w-full max-w-[360px]">
           <div className="mb-10 lg:hidden">
             <div className="inline-flex rounded-xl bg-navy-900 px-4 py-3">

@@ -1,10 +1,12 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { AlertTriangle, ArrowRight, CalendarDays, Check, CircleUserRound, ClipboardCheck, CornerUpLeft, Flame, Hourglass, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, Camera, Check, CircleUserRound, ClipboardCheck, CornerUpLeft, Flame, Hourglass, Sparkles } from "lucide-react";
 import { can, isManager } from "@/domain/permissions";
 import { getWorkspace } from "@/server/settings";
-import { currentAnnouncement } from "@/server/announcements";
-import { PostButton } from "@/components/announcement";
+import { getKudos, getUpdates, starsOfTheWeek, teamMoods, upcomingBirthdays } from "@/server/fun";
+import { getShootSchedule, type ShootEntry } from "@/server/shoots";
+import { KudosWall, MoodCheck, UpdatesBoard } from "@/components/people";
+import { getActivePeople } from "@/server/cached";
 import { getTasksFor } from "@/server/tasks";
 import { HotBadge } from "@/components/handoff";
 import { STAGE_COLOR, STAGE_META } from "@/domain/workflow";
@@ -16,7 +18,6 @@ import { getBrandMonthSummaries, getHomeData, reviewsFor, tasksFor, type WorkIte
 import { activeNotes } from "@/server/notes";
 import { NotesBar } from "@/components/notes-bar";
 import { ItemRow } from "@/components/item-row";
-import { teamEmoji } from "@/lib/cheer";
 import { Avatar, BrandDot, BrandMark, Empty, ProgressBar, ProgressChip, SectionTitle, StageChip, TimeSpent, TypeIcon } from "@/components/ui";
 
 export const metadata = { title: "Overview" };
@@ -27,7 +28,18 @@ export default async function HomePage() {
   const user = await requireUser();
   const today = todayISO();
   const manager = isManager(user);
-  const [open, home, myTasks, notes, brands, ws, motd] = await Promise.all([getOpenItems(), getHomeData(today), getTasksFor(user.id, today), activeNotes(), getAllBrands(), getWorkspace(), currentAnnouncement()]);
+  const [open, home, myTasks, notes, brands, ws, updates, shoots, people] = await Promise.all([
+    getOpenItems(),
+    getHomeData(today),
+    getTasksFor(user.id, today),
+    activeNotes(),
+    getAllBrands(),
+    getWorkspace(),
+    getUpdates(user.id),
+    getShootSchedule(today, addDays(today, 1)).catch(() => [] as ShootEntry[]),
+    getActivePeople(),
+  ]);
+  const [moods, kudos, birthdays, stars] = ws.modules.fun ? await Promise.all([teamMoods(today), getKudos(user.id), upcomingBirthdays(today), starsOfTheWeek(today)]) : [[], [], [], []];
   const logoOf = new Map(brands.map((b) => [b.id, b.logoUrl]));
   const mine = tasksFor(open, user).filter((i) => !(i.current?.progress === "waiting_approval" && i.current.assignee?.id === user.id));
   const moveNow = mine.filter((i) => i.hot || i.current?.health === "overdue").sort((a, b) => (a.postingDate ?? a.current?.deadline ?? "9").localeCompare(b.postingDate ?? b.current?.deadline ?? "9"));
@@ -44,33 +56,40 @@ export default async function HomePage() {
   const atRisk = open.filter((i) => i.attention === "at_risk");
   const postingPassed = atRisk.filter((i) => i.postingDate && i.postingDate < today).length;
   const unassigned = open.filter((i) => i.current && !i.current.assignee && i.attention !== "overdue" && i.attention !== "at_risk" && i.attention !== "returned");
-  const weekPlanned = home.publishingWeek.length;
-  const weekLive = home.publishingWeek.filter((i) => i.completedAt).length;
-  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "numeric", hour12: false }).format(new Date()));
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const now = new Date().getTime();
+  const postingToday = home.publishingWeek.filter((i) => i.postingDate === today);
+  const postingTomorrow = open.filter((i) => i.postingDate === addDays(today, 1));
+  const shootsToday = shoots.filter((s) => s.day === today && s.status !== "cancelled");
 
   return (
     <div className="space-y-8">
       {ws.modules.notes && <NotesBar notes={notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString(), expiresAt: n.expiresAt.toISOString() }))} meId={user.id} meName={user.name} now={now} />}
 
       <header className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="text-[13px] text-muted">{new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Africa/Cairo" }).format(new Date())}</div>
-            <h1 className="mt-0.5 font-display text-[26px] font-bold tracking-[-0.01em] sm:text-[28px]">
-              {greeting}, {user.name} <span className="inline-block origin-bottom-right animate-wave">{teamEmoji(user.teams)}</span>
-            </h1>
-          </div>
-          {!motd && can.announce(user) && <PostButton />}
+        <div>
+          <div className="text-[13px] font-medium text-electric">{new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Africa/Cairo" }).format(new Date())}</div>
+          <h1 className="mt-0.5 font-display text-[26px] font-bold tracking-[-0.01em] sm:text-[28px]">The agency today</h1>
+          <p className="mt-1 max-w-[680px] text-[14px] text-muted">Everything happening right now on one page: what&rsquo;s posting, who&rsquo;s shooting, who has what, and what needs a push.</p>
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Tile href="/my-work" label="On you now" value={mine.length + myTasks.filter((t) => !t.doneAt).length} hint={moveNow.length ? `${moveNow.length} must move in 48h` : "Nothing urgent"} tone={moveNow.length ? "warn" : undefined} />
-          <Tile href="/work?status=late" label="Late across the agency" value={late.length + postingPassed} hint={late.length + postingPassed ? `${late.length} past deadline · ${postingPassed} past posting date` : "Nothing late 🎉"} tone={late.length + postingPassed ? "bad" : "ok"} />
-          <Tile label="Posting this week" value={weekPlanned} hint={`${weekLive} live so far`} />
-          <Tile label="Finished this month" value={home.finishedThisMonth} hint="Published or delivered" tone="ok" />
+          <Tile href="/my-work" icon="🙋" label="On you now" value={mine.length + myTasks.filter((t) => !t.doneAt).length} hint={moveNow.length ? `${moveNow.length} must move in 48h` : "Nothing urgent"} tone={moveNow.length ? "warn" : undefined} />
+          <Tile href="#posting-today" icon="📲" label="Posting today" value={postingToday.length} hint={postingToday.length ? `${postingToday.filter((i) => i.completedAt).length} live · ${postingToday.filter((i) => !i.completedAt).length} still to go` : "Nothing posts today"} tone={postingToday.some((i) => !i.completedAt) ? "blue" : undefined} />
+          <Tile href="/shoots" icon="🎬" label="Shoots today" value={shootsToday.length} hint={shootsToday.length ? shootsToday.map((s) => s.start ?? "").filter(Boolean).slice(0, 3).join(" · ") || "Times not set" : "No shoot today"} />
+          <Tile href="/work?status=late" icon="⏰" label="Late across the agency" value={late.length + postingPassed} hint={late.length + postingPassed ? `${late.length} past deadline · ${postingPassed} past posting date` : "Nothing late 🎉"} tone={late.length + postingPassed ? "bad" : "ok"} />
         </div>
       </header>
+
+      <UpdatesBoard
+        updates={updates.map((u) => ({ id: u.id, title: u.title, text: u.text, emoji: u.emoji, color: u.color, pinned: u.pinned, createdAt: u.createdAt.toISOString(), by: u.by, reactions: u.reactions }))}
+        canPost={can.postUpdates(user)}
+        me={user.name}
+      />
+
+      {/* ---------------- Posting today: impossible to miss ---------------- */}
+      <PostingToday items={postingToday} tomorrow={postingTomorrow} meId={user.id} />
+
+      {/* ---------------- Shoots today and tomorrow ---------------- */}
+      {shoots.length > 0 && <ShootStrip shoots={shoots} today={today} />}
 
       {/* ---------------- Personal: what must move in the next 48 hours ---------------- */}
       {moveNow.length + tasksSoon.length + toApprove.length > 0 && (
@@ -136,9 +155,66 @@ export default async function HomePage() {
       {/* ---------------- Who's on what right now ---------------- */}
       <TeamNow open={open} />
 
+      {/* ---------------- The people side ---------------- */}
+      {ws.modules.fun && (
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+          <div className="space-y-4">
+            <MoodCheck mine={moods.find((m) => m.userId === user.id)?.emoji ?? null} team={moods} />
+            {(stars.length > 0 || birthdays.length > 0) && (
+              <div className="card space-y-4 p-4">
+                {stars.length > 0 && (
+                  <div>
+                    <div className="font-display text-[15px] font-bold">⭐ Stars of the week</div>
+                    <div className="text-[12.5px] text-muted">Most steps finished on time since Saturday.</div>
+                    <ol className="mt-2.5 space-y-1.5">
+                      {stars.map((s, i) => (
+                        <li key={s.userId} className="flex items-center gap-2.5 text-[14px]">
+                          <span className="w-6 text-center text-[18px]">{["🥇", "🥈", "🥉"][i]}</span>
+                          <Avatar name={s.name} size={26} />
+                          <span className="flex-1 font-semibold">{s.name}</span>
+                          <span className="text-[12.5px] text-muted">{s.onTime} on time</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+                {birthdays.length > 0 && (
+                  <div className={clsx(stars.length > 0 && "border-t border-line pt-4")}>
+                    {birthdays.map((b) => (
+                      <div key={b.id} className={clsx("flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-[14px]", b.inDays === 0 && "bg-[#fdf0f6]")}>
+                        <span className="text-[20px]">{b.inDays === 0 ? "🎂" : "🎈"}</span>
+                        <span className="flex-1">
+                          {b.inDays === 0 ? (
+                            <>
+                              <b>Happy birthday, {b.name}!</b> 🎉
+                            </>
+                          ) : (
+                            <>
+                              <b>{b.name}</b>&rsquo;s birthday {b.inDays === 1 ? "tomorrow" : `in ${b.inDays} days`}
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <KudosWall
+            kudos={kudos.map((k) => ({ ...k, createdAt: k.createdAt.toISOString() }))}
+            people={people.map((p) => ({ id: p.id, name: p.name }))}
+            meId={user.id}
+            me={user.name}
+            canModerate={can.postUpdates(user)}
+          />
+        </section>
+      )}
+
       {/* ---------------- The cycle ---------------- */}
       <section>
         <SectionTitle right={<span className="text-[12px] text-muted">Tap a step to see its work</span>}>Where the work is</SectionTitle>
+        <p className="-mt-1 mb-3 text-[13px] text-muted">Every piece of content moves left to right. Each column is a step; the big number is how many pieces are in it now, and the names are who has them.</p>
         <Pipeline open={open} publishedThisMonth={home.finishedThisMonth} />
       </section>
 
@@ -182,20 +258,135 @@ export default async function HomePage() {
   );
 }
 
-function Tile({ label, value, hint, tone, href }: { label: string; value: number; hint?: string; tone?: "bad" | "warn" | "ok"; href?: string }) {
+function Tile({ label, value, hint, tone, href, icon }: { label: string; value: number; hint?: string; tone?: "bad" | "warn" | "ok" | "blue"; href?: string; icon?: string }) {
   const body = (
     <>
-      <div className="text-[12.5px] font-medium text-muted">{label}</div>
-      <div className={clsx("mt-1.5 font-display text-[30px] font-bold leading-none tracking-tight", tone === "bad" && value > 0 && "text-bad", tone === "warn" && "text-[#c2410c]", tone === "ok" && "text-ok")}>{value}</div>
+      <div className="flex items-center gap-2 text-[12.5px] font-medium text-muted">
+        {icon && <span className="text-[16px]">{icon}</span>}
+        {label}
+      </div>
+      <div
+        className={clsx(
+          "mt-1.5 font-display text-[30px] font-bold leading-none tracking-tight",
+          tone === "bad" && value > 0 && "text-bad",
+          tone === "warn" && "text-[#c2410c]",
+          tone === "ok" && "text-ok",
+          tone === "blue" && "text-electric",
+        )}
+      >
+        {value}
+      </div>
       {hint && <div className="mt-1.5 truncate text-[12px] text-muted">{hint}</div>}
     </>
   );
   return href ? (
-    <Link href={href} className="card block px-4 py-3.5 transition-[border-color,box-shadow] hover:border-line-strong hover:shadow-pop">
+    <Link href={href} className="card block px-4 py-3.5 transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-line-strong hover:shadow-pop">
       {body}
     </Link>
   ) : (
     <div className="card px-4 py-3.5">{body}</div>
+  );
+}
+
+/** Content posting today, huge and impossible to miss — with who has it now and what's left to do. */
+function PostingToday({ items, tomorrow, meId }: { items: WorkItem[]; tomorrow: WorkItem[]; meId: string }) {
+  if (!items.length && !tomorrow.length) return null;
+  const left = items.filter((i) => !i.completedAt);
+  return (
+    <section id="posting-today" className="scroll-mt-24">
+      <div className="overflow-hidden rounded-2xl border border-electric/30 bg-surface shadow-[0_18px_40px_-28px_rgb(59_130_246/0.8)]">
+        <div className="flex flex-wrap items-center gap-3 bg-gradient-to-r from-electric to-[color-mix(in_srgb,var(--color-electric)_55%,#0b1639)] px-5 py-3.5 text-white">
+          <span className="relative flex size-3">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-white opacity-60" />
+            <span className="relative inline-flex size-3 rounded-full bg-white" />
+          </span>
+          <h2 className="font-display text-[18px] font-bold">Posting today</h2>
+          <span className="text-[13.5px] text-white/85">{items.length ? `${items.length - left.length} of ${items.length} live` : "Nothing today"}{tomorrow.length ? ` · ${tomorrow.length} tomorrow` : ""}</span>
+        </div>
+        {items.length > 0 && (
+          <ul className="divide-y divide-line">
+            {items.map((i) => {
+              const c = i.current;
+              const onMe = c?.assignee?.id === meId;
+              return (
+                <li key={i.id}>
+                  <Link href={`/items/${i.id}`} className={clsx("flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-3 transition-colors hover:bg-hover", onMe && "bg-electric-soft/60")} style={i.brand ? { boxShadow: `inset 3px 0 0 ${i.brand.color}` } : undefined}>
+                    <span className="w-12 shrink-0 font-display text-[15px] font-bold tabular-nums text-electric">{i.postingTime ?? "—"}</span>
+                    <TypeIcon type={i.type} />
+                    <span className="min-w-0 flex-1 truncate font-semibold">{i.title}</span>
+                    <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
+                      {i.brand && <BrandDot color={i.brand.color} />} {i.brand?.name ?? i.project?.clientName}
+                    </span>
+                    {i.completedAt ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-ok-soft px-2.5 py-0.5 text-[12px] font-bold text-ok">
+                        <Check className="size-3.5" strokeWidth={3} /> Live
+                      </span>
+                    ) : c ? (
+                      <span className="flex items-center gap-1.5">
+                        <StageChip kind={c.kind} short />
+                        <span className={clsx("inline-flex items-center gap-1.5 text-[13px]", onMe ? "font-bold text-electric" : "text-ink-2")}>
+                          <Avatar name={c.assignee?.name ?? null} size={20} /> {onMe ? "You" : (c.assignee?.name ?? "No one yet")}
+                        </span>
+                      </span>
+                    ) : null}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {tomorrow.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-line bg-subtle px-5 py-2.5 text-[12.5px] text-muted">
+            <span className="font-semibold text-ink-2">Tomorrow:</span>
+            {tomorrow.slice(0, 6).map((i) => (
+              <Link key={i.id} href={`/items/${i.id}`} className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5 hover:border-line-strong hover:text-ink">
+                {i.brand && <BrandDot color={i.brand.color} />} {i.title}
+              </Link>
+            ))}
+            {tomorrow.length > 6 && <span>+{tomorrow.length - 6} more</span>}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** Today's and tomorrow's shoots, at a glance. */
+function ShootStrip({ shoots, today }: { shoots: ShootEntry[]; today: string }) {
+  return (
+    <section>
+      <SectionTitle right={<Link href="/shoots" className="text-[13px] font-medium text-electric hover:underline">Shoot schedule</Link>}>
+        <span className="inline-flex items-center gap-2">
+          <Camera className="size-4 text-[#7c3aed]" /> Shooting today &amp; tomorrow
+        </span>
+      </SectionTitle>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {shoots.map((s) => (
+          <Link key={`${s.kind}-${s.id}`} href={s.href} className={clsx("card flex gap-3 p-3.5 transition hover:-translate-y-0.5 hover:shadow-pop", s.status === "cancelled" && "opacity-55")} style={s.brand ? { boxShadow: `inset 3px 0 0 ${s.brand.color}` } : undefined}>
+            <div className="w-16 shrink-0 text-center">
+              <div className={clsx("text-[11px] font-bold uppercase", s.day === today ? "text-electric" : "text-muted")}>{s.day === today ? "Today" : "Tomorrow"}</div>
+              <div className="font-display text-[15px] font-bold tabular-nums">{s.start ?? "—"}</div>
+              {s.end && <div className="text-[11.5px] tabular-nums text-muted">to {s.end}</div>}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-semibold">{s.title}</div>
+              <div className="truncate text-[12.5px] text-muted">
+                {s.brand?.name ?? "No brand"}
+                {s.location ? ` · 📍 ${s.location}` : ""}
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                {s.owner && <Avatar name={s.owner.name} size={20} />}
+                {s.crew.filter((c) => c.id !== s.owner?.id).slice(0, 4).map((c) => (
+                  <Avatar key={c.id} name={c.name} size={20} />
+                ))}
+                {s.status === "shot" && <span className="ml-1 rounded-full bg-ok-soft px-2 text-[11px] font-bold text-ok">Shot ✓</span>}
+                {s.notes && <span className="ml-1 truncate text-[12px] text-muted">📝 {s.notes}</span>}
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -279,7 +470,7 @@ function Pipeline({ open, publishedThisMonth }: { open: WorkItem[]; publishedThi
           }
           const sorted = [...people.values()].sort((a, b) => (a.name ? 0 : 1) - (b.name ? 0 : 1) || b.n - a.n);
           return (
-            <Link key={k} href={`/work?stage=${k}`} className="group relative flex flex-1 flex-col border-r border-line px-4 py-4 transition-colors hover:bg-[#f8faff]" style={{ boxShadow: `inset 0 3px 0 ${STAGE_COLOR[k].fg}` }}>
+            <Link key={k} href={`/work?stage=${k}`} className="group relative flex flex-1 flex-col border-r border-line px-4 py-4 transition-colors hover:bg-hover" style={{ boxShadow: `inset 0 3px 0 ${STAGE_COLOR[k].fg}` }}>
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-semibold uppercase tracking-[0.06em]" style={{ color: STAGE_COLOR[k].fg }}>{STAGE_META[k].label}</span>
                 {idx < kinds.length && <ArrowRight className="ml-auto size-3.5 text-faint" />}
@@ -323,7 +514,7 @@ function AttentionGroup({ icon: Icon, tone, title, hint, items, href }: { icon: 
       <div className="mb-2 flex items-center gap-2 text-[13px]">
         <Icon className={clsx("size-4", color)} strokeWidth={2.2} />
         <span className="font-semibold">{title}</span>
-        <span className={clsx("rounded-full px-1.5 text-[12px] font-semibold", color, "bg-white ring-1 ring-line")}>{items.length}</span>
+        <span className={clsx("rounded-full px-1.5 text-[12px] font-semibold", color, "bg-surface ring-1 ring-line")}>{items.length}</span>
         {hint && <span className="hidden text-muted sm:inline">· {hint}</span>}
         {items.length > 5 && (
           <Link href={href} className="ml-auto text-[12.5px] font-medium text-electric hover:underline">

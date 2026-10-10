@@ -66,6 +66,10 @@ export const users = pgTable("users", {
   avatarUpdatedAt: ts("avatar_updated_at"),
   /** Last time this person opened Team chat (for the unread badge). */
   chatReadAt: ts("chat_read_at"),
+  /** Last time the app heard from this person (online dot in chat and the team list). */
+  lastSeenAt: ts("last_seen_at"),
+  /** Birthday as "MM-DD" (optional, set in My account): a small celebration on the day. */
+  birthday: text("birthday"),
   isActive: boolean("is_active").notNull().default(true),
   passwordHash: text("password_hash").notNull(),
   /** Set for new accounts and admin resets: the person must choose their own password before doing anything else. */
@@ -121,6 +125,8 @@ export const brands = pgTable("brands", {
   defaultSocialId: uuid("default_social_id").references(() => users.id),
   createdAt: ts("created_at").notNull().defaultNow(),
   archivedAt: ts("archived_at"),
+  /** Deleted from the sidebar and every list (soft: its history stays in the database and the Activity log). */
+  deletedAt: ts("deleted_at"),
 });
 
 export const contentPlans = pgTable(
@@ -205,6 +211,12 @@ export const contentItems = pgTable(
     shootRentalsReady: boolean("shoot_rentals_ready").notNull().default(false),
     shootPurchases: text("shoot_purchases"),
     shootPurchasesReady: boolean("shoot_purchases_ready").notNull().default(false),
+    /** Until when the shoot runs ("HH:MM"), notes for the crew (what to wear, who to call) and who goes. */
+    shootEndTime: text("shoot_end_time"),
+    shootNotes: text("shoot_notes"),
+    shootCrewIds: uuid("shoot_crew_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    /** urgent | high | normal | low (optional, e.g. set when a manager gives it as a task). */
+    priority: text("priority"),
     completedAt: ts("completed_at"),
     cancelledAt: ts("cancelled_at"),
     cancelledById: uuid("cancelled_by_id").references(() => users.id),
@@ -493,6 +505,9 @@ export const attachments = pgTable(
     taskId: uuid("task_id").references(() => tasks.id),
     /** A task in a Space (workflow builder). */
     workTaskId: uuid("work_task_id").references(() => workTasks.id),
+    /** Sent with a comment (shown under it). */
+    commentId: uuid("comment_id").references(() => comments.id),
+    workTaskCommentId: uuid("work_task_comment_id").references(() => workTaskComments.id),
     /** file | link */
     kind: text("kind").notNull(),
     name: text("name").notNull(),
@@ -576,6 +591,8 @@ export const tasks = pgTable(
     status: text("status").notNull().default("todo"),
     /** When they plan to do it (status "scheduled"). */
     scheduledDate: date("scheduled_date", { mode: "string" }),
+    /** urgent | high | normal | low (optional). */
+    priority: text("priority"),
     statusAt: ts("status_at"),
     doneAt: ts("done_at"),
     doneById: uuid("done_by_id").references(() => users.id),
@@ -656,9 +673,13 @@ export const workspaceSettings = pgTable("workspace_settings", {
   updatedAt: ts("updated_at").notNull().defaultNow(),
 });
 
-/** Message of the day: one pinned line for everyone (Overview + My tasks). */
+/** Big updates: what the management wants everyone to see (a meeting today, a thank you…), big on the Overview. */
 export const announcements = pgTable("announcements", {
   id: uuid("id").primaryKey().defaultRandom(),
+  /** Optional headline; `text` is the message. */
+  title: text("title"),
+  /** Pinned updates stay on top until unpinned. */
+  pinned: boolean("pinned").notNull().default(false),
   text: text("text").notNull(),
   emoji: text("emoji"),
   color: text("color").notNull(),
@@ -769,6 +790,8 @@ export const spaceFields = pgTable(
     type: text("type").notNull(),
     /** Dropdown choices: [{ id, label, color }] */
     options: jsonb("options").notNull().default(sql`'[]'::jsonb`),
+    /** Extra settings for smart columns (formula, rollup, button…): see FieldConfig in domain/spaces.ts. */
+    config: jsonb("config"),
     position: integer("position").notNull().default(0),
     createdAt: ts("created_at").notNull().defaultNow(),
     archivedAt: ts("archived_at"),
@@ -917,3 +940,149 @@ export type SpaceField = typeof spaceFields.$inferSelect;
 export type WorkTask = typeof workTasks.$inferSelect;
 export type Automation = typeof automations.$inferSelect;
 export type Dashboard = typeof dashboards.$inferSelect;
+
+
+/* ------------------------------------------------------------------ */
+/* Reactions, kudos, moods: the fun side                                 */
+/* ------------------------------------------------------------------ */
+
+/** An emoji reaction on a Big update, a chat message or kudos (one row per person + emoji). */
+export const reactions = pgTable(
+  "reactions",
+  {
+    /** announcement | chat | kudos */
+    targetKind: text("target_kind").notNull(),
+    targetId: uuid("target_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    emoji: text("emoji").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.targetKind, t.targetId, t.userId, t.emoji] }), index("reactions_target_idx").on(t.targetKind, t.targetId)],
+);
+
+/** "Thank you" from one teammate to another, shown on the Overview wall. */
+export const kudos = pgTable(
+  "kudos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromId: uuid("from_id")
+      .notNull()
+      .references(() => users.id),
+    toId: uuid("to_id")
+      .notNull()
+      .references(() => users.id),
+    emoji: text("emoji").notNull(),
+    text: text("text").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("kudos_created_idx").on(t.createdAt), index("kudos_to_idx").on(t.toId)],
+);
+
+/** How each person feels today (one emoji per day, optional). */
+export const moods = pgTable(
+  "moods",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    day: date("day", { mode: "string" }).notNull(),
+    emoji: text("emoji").notNull(),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
+/* ------------------------------------------------------------------ */
+/* Personal order in My tasks (each person drags their own)             */
+/* ------------------------------------------------------------------ */
+
+export const personalOrder = pgTable(
+  "personal_order",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    /** "item:<id>" | "task:<id>" | "space:<id>" */
+    key: text("key").notNull(),
+    position: integer("position").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.key] })],
+);
+
+/* ------------------------------------------------------------------ */
+/* Shoots: every planned shoot slot (outside the content plan too)       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A shoot slot that isn't a content item's own shoot: an event, a video outside the plan, a client job…
+ * Several slots can share a day (Blissify 2–4 pm, OG Hub 6–10 pm). Content items' shoots come from
+ * content_items.shoot_* and show on the same schedule.
+ */
+export const shoots = pgTable(
+  "shoots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    brandId: uuid("brand_id").references(() => brands.id),
+    day: date("day", { mode: "string" }).notNull(),
+    startTime: text("start_time").notNull(),
+    endTime: text("end_time").notNull(),
+    location: text("location"),
+    people: integer("people"),
+    rentals: text("rentals"),
+    rentalsReady: boolean("rentals_ready").notNull().default(false),
+    purchases: text("purchases"),
+    purchasesReady: boolean("purchases_ready").notNull().default(false),
+    notes: text("notes"),
+    crewIds: uuid("crew_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    /** After the shoot: "none" (just shooting) | "edit" (someone edits it) */
+    after: text("after").notNull().default("none"),
+    editorId: uuid("editor_id").references(() => users.id),
+    /** planned | shot | cancelled */
+    status: text("status").notNull().default("planned"),
+    /** The content item created for editing when it was marked shot. */
+    itemId: uuid("item_id").references(() => contentItems.id),
+    taskId: uuid("task_id").references(() => tasks.id),
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    shotAt: ts("shot_at"),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("shoots_day_idx").on(t.day)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Space pages: docs, whiteboards and sheets inside a space              */
+/* ------------------------------------------------------------------ */
+
+export const spacePages = pgTable(
+  "space_pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id),
+    folderId: uuid("folder_id").references(() => folders.id),
+    /** doc | whiteboard | sheet */
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    icon: text("icon"),
+    /** The page itself (blocks / shapes / grid), validated by src/domain/pages.ts. */
+    content: jsonb("content").notNull(),
+    position: integer("position").notNull().default(0),
+    createdById: uuid("created_by_id").references(() => users.id),
+    updatedById: uuid("updated_by_id").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+    archivedAt: ts("archived_at"),
+  },
+  (t) => [index("space_pages_space_idx").on(t.spaceId)],
+);
+
+export type Shoot = typeof shoots.$inferSelect;
+export type SpacePage = typeof spacePages.$inferSelect;

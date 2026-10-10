@@ -46,7 +46,7 @@ export const BRAND = {
 
 /**
  * CSS custom properties generated from BRAND.colors. Injected in src/app/layout.tsx so Tailwind
- * classes like bg-electric / bg-navy-900 / text-ink follow the brand. Lighter/darker shades are mixed
+ * classes like bg-electric / bg-strong / text-ink follow the brand. Lighter/darker shades are mixed
  * from the two colours, so changing two hex values re-colours the whole app.
  */
 export function brandCss(colors: { primary: string; dark: string } = BRAND.colors) {
@@ -54,5 +54,5 @@ export function brandCss(colors: { primary: string; dark: string } = BRAND.color
   const hex = (v: string, fallback: string) => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : fallback);
   const p = hex(colors.primary, BRAND.colors.primary);
   const d = hex(colors.dark, BRAND.colors.dark);
-  return `:root:root{--color-electric:${p};--color-electric-bright:color-mix(in srgb,${p} 70%,white);--color-electric-soft:color-mix(in srgb,${p} 11%,white);--color-navy-950:color-mix(in srgb,${d} 72%,black);--color-navy-900:${d};--color-navy-850:color-mix(in srgb,${d} 92%,white);--color-navy-800:color-mix(in srgb,${d} 86%,white);--color-navy-700:color-mix(in srgb,${d} 76%,white);--color-ink:${d};}`;
+  return `:root:root{--color-electric:${p};--color-electric-bright:color-mix(in srgb,${p} 70%,white);--color-electric-soft:color-mix(in srgb,${p} 12%,var(--color-surface));--color-navy-950:color-mix(in srgb,${d} 72%,black);--color-navy-900:${d};--color-navy-850:color-mix(in srgb,${d} 92%,white);--color-navy-800:color-mix(in srgb,${d} 86%,white);--color-navy-700:color-mix(in srgb,${d} 76%,white);--color-ink:${d};--color-strong:${d};}`;
 }

@@ -32,6 +32,7 @@ export async function postChatMessage(actor: Actor, input: { body: string; itemI
   assert(body, "Write a message.");
   assert(body.length <= 4000, "That message is too long.");
   const now = input.now ?? new Date();
+  typing.delete(actor.id);
   return db.transaction(async (tx) => {
     const people = await tx.select({ id: users.id, name: users.name }).from(users).where(eq(users.isActive, true));
     const mentions = findMentions(body, people).filter((id) => id !== actor.id);
@@ -95,4 +96,37 @@ export async function unreadChatCount(userId: string) {
     .from(chatMessages)
     .where(and(isNull(chatMessages.deletedAt), sql`${chatMessages.authorId} <> ${userId}`, u?.at ? gt(chatMessages.createdAt, u.at) : undefined));
   return n;
+}
+
+/* ------------------------- Presence and typing ------------------------- */
+
+/** Who is typing right now (kept in memory for a few seconds; one app process). */
+const typing = new Map<string, { name: string; until: number }>();
+
+export function setTyping(userId: string, name: string) {
+  typing.set(userId, { name, until: Date.now() + 6000 });
+}
+
+export function typingNow(exceptId: string) {
+  const now = Date.now();
+  const out: string[] = [];
+  for (const [id, t] of typing) {
+    if (t.until < now) typing.delete(id);
+    else if (id !== exceptId) out.push(t.name);
+  }
+  return out;
+}
+
+/** People the app heard from in the last 2 minutes. */
+export async function onlineIds(now = new Date()) {
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.isActive, true), gt(users.lastSeenAt, new Date(now.getTime() - 120_000))));
+  return rows.map((r) => r.id);
+}
+
+/** Last time each person was seen ("seen 2h ago" in chat). */
+export async function lastSeen() {
+  return db.select({ id: users.id, at: users.lastSeenAt }).from(users).where(eq(users.isActive, true));
 }

@@ -38,7 +38,7 @@ import { formatDateTime, formatDay, formatRelative, todayISO } from "@/lib/dates
 import { linkInfo, openLabel } from "@/lib/links";
 import type { StageView, VersionView, WorkItem } from "@/server/queries";
 import { ActionForm, Submit } from "./client";
-import { BrandDot, ExtraBadge, ProgressChip, StageChip, TimeSpent, TypeIcon, btn } from "./ui";
+import { BrandDot, ExtraBadge, PriorityChip, ProgressChip, StageChip, TimeSpent, TypeIcon, btn } from "./ui";
 import { DateInput } from "./date-input";
 import { PlatformIcon } from "./platform-icon";
 import { SendBack } from "./send-back";
@@ -83,7 +83,7 @@ function TargetChips({ targets, value, onChange, big }: { targets: StageKind[]; 
             className={clsx(
               "flex cursor-pointer items-center gap-2 rounded-xl border-2 text-left transition-colors duration-150",
               big ? "px-3 py-2.5" : "px-2.5 py-1.5",
-              on ? "border-electric bg-electric-soft" : "border-line bg-white hover:border-line-strong",
+              on ? "border-electric bg-electric-soft" : "border-line bg-surface hover:border-line-strong",
             )}
           >
             <Icon className={clsx("size-[18px] shrink-0", on ? "text-electric" : "text-muted")} strokeWidth={1.9} />
@@ -267,41 +267,66 @@ function SendOnPanel({ item, stageId, from, people, rights, meId }: { item: Hand
 /* Pre-production: plan the shoot, then send it on                        */
 /* ------------------------------------------------------------------ */
 
-function ShootForm({ item, compact }: { item: HandItem; compact?: boolean }) {
+function ShootForm({ item, compact, people }: { item: HandItem; compact?: boolean; people: PickPerson[] }) {
+  const [more, setMore] = useState(!!(item.shoot.notes || item.shoot.crew.length));
+  const id = item.id;
   return (
-    <ActionForm action={shootAction} className={clsx("grid items-end gap-2", compact ? "grid-cols-2 sm:grid-cols-[150px_110px_130px_1fr_auto]" : "sm:grid-cols-[170px_120px_150px_1fr_auto]")}>
-      <input type="hidden" name="itemId" value={item.id} />
-      <div>
-        <label className="label" htmlFor={`sd-${item.id}`}>
-          Shoot day
-        </label>
-        <DateInput id={`sd-${item.id}`} name="shootDate" defaultValue={item.shoot.date ?? ""} className="w-full" required />
+    <ActionForm action={shootAction} className="space-y-2.5">
+      <input type="hidden" name="itemId" value={id} />
+      <div className={clsx("grid items-end gap-2", compact ? "grid-cols-2 sm:grid-cols-[150px_100px_100px_1fr]" : "grid-cols-2 sm:grid-cols-[170px_110px_110px_1fr]")}>
+        <div>
+          <label className="label" htmlFor={`sd-${id}`}>
+            Shoot day
+          </label>
+          <DateInput id={`sd-${id}`} name="shootDate" defaultValue={item.shoot.date ?? ""} className="w-full" required />
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:contents">
+          <div>
+            <label className="label" htmlFor={`st-${id}`}>
+              From
+            </label>
+            <input id={`st-${id}`} type="time" name="shootTime" defaultValue={item.shoot.time ?? ""} className="field" />
+          </div>
+          <div>
+            <label className="label" htmlFor={`se-${id}`}>
+              To
+            </label>
+            <input id={`se-${id}`} type="time" name="shootEndTime" defaultValue={item.shoot.endTime ?? ""} className="field" />
+          </div>
+        </div>
+        <div className="col-span-2 sm:col-span-1">
+          <label className="label" htmlFor={`sl-${id}`}>
+            Where <span className="font-normal text-muted">(optional)</span>
+          </label>
+          <input id={`sl-${id}`} name="shootLocation" defaultValue={item.shoot.location ?? ""} placeholder="Studio, client's place…" className="field" />
+        </div>
       </div>
-      <div>
-        <label className="label" htmlFor={`st-${item.id}`}>
-          Time
-        </label>
-        <input id={`st-${item.id}`} type="time" name="shootTime" defaultValue={item.shoot.time ?? ""} className="field" />
-      </div>
-      <div>
-        <label className="label" htmlFor={`su-${item.id}`}>
-          How long
-        </label>
-        <select id={`su-${item.id}`} name="shootDuration" defaultValue={item.shoot.duration ?? ""} className="field">
-          <option value="">—</option>
-          {["30 min", "1 hour", "2 hours", "3 hours", "4 hours", "Half day", "Full day"].map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className={compact ? "col-span-2 sm:col-span-1" : ""}>
-        <label className="label" htmlFor={`sl-${item.id}`}>
-          Where <span className="font-normal text-muted">(optional)</span>
-        </label>
-        <input id={`sl-${item.id}`} name="shootLocation" defaultValue={item.shoot.location ?? ""} placeholder="Studio, client's place…" className="field" />
-      </div>
+      {more ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div>
+            <div className="label">Who goes</div>
+            <input type="hidden" name="crew" value="1" />
+            <div className="flex flex-wrap gap-1.5">
+              {people.map((p) => (
+                <label key={p.id} className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[12.5px] has-[:checked]:border-electric has-[:checked]:bg-electric-soft has-[:checked]:text-electric">
+                  <input type="checkbox" name="crewIds" value={p.id} defaultChecked={item.shoot.crew.some((c) => c.id === p.id)} className="sr-only" />
+                  {p.name}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="label" htmlFor={`sn-${id}`}>
+              Notes for the crew <span className="font-normal text-muted">(what to wear, who to call…)</span>
+            </label>
+            <textarea id={`sn-${id}`} name="shootNotes" rows={2} defaultValue={item.shoot.notes ?? ""} placeholder="e.g. Come in black. Call the café owner at 1 pm." className="field" />
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setMore(true)} className="inline-flex cursor-pointer items-center gap-1.5 text-[12.5px] font-medium text-electric">
+          <Plus className="size-3.5" /> Who goes and notes for the crew <span className="font-normal text-muted">(optional)</span>
+        </button>
+      )}
       <Submit variant="secondary">{item.shoot.date ? "Update" : "Save shoot"}</Submit>
     </ActionForm>
   );
@@ -313,8 +338,8 @@ export function ShootSummary({ shoot, className }: { shoot: WorkItem["shoot"]; c
   return (
     <span className={clsx("inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg bg-[#fdf0f6] px-2.5 py-1 text-[12.5px] font-medium text-[#a1355f]", className)}>
       <Camera className="size-3.5" /> {shoot.date ? `Shoot ${formatDay(shoot.date)}` : "Shoot"}
-      {shoot.date && shoot.time && ` · ${shoot.time}`}
-      {shoot.duration && (
+      {shoot.date && shoot.time && ` · ${shoot.time}${shoot.endTime ? `–${shoot.endTime}` : ""}`}
+      {shoot.duration && !shoot.endTime && (
         <span className="inline-flex items-center gap-1">
           <Clock className="size-3" /> {shoot.duration}
         </span>
@@ -331,13 +356,19 @@ export function ShootSummary({ shoot, className }: { shoot: WorkItem["shoot"]; c
       )}
       {shoot.rentals && <NeedChip icon={Warehouse} label="Rent" text={shoot.rentals} ready={shoot.rentalsReady} />}
       {shoot.purchases && <NeedChip icon={ShoppingBag} label="Buy" text={shoot.purchases} ready={shoot.purchasesReady} />}
+      {shoot.crew.length > 0 && <span title={`Going: ${shoot.crew.map((c) => c.name).join(", ")}`}>· {shoot.crew.map((c) => c.name).join(", ")}</span>}
+      {shoot.notes && (
+        <span className="basis-full text-[12px] font-normal opacity-90" title="Notes for the crew">
+          📝 {shoot.notes}
+        </span>
+      )}
     </span>
   );
 }
 
 function NeedChip({ icon: Icon, label, text, ready }: { icon: typeof Users; label: string; text: string; ready: boolean }) {
   return (
-    <span title={`${label}: ${text}${ready ? " (ready)" : " (not ready yet)"}`} className={clsx("inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5", ready ? "bg-ok-soft text-ok" : "bg-white/70")}>
+    <span title={`${label}: ${text}${ready ? " (ready)" : " (not ready yet)"}`} className={clsx("inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5", ready ? "bg-ok-soft text-ok" : "bg-surface/70")}>
       <Icon className="size-3 shrink-0" />
       <span className="truncate">
         {label}: {text}
@@ -411,7 +442,7 @@ function ShootPanel({ item, stageId, people, rights, meId, compact }: { item: Ha
   const assigneeName = people.find((p) => p.id === assigneeId)?.name ?? "";
   return (
     <div className="space-y-3">
-      <ShootForm item={item} compact={compact} />
+      <ShootForm item={item} compact={compact} people={people} />
       <ShootNeeds item={item} />
       <ActionForm action={handOffAction} className="space-y-3 border-t border-dashed border-line pt-3">
         <input type="hidden" name="stageId" value={stageId} />
@@ -473,7 +504,7 @@ function VersionRow({ v }: { v: VersionView }) {
   const options = [v.url, ...v.altUrls];
   return (
     <li className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2">
-      <span className={clsx("mt-0.5 rounded-md px-1.5 py-0.5 text-[12px] font-bold", v.status === "approved" ? "bg-ok text-white" : "bg-navy-900 text-white")}>v{v.number}</span>
+      <span className={clsx("mt-0.5 rounded-md px-1.5 py-0.5 text-[12px] font-bold", v.status === "approved" ? "bg-ok text-white" : "bg-strong text-white")}>v{v.number}</span>
       <div className="min-w-0 flex-1 text-[13px]">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {options.length === 1 ? (
@@ -521,7 +552,7 @@ function ReviewButtons({ v, next, compact }: { v: VersionView; next: string; com
           <div className="text-[13px] font-medium text-ink-2">{options.length} options sent. Pick the one to approve:</div>
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {options.map((u, i) => (
-              <label key={u} className={clsx("flex cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2 text-[13.5px] transition-colors", chosen === u ? "border-ok bg-ok-soft/60" : "border-line bg-white hover:border-line-strong")}>
+              <label key={u} className={clsx("flex cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2 text-[13.5px] transition-colors", chosen === u ? "border-ok bg-ok-soft/60" : "border-line bg-surface hover:border-line-strong")}>
                 <input type="radio" name={`opt-${v.id}`} checked={chosen === u} onChange={() => setChosen(u)} className="accent-[#0f9d6b]" />
                 <span className="flex-1 font-semibold">Option {letter(i)}</span>
                 <a href={u} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-[12.5px] font-medium text-electric hover:underline">
@@ -692,12 +723,12 @@ export function ProgressPicker({ stage, size = "md", showTime = true }: { stage:
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex max-w-full flex-wrap rounded-xl border border-line bg-white p-0.5" role="radiogroup" aria-label="Status">
+        <div className="inline-flex max-w-full flex-wrap rounded-xl border border-line bg-surface p-0.5" role="radiogroup" aria-label="Status">
           {PICKABLE_PROGRESS.map((key) => {
             const m = PROGRESS_META[key];
             const on = stage.progress === key;
-            const cls = clsx("cursor-pointer rounded-[9px] font-medium transition-colors duration-150", size === "sm" ? "px-2.5 py-1 text-[12px]" : "px-3 py-1.5 text-[13px]", !on && "text-muted hover:bg-canvas hover:text-ink");
-            const style = on ? { backgroundColor: m.bg, color: m.fg, boxShadow: `inset 0 0 0 1px ${m.dot}55` } : undefined;
+            const cls = clsx("cursor-pointer rounded-[9px] font-medium transition-colors duration-150", size === "sm" ? "px-2.5 py-1 text-[12px]" : "px-3 py-1.5 text-[13px]", on ? "tint" : "text-muted hover:bg-canvas hover:text-ink");
+            const style = on ? ({ "--tint": m.fg, boxShadow: `inset 0 0 0 1px ${m.dot}55` } as React.CSSProperties) : undefined;
             if (key === "scheduled")
               return (
                 <button key={key} type="button" role="radio" aria-checked={on} onClick={() => setScheduling((s) => !s)} className={cls} style={style}>
@@ -827,7 +858,7 @@ function addDaysISO(iso: string, n: number) {
 
 const PLATFORM_TONE: Record<PlatformStatus, { label: string; cls: string }> = {
   not_planned: { label: "Not planned", cls: "bg-canvas text-faint" },
-  pending: { label: "To post", cls: "bg-[#f1f3f7] text-ink-2" },
+  pending: { label: "To post", cls: "bg-sunken text-ink-2" },
   scheduled: { label: "Scheduled", cls: "bg-[#f3ecfe] text-[#6d28d9]" },
   published: { label: "Live", cls: "bg-ok-soft text-ok" },
   cancelled: { label: "Not posting", cls: "bg-canvas text-muted line-through" },
@@ -875,7 +906,7 @@ export function SocialPanel({ item, allPlatforms, canPublish = true }: { item: P
               <input type="hidden" name="itemId" value={item.id} />
               <input type="hidden" name="platformId" value={p.id} />
               <input type="hidden" name="status" value="pending" />
-              <button type="submit" className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-line bg-white py-1 pl-1 pr-2.5 text-[12.5px] font-medium transition-colors hover:border-electric hover:bg-electric-soft">
+              <button type="submit" className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface py-1 pl-1 pr-2.5 text-[12.5px] font-medium transition-colors hover:border-electric hover:bg-electric-soft">
                 <PlatformIcon name={p.name} size={18} /> {p.name}
               </button>
             </ActionForm>
@@ -891,7 +922,7 @@ function SocialRow({ itemId, p, canPublish }: { itemId: string; p: WorkItem["pla
   const live = p.status === "published";
   const off = p.status === "cancelled";
   return (
-    <li className={clsx("rounded-xl border px-2.5 py-2 transition-colors", live ? "border-ok/25 bg-ok-soft/40" : "border-line bg-white")}>
+    <li className={clsx("rounded-xl border px-2.5 py-2 transition-colors", live ? "border-ok/25 bg-ok-soft/40" : "border-line bg-surface")}>
       <div className="flex flex-wrap items-center gap-2">
         <PlatformIcon name={p.name} size={26} muted={off} />
         <span className="w-[84px] truncate text-[13.5px] font-semibold">{p.name}</span>
@@ -935,9 +966,20 @@ function SocialRow({ itemId, p, canPublish }: { itemId: string; p: WorkItem["pla
 /* ------------------------------------------------------------------ */
 
 /** One plain line on every card: what to do now. */
-function NextStep({ kind, progress, unclaimed, scheduledFor }: { kind: StageKind; progress: StageView["progress"]; unclaimed: boolean; scheduledFor: string | null }) {
+function NextStep({ kind, progress, unclaimed, scheduledFor, shoot }: { kind: StageKind; progress: StageView["progress"]; unclaimed: boolean; scheduledFor: string | null; shoot: WorkItem["shoot"] }) {
   const reviewed = kind === "media" || kind === "design";
-  const text = unclaimed
+  const today = todayISO();
+  const span = shoot.time ? ` ${shoot.time}${shoot.endTime ? `–${shoot.endTime}` : ""}` : "";
+  const text =
+    kind === "shooting" && progress !== "changes_requested"
+      ? !shoot.date
+        ? "Pick the shoot day and time. It shows on the Shoot schedule for everyone."
+        : shoot.date > today
+          ? `Shoot on ${formatDay(shoot.date, { weekday: true })}${span}. After shooting press Shooting done.`
+          : shoot.date === today
+            ? `Shoot today${span}. When it's shot press Shooting done.`
+            : "Shot? Press Shooting done and it goes to editing. The shoot time is counted for you."
+      : unclaimed
     ? "Take it, then press In progress when you start."
     : progress === "not_started"
       ? "Press In progress when you start. The clock starts with it."
@@ -999,7 +1041,8 @@ export function TaskCard({
   const changes = cur.progress === "changes_requested";
   const returned = cur.round > 1 && !!cur.returnedAt && !changes;
   const unclaimed = !cur.assignee && mode === "do";
-  const working = mode === "do" && (cur.kind === "media" || cur.kind === "design" || cur.kind === "content" || cur.kind === "shooting" || cur.kind === "social");
+  // Shoots aren't clocked by hand: planning the day makes it "Scheduled", and the shoot window counts as the time.
+  const working = mode === "do" && (cur.kind === "media" || cur.kind === "design" || cur.kind === "content" || cur.kind === "social");
   const backTargets = mode === "do" ? backTargetsOf(item, cur) : [];
 
   return (
@@ -1018,7 +1061,6 @@ export function TaskCard({
               <TypeIcon type={item.type} />
               <span className="truncate">{item.title}</span>
             </Link>
-            {item.slideNumber && <span className="rounded-md bg-[#f1e8fd] px-1.5 py-0.5 text-[11px] font-bold text-[#6d28d9]">Slide {item.slideNumber}</span>}
             <HotBadge item={item} today={today} />
             {unclaimed ? (
               <span className="rounded-full bg-electric px-2 py-0.5 text-[11px] font-semibold text-white">NEW for your team</span>
@@ -1026,6 +1068,7 @@ export function TaskCard({
               fresh && <span className="rounded-full bg-electric px-2 py-0.5 text-[11px] font-semibold text-white">NEW</span>
             )}
             {item.extra && <ExtraBadge by={item.extra.by?.name} />}
+            {!item.completedAt && <PriorityChip priority={item.priority} />}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-muted">
             {item.brand && <BrandDot color={item.brand.color} />}
@@ -1044,7 +1087,7 @@ export function TaskCard({
             <ProgressChip progress={cur.progress} scheduledFor={cur.scheduledFor} running={cur.time.running} hideNotStarted />
             <TimeSpent ms={cur.time.ms} running={cur.time.running} />
           </div>
-          {mode === "do" && <NextStep kind={cur.kind} progress={cur.progress} unclaimed={unclaimed} scheduledFor={cur.scheduledFor} />}
+          {mode === "do" && <NextStep kind={cur.kind} progress={cur.progress} unclaimed={unclaimed} scheduledFor={cur.scheduledFor} shoot={item.shoot} />}
         </div>
         {cur.deadline && (
           <span className={clsx("whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] font-semibold", late ? "bg-bad text-white" : "bg-canvas text-ink-2")}>
@@ -1104,7 +1147,7 @@ export function TaskCard({
         </div>
       )}
 
-      <div className="mt-3 border-t border-line bg-[#fafbfe] px-4 py-3.5">
+      <div className="mt-3 border-t border-line bg-subtle px-4 py-3.5">
         {mode === "review" ? (
           <VersionPanel item={item} stage={cur} canDo={false} canReview compact />
         ) : (

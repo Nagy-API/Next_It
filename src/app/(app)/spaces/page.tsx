@@ -5,14 +5,17 @@ import { ButtonLink, Empty, PageHeader } from "@/components/ui";
 import { can } from "@/domain/permissions";
 import { requireUser } from "@/server/auth";
 import { getWorkspace } from "@/server/settings";
-import { visibleSpaces } from "@/server/spaces";
+import { archivedSpaces, visibleSpaces } from "@/server/spaces";
+import { RestoreList } from "@/components/danger";
+import { restoreSpaceAction } from "@/app/space-actions";
+import { formatDateTime } from "@/lib/dates";
 
 export const metadata = { title: "Spaces" };
 
 export default async function SpacesPage() {
   const me = await requireUser();
   if (!(await getWorkspace()).modules.spaces) redirect("/my-work");
-  const list = await visibleSpaces(me);
+  const [list, gone] = await Promise.all([visibleSpaces(me), archivedSpaces(me)]);
   const canCreate = can.createSpaces(me);
   return (
     <div className="mx-auto max-w-[1180px]">
@@ -42,7 +45,7 @@ export default async function SpacesPage() {
             <Link key={s.id} href={`/spaces/${s.id}`} className="card group relative overflow-hidden p-5 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-md">
               <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: s.color }} />
               <div className="flex items-start gap-3">
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl text-[22px]" style={{ background: `color-mix(in srgb, ${s.color} 15%, white)` }}>
+                <span className="grid size-11 shrink-0 place-items-center rounded-xl text-[22px]" style={{ background: `color-mix(in srgb, ${s.color} 15%, var(--color-surface))` }}>
                   {s.icon || s.name.slice(0, 1)}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -69,6 +72,9 @@ export default async function SpacesPage() {
           )}
         </div>
       )}
+      <div className="mt-8">
+        <RestoreList title="Deleted spaces" field="spaceId" action={restoreSpaceAction} rows={gone.map((g) => ({ id: g.id, name: g.name, color: g.color, when: g.archivedAt ? formatDateTime(g.archivedAt) : "" }))} />
+      </div>
     </div>
   );
 }

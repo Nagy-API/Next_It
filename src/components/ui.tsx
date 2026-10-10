@@ -13,10 +13,10 @@ const btnBase =
   "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition-[background,color,box-shadow,border-color,transform] active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none select-none";
 const btnVariants = {
   primary: "bg-electric text-white hover:bg-[#2f74e6] shadow-[0_1px_0_rgb(255_255_255/0.2)_inset,0_1px_2px_rgb(11_22_57/0.2)]",
-  dark: "bg-navy-900 text-white hover:bg-navy-800",
-  secondary: "bg-white text-ink border border-line hover:border-line-strong hover:bg-[#fafbfd]",
-  ghost: "text-ink-2 hover:bg-[#eef1f7] hover:text-ink",
-  danger: "bg-white text-bad border border-line hover:bg-bad-soft hover:border-bad/30",
+  dark: "bg-strong text-white hover:brightness-110",
+  secondary: "bg-surface text-ink border border-line hover:border-line-strong hover:bg-subtle",
+  ghost: "text-ink-2 hover:bg-sunken hover:text-ink",
+  danger: "bg-surface text-bad border border-line hover:bg-bad-soft hover:border-bad/30",
   success: "bg-ok text-white hover:bg-[#0c8a5d]",
 };
 const btnSizes = { sm: "h-8 px-2.5 text-[13px]", md: "h-9 px-3.5 text-[14px]", lg: "h-11 px-5 text-[15px]" };
@@ -38,13 +38,13 @@ export function ButtonLink({ href, variant = "secondary", size = "md", className
 
 const tones = {
   neutral: "bg-wait-soft text-ink-2",
-  blue: "bg-electric-soft text-[#1d5fd1]",
+  blue: "bg-electric-soft text-electric",
   ok: "bg-ok-soft text-ok",
   warn: "bg-warn-soft text-warn",
   bad: "bg-bad-soft text-bad",
   back: "bg-back-soft text-back",
   wait: "bg-wait-soft text-wait",
-  navy: "bg-navy-900 text-white",
+  navy: "bg-strong text-white",
 };
 export type Tone = keyof typeof tones;
 
@@ -179,7 +179,7 @@ export function ExternalLink({ href, children, className }: { href: string; chil
 export function ProgressBar({ segments, className }: { segments: { value: number; color: string; label?: string }[]; className?: string }) {
   const total = segments.reduce((a, s) => a + s.value, 0) || 1;
   return (
-    <div className={clsx("flex h-1.5 w-full overflow-hidden rounded-full bg-[#e9edf5]", className)}>
+    <div className={clsx("flex h-1.5 w-full overflow-hidden rounded-full bg-track", className)}>
       {segments.map((s, i) =>
         s.value > 0 ? <div key={i} title={s.label ? `${s.label}: ${s.value}` : undefined} style={{ width: `${(s.value / total) * 100}%`, background: s.color }} /> : null,
       )}
@@ -194,7 +194,8 @@ export function ExtraBadge({ by, className }: { by?: string | null; className?: 
   return (
     <span
       title={by ? `Extra task given by ${by} — on top of the month's plan` : "Extra task — on top of the month's plan"}
-      className={clsx("inline-flex shrink-0 items-center rounded-full bg-[#fff1dc] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#b45309]", className)}
+      className={clsx("tint inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide", className)}
+      style={{ "--tint": "#b45309" } as React.CSSProperties}
     >
       Extra{by ? ` · ${by}` : ""}
     </span>
@@ -207,7 +208,7 @@ export function ExtraBadge({ by, className }: { by?: string | null; className?: 
 export function StageChip({ kind, short, className }: { kind: StageKind; short?: boolean; className?: string }) {
   const c = STAGE_COLOR[kind];
   return (
-    <span className={clsx("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-semibold", className)} style={{ color: c.fg, backgroundColor: c.bg }}>
+    <span className={clsx("tint inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-semibold", className)} style={{ "--tint": c.fg } as React.CSSProperties}>
       <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: c.fg }} />
       {short ? STAGE_META[kind].short : STAGE_META[kind].label}
     </span>
@@ -237,7 +238,7 @@ export function ProgressChip({
   if (hideNotStarted && progress === "not_started") return null;
   const m = PROGRESS_META[progress];
   return (
-    <span className={clsx("inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-semibold whitespace-nowrap", className)} style={{ color: m.fg, backgroundColor: m.bg }}>
+    <span className={clsx("tint inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-semibold whitespace-nowrap", className)} style={{ "--tint": m.fg } as React.CSSProperties}>
       <span aria-hidden className={clsx("size-1.5 rounded-full", running && "animate-pulse")} style={{ backgroundColor: m.dot }} />
       {m.label}
       {progress === "scheduled" && scheduledFor ? ` · ${formatDay(scheduledFor)}` : ""}
@@ -275,6 +276,18 @@ export function BrandMark({ name, color, logoUrl, size = 20, className }: { name
       style={{ width: size, height: size, background: color, fontSize: Math.max(9, size * 0.5) }}
     >
       {name.trim()[0]?.toUpperCase()}
+    </span>
+  );
+}
+
+/** Urgent / Important (nothing for normal). */
+export function PriorityChip({ priority, className }: { priority: string | null | undefined; className?: string }) {
+  const m = priority === "urgent" ? { label: "Urgent", c: "#ef4444" } : priority === "important" ? { label: "Important", c: "#f59e0b" } : null;
+  if (!m) return null;
+  return (
+    <span className={clsx("tint inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-bold", className)} style={{ "--tint": m.c } as React.CSSProperties}>
+      <span className={clsx("size-1.5 rounded-full", priority === "urgent" && "animate-pulse")} style={{ background: m.c }} />
+      {m.label}
     </span>
   );
 }

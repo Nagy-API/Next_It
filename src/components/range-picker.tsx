@@ -13,15 +13,15 @@ export function RangePicker({ current, from, to, keep }: { current: RangeKey; fr
   const extra = keep ? Object.entries(keep).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("") : "";
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex rounded-xl border border-line bg-white p-1 shadow-card">
+      <div className="flex rounded-xl border border-line bg-surface p-1 shadow-card">
         {(Object.keys(RANGES) as (keyof typeof RANGES)[]).map((k) => (
-          <button key={k} type="button" onClick={() => router.push(`${pathname}?range=${k}${extra}`)} className={clsx("rounded-lg px-3 py-1.5 text-[13px] font-medium", current === k ? "bg-navy-900 text-white" : "text-muted hover:text-ink")}>
+          <button key={k} type="button" onClick={() => router.push(`${pathname}?range=${k}${extra}`)} className={clsx("rounded-lg px-3 py-1.5 text-[13px] font-medium", current === k ? "bg-strong text-white" : "text-muted hover:text-ink")}>
             {RANGES[k]}
           </button>
         ))}
       </div>
       <form
-        className={clsx("flex items-center gap-1.5 rounded-xl border bg-white p-1 pl-2 shadow-card", current === "custom" ? "border-electric" : "border-line")}
+        className={clsx("flex items-center gap-1.5 rounded-xl border bg-surface p-1 pl-2 shadow-card", current === "custom" ? "border-electric" : "border-line")}
         onSubmit={(e) => {
           e.preventDefault();
           router.push(`${pathname}?range=custom&from=${custom.from}&to=${custom.to}${extra}`);

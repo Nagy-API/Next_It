@@ -24,6 +24,7 @@ import {
   type Team,
 } from "@/db/schema";
 import { currentStage, stageHealth, type StageHealth, type WorkContext } from "@/domain/workflow";
+import { shootSpan } from "@/domain/shoot";
 import { addDays, monthRange, startOfCairoDay, todayISO, weekRange } from "@/lib/dates";
 
 export type Person = {
@@ -139,7 +140,12 @@ export type WorkItem = {
     rentalsReady: boolean;
     purchases: string | null;
     purchasesReady: boolean;
+    endTime: string | null;
+    notes: string | null;
+    crew: { id: string; name: string }[];
   };
+  /** urgent | high | normal | low */
+  priority: string | null;
   /** The brand's default person per step (Settings → Brands) — shown before the work is sent there. */
   defaults: Partial<Record<StageKind, string>>;
   /** Versions sent for approval (post-production & design), oldest first. */
@@ -346,7 +352,11 @@ async function enrich(
         rentalsReady: item.shootRentalsReady,
         purchases: item.shootPurchases,
         purchasesReady: item.shootPurchasesReady,
+        endTime: item.shootEndTime ?? (item.shootTime && item.shootDuration ? shootSpan(item).split("–")[1] ?? null : null),
+        notes: item.shootNotes,
+        crew: item.shootCrewIds.map((id) => ({ id, name: nameOf.get(id)?.name ?? "Someone" })),
       },
+      priority: item.priority,
       defaults: (() => {
         const b = brandDefaults.find((x) => x.id === brand?.id);
         const out: Partial<Record<StageKind, string>> = {};
@@ -461,6 +471,7 @@ export async function getBrands() {
     .select({ ...brandCols, logoUrl: brandLogoSrc, defaultCreatorId: brands.defaultCreatorId, defaultShootId: brands.defaultShootId, defaultMediaId: brands.defaultMediaId, defaultDesignId: brands.defaultDesignId, defaultSocialId: brands.defaultSocialId, creatorName: users.name, createdAt: brands.createdAt, archivedAt: brands.archivedAt })
     .from(brands)
     .leftJoin(users, eq(users.id, brands.defaultCreatorId))
+    .where(isNull(brands.deletedAt))
     .orderBy(asc(brands.name));
 }
 
@@ -469,7 +480,7 @@ export async function getBrandBySlug(slug: string) {
     .select({ ...brandCols, logoUrl: brandLogoSrc, defaultCreatorId: brands.defaultCreatorId, creatorName: users.name, archivedAt: brands.archivedAt })
     .from(brands)
     .leftJoin(users, eq(users.id, brands.defaultCreatorId))
-    .where(eq(brands.slug, slug));
+    .where(and(eq(brands.slug, slug), isNull(brands.deletedAt)));
   return b ?? null;
 }
 
@@ -631,7 +642,7 @@ export async function getHomeData(today = todayISO()) {
       .select({ count: sql<number>`count(*)::int` })
       .from(contentItems)
       .where(and(isNull(contentItems.cancelledAt), gte(contentItems.completedAt, startOfCairoDay(month.start)))),
-    db.select(brandCols).from(brands).where(eq(brands.isActive, true)).orderBy(asc(brands.name)),
+    db.select(brandCols).from(brands).where(and(eq(brands.isActive, true), isNull(brands.deletedAt))).orderBy(asc(brands.name)),
   ]);
   return { open, publishingWeek: publishingWeek.filter((i) => i.context === "plan"), finishedThisMonth: finishedThisMonth[0].count, activeBrands, week, today };
 }
@@ -779,7 +790,7 @@ export async function search(q: string) {
       .where(or(ilike(contentItems.title, like), ilike(brands.name, like), ilike(clients.name, like), ilike(projects.name, like)))
       .orderBy(desc(contentItems.createdAt))
       .limit(40),
-    db.select(brandCols).from(brands).where(ilike(brands.name, like)).limit(10),
+    db.select(brandCols).from(brands).where(and(ilike(brands.name, like), isNull(brands.deletedAt))).limit(10),
     db.select({ id: clients.id, name: clients.name, slug: clients.slug }).from(clients).where(ilike(clients.name, like)).limit(10),
     db
       .select({ id: projects.id, name: projects.name, clientName: clients.name })

@@ -76,7 +76,7 @@ function NoteBubble({ name, person, note, onClick, empty, now }: { name: string;
       <span
         className={clsx(
           "relative mb-1 flex min-h-[38px] w-full items-center justify-center rounded-2xl px-2 py-1.5 text-[12px] font-semibold leading-tight shadow-card transition-transform duration-150 group-hover:-translate-y-0.5",
-          note ? "text-white" : "border border-dashed border-line-strong bg-white",
+          note ? "text-white" : "border border-dashed border-line-strong bg-surface",
         )}
         style={note ? { background: note.color } : undefined}
       >
@@ -84,7 +84,7 @@ function NoteBubble({ name, person, note, onClick, empty, now }: { name: string;
         <span aria-hidden className="absolute -bottom-1 left-1/2 size-2.5 -translate-x-1/2 rotate-45 rounded-[2px]" style={note ? { background: note.color } : { background: "white", borderRight: "1px dashed var(--color-line-strong)", borderBottom: "1px dashed var(--color-line-strong)" }} />
       </span>
       <span className="rounded-full p-[2.5px]" style={{ background: note ? `linear-gradient(135deg, ${note.color}, ${note.color}88)` : "var(--color-line)" }}>
-        <span className="block rounded-full bg-white p-[2px]">
+        <span className="block rounded-full bg-surface p-[2px]">
           <Avatar name={person} size={46} badge={false} />
         </span>
       </span>

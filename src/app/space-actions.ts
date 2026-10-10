@@ -4,7 +4,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ActionResult } from "@/app/actions";
-import type { Action, FieldType, StatusKind, Trigger, TriggerType } from "@/domain/spaces";
+import type { Action, FieldConfig, FieldType, StatusKind, Trigger, TriggerType } from "@/domain/spaces";
 import type { Actor } from "@/server/activity";
 import { requireActor } from "@/server/auth";
 import { UserError } from "@/server/errors";
@@ -22,6 +22,7 @@ import {
   moveStatus,
   moveWorkTask,
   removeStatus,
+  restoreSpace,
   saveAutomation,
   saveField,
   saveFolder,
@@ -98,11 +99,18 @@ export async function updateSpaceAction(_: ActionResult, fd: FormData): Promise<
 
 export async function archiveSpaceAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   const r = await run(async (actor) => {
-    await archiveSpace(actor, str(fd, "spaceId"));
-    return "Space archived.";
+    await archiveSpace(actor, str(fd, "spaceId"), has(fd, "confirm") ? str(fd, "confirm") : undefined);
+    return "Space deleted. You can bring it back from Spaces.";
   });
-  if (r?.ok) redirect("/spaces");
+  if (r?.ok && str(fd, "stay") !== "1") redirect("/spaces");
   return r;
+}
+
+export async function restoreSpaceAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await restoreSpace(actor, str(fd, "spaceId"));
+    return { message: "Space restored.", celebrate: "small" };
+  });
 }
 
 export async function setSpaceMemberAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
@@ -173,9 +181,19 @@ export async function saveFieldAction(_: ActionResult, fd: FormData): Promise<Ac
         .split(/\r?\n|,/)
         .map((x) => x.trim())
         .filter(Boolean),
+      config: has(fd, "config") ? parseConfig(str(fd, "config")) : undefined,
     });
     return "Column saved.";
   });
+}
+
+function parseConfig(raw: string): FieldConfig | null {
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === "object" ? (v as FieldConfig) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function archiveFieldAction(_: ActionResult, fd: FormData): Promise<ActionResult> {

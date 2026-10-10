@@ -19,6 +19,7 @@ import {
   Plus,
   Search,
   Settings2,
+  SlidersHorizontal,
   Timer,
   UserRound,
   X,
@@ -30,7 +31,8 @@ import { DateInput } from "@/components/date-input";
 import { PRIORITIES, PRIORITY_LIST, isFinishedKind, type Priority } from "@/domain/spaces";
 import { addDays, dayOfWeek, formatDuration, monthLabel, monthRange, todayISO } from "@/lib/dates";
 import type { TaskView } from "@/server/spaces";
-import { AssigneePicker, Chevron, DuePicker, FieldEditor, PriorityPicker, QuickAdd, StatusPicker, type SField, type SPerson, type SStatus } from "./controls";
+import { FieldPicker } from "./field-picker";
+import { AssigneePicker, Chevron, DuePicker, FieldContext, FieldEditor, PriorityPicker, QuickAdd, StatusPicker, type SField, type SPerson, type SStatus } from "./controls";
 
 export type SpaceViewProps = {
   space: { id: string; name: string; color: string; icon: string | null };
@@ -46,7 +48,7 @@ export type SpaceViewProps = {
   listId: string | null;
 };
 
-type GroupBy = "status" | "assignee" | "priority" | "due" | "list";
+type GroupBy = "status" | "assignee" | "priority" | "due" | "list" | "none";
 type Filters = { q: string; mine: boolean; person: string; priority: string; showDone: boolean; groupBy: GroupBy };
 const DEFAULT_FILTERS: Filters = { q: "", mine: false, person: "", priority: "", showDone: false, groupBy: "status" };
 
@@ -96,17 +98,20 @@ export function SpaceView(p: SpaceViewProps) {
     return true;
   });
   const doneCount = top.filter((t) => finished.has(t.statusId)).length;
+  const taskRefs = useMemo(() => p.tasks.map((t) => ({ id: t.id, title: t.title })), [p.tasks]);
   const currentList = p.lists.find((l) => l.id === p.listId) ?? null;
   const defaultList = currentList?.id ?? p.lists[0]?.id;
 
+  const filtered = !!(filters.person || filters.priority || filters.showDone || filters.groupBy !== "status");
   return (
-    <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
-      <ListTree {...p} counts={(id) => top.filter((t) => (id ? t.listId === id : true) && !finished.has(t.statusId)).length} onPick={(id) => go({ list: id })} />
+    <FieldContext meId={p.meId} tasks={taskRefs}>
+    <div className="space-y-3">
+      <ListBar {...p} counts={(id) => top.filter((t) => (id ? t.listId === id : true) && !finished.has(t.statusId)).length} onPick={(id) => go({ list: id })} />
 
       <section className="min-w-0 space-y-3">
-        {/* View switch + filters */}
+        {/* View switch, search, one Filter button, New task. */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-xl border border-line bg-white p-0.5" role="tablist" aria-label="View">
+          <div className="inline-flex rounded-xl border border-line bg-surface p-0.5" role="tablist" aria-label="View">
             {(
               [
                 ["list", LayoutList, "List"],
@@ -119,7 +124,7 @@ export function SpaceView(p: SpaceViewProps) {
                 role="tab"
                 aria-selected={p.view === v}
                 onClick={() => go({ view: v })}
-                className={clsx("inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] px-3 py-1.5 text-[13px] font-medium transition-colors", p.view === v ? "bg-navy-900 text-white" : "text-muted hover:text-ink")}
+                className={clsx("inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] px-3 py-1.5 text-[13px] font-medium transition-colors", p.view === v ? "bg-strong text-white" : "text-muted hover:text-ink")}
               >
                 <Icon className="size-4" /> {label}
               </button>
@@ -133,43 +138,71 @@ export function SpaceView(p: SpaceViewProps) {
             type="button"
             onClick={() => setF({ mine: !filters.mine })}
             aria-pressed={filters.mine}
-            className={clsx("inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors", filters.mine ? "border-electric bg-electric-soft text-electric" : "border-line bg-white text-ink-2 hover:border-line-strong")}
+            className={clsx("inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors", filters.mine ? "border-electric bg-electric-soft text-electric" : "border-line bg-surface text-ink-2 hover:border-line-strong")}
           >
-            <UserRound className="size-4" /> Me
+            <UserRound className="size-4" /> Mine
           </button>
-          <select value={filters.person} onChange={(e) => setF({ person: e.target.value })} aria-label="Assignee" className="field field-sm h-9 w-auto">
-            <option value="">Anyone</option>
-            {p.people.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-              </option>
-            ))}
-          </select>
-          <select value={filters.priority} onChange={(e) => setF({ priority: e.target.value })} aria-label="Priority" className="field field-sm h-9 w-auto">
-            <option value="">Any priority</option>
-            {PRIORITY_LIST.map((x) => (
-              <option key={x} value={x}>
-                {PRIORITIES[x].label}
-              </option>
-            ))}
-            <option value="none">No priority</option>
-          </select>
-          {p.view === "list" && (
-            <select value={filters.groupBy} onChange={(e) => setF({ groupBy: e.target.value as GroupBy })} aria-label="Group by" className="field field-sm h-9 w-auto">
-              <option value="status">Group: status</option>
-              <option value="assignee">Group: person</option>
-              <option value="priority">Group: priority</option>
-              <option value="due">Group: due date</option>
-              <option value="list">Group: list</option>
-            </select>
-          )}
-          {p.view !== "board" && (
-            <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 text-[13px] text-ink-2">
-              <input type="checkbox" checked={filters.showDone} onChange={(e) => setF({ showDone: e.target.checked })} className="size-4 accent-[var(--color-electric)]" /> Show done ({doneCount})
-            </label>
-          )}
-          {(filters.q || filters.mine || filters.person || filters.priority) && (
-            <button type="button" onClick={() => setF({ q: "", mine: false, person: "", priority: "" })} className="inline-flex cursor-pointer items-center gap-1 text-[12.5px] font-medium text-muted hover:text-ink">
+          <Popover
+            label="Filter and group"
+            width={280}
+            triggerClassName={clsx("inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors", filtered ? "border-electric bg-electric-soft text-electric" : "border-line bg-surface text-ink-2 hover:border-line-strong")}
+            trigger={
+              <>
+                <SlidersHorizontal className="size-4" /> Filter{filtered ? " ·" : ""}
+              </>
+            }
+          >
+            {() => (
+              <div className="space-y-3">
+                <label className="block text-[12.5px] font-medium text-ink-2">
+                  Person
+                  <select value={filters.person} onChange={(e) => setF({ person: e.target.value })} className="field field-sm mt-1 h-9 w-full">
+                    <option value="">Anyone</option>
+                    {p.people.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-[12.5px] font-medium text-ink-2">
+                  Priority
+                  <select value={filters.priority} onChange={(e) => setF({ priority: e.target.value })} className="field field-sm mt-1 h-9 w-full">
+                    <option value="">Any priority</option>
+                    {PRIORITY_LIST.map((x) => (
+                      <option key={x} value={x}>
+                        {PRIORITIES[x].label}
+                      </option>
+                    ))}
+                    <option value="none">No priority</option>
+                  </select>
+                </label>
+                {p.view === "list" && (
+                  <label className="block text-[12.5px] font-medium text-ink-2">
+                    Group the list by
+                    <select value={filters.groupBy} onChange={(e) => setF({ groupBy: e.target.value as GroupBy })} className="field field-sm mt-1 h-9 w-full">
+                      <option value="status">Status</option>
+                      <option value="assignee">Person</option>
+                      <option value="priority">Priority</option>
+                      <option value="due">Due date</option>
+                      <option value="list">List</option>
+                      <option value="none">Nothing (one table)</option>
+                    </select>
+                  </label>
+                )}
+                {p.view !== "board" && (
+                  <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink-2">
+                    <input type="checkbox" checked={filters.showDone} onChange={(e) => setF({ showDone: e.target.checked })} className="size-4 accent-[var(--color-electric)]" /> Show finished ({doneCount})
+                  </label>
+                )}
+                <button type="button" onClick={() => setF({ ...DEFAULT_FILTERS, q: filters.q, mine: filters.mine })} className="text-[12.5px] font-medium text-muted hover:text-ink">
+                  Reset filters
+                </button>
+              </div>
+            )}
+          </Popover>
+          {(filters.q || filters.mine || filtered) && (
+            <button type="button" onClick={() => setF({ ...DEFAULT_FILTERS })} className="inline-flex cursor-pointer items-center gap-1 text-[12.5px] font-medium text-muted hover:text-ink">
               <X className="size-3.5" /> Clear
             </button>
           )}
@@ -195,65 +228,52 @@ export function SpaceView(p: SpaceViewProps) {
         <NewTaskForm {...p} listId={defaultList ?? ""} onDone={() => setAdding(false)} />
       </Modal>
     </div>
+    </FieldContext>
   );
 }
 
-/* ------------------------------ Lists tree ------------------------------ */
+/* ------------------------------ Lists bar ------------------------------ */
 
-function ListTree(p: SpaceViewProps & { counts: (id: string | null) => number; onPick: (id: string | null) => void }) {
-  const [closed, setClosed] = useState<Set<string>>(new Set());
+/** The space's lists as one row of tabs (folders as small labels between them). Fewer things to read than a tree. */
+function ListBar(p: SpaceViewProps & { counts: (id: string | null) => number; onPick: (id: string | null) => void }) {
+  if (p.lists.length <= 1 && !p.access.manage) return null;
   const loose = p.lists.filter((l) => !l.folderId);
-  const item = (id: string | null, name: string, color?: string | null, indent = false) => (
+  const tab = (id: string | null, name: string, color?: string | null) => (
     <button
       key={id ?? "all"}
       type="button"
       onClick={() => p.onPick(id)}
+      aria-pressed={p.listId === id}
       className={clsx(
-        "flex w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13.5px] transition-colors lg:w-full",
-        indent && "lg:pl-7",
-        p.listId === id ? "bg-electric-soft font-semibold text-electric" : "text-ink-2 hover:bg-white",
+        "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-medium transition-colors",
+        p.listId === id ? "border-strong bg-strong text-white" : "border-line bg-surface text-ink-2 hover:border-line-strong",
       )}
     >
-      <span className="size-2 shrink-0 rounded-full" style={{ background: color ?? (id ? "#cbd5e1" : p.space.color) }} />
-      <span className="flex-1 truncate">{name}</span>
-      <span className="text-[11.5px] tabular-nums text-faint">{p.counts(id) || ""}</span>
+      {id && <span className="size-2 rounded-full" style={{ background: color ?? "#94a3b8" }} />}
+      {name}
+      <span className={clsx("tabular-nums", p.listId === id ? "text-white/60" : "text-faint")}>{p.counts(id) || ""}</span>
     </button>
   );
   return (
-    <aside className="min-w-0">
-      <div className="flex gap-1 overflow-x-auto pb-1 [scrollbar-width:none] lg:block lg:space-y-0.5 lg:overflow-visible">
-        {item(null, "All tasks")}
-        {p.folders.map((f) => {
-          const open = !closed.has(f.id);
-          return (
-            <div key={f.id} className="contents lg:block">
-              <button
-                type="button"
-                onClick={() =>
-                  setClosed((s) => {
-                    const n = new Set(s);
-                    if (n.has(f.id)) n.delete(f.id);
-                    else n.add(f.id);
-                    return n;
-                  })
-                }
-                className="hidden w-full cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12.5px] font-semibold uppercase tracking-[0.06em] text-muted hover:text-ink lg:flex"
-              >
-                <Chevron open={open} />
-                <FolderClosed className="size-3.5" />
-                <span className="truncate">{f.name}</span>
-              </button>
-              {p.lists.filter((l) => l.folderId === f.id).map((l) => <div key={l.id} className={clsx("shrink-0", !open && "lg:hidden")}>{item(l.id, l.name, l.color, true)}</div>)}
-            </div>
-          );
-        })}
-        {loose.map((l) => item(l.id, l.name, l.color))}
-      </div>
+    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:thin]">
+      {tab(null, "All tasks")}
+      {p.folders.map((f) => {
+        const ls = p.lists.filter((l) => l.folderId === f.id);
+        if (!ls.length) return null;
+        return (
+          <span key={f.id} className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-sunken py-0.5 pl-2.5 pr-0.5">
+            <FolderClosed className="size-3.5 text-muted" />
+            <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-muted">{f.name}</span>
+            {ls.map((l) => tab(l.id, l.name, l.color))}
+          </span>
+        );
+      })}
+      {loose.map((l) => tab(l.id, l.name, l.color))}
       {p.access.manage && (
-        <div className="mt-2 hidden gap-1 lg:flex">
-          <Popover label="New list" width={260} triggerClassName="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-medium text-electric hover:bg-white" trigger={<><ListPlus className="size-3.5" /> List</>}>
-            {(close) => (
-              <ActionForm action={saveListAction} onSuccess={close} className="space-y-2 p-3">
+        <Popover label="New list or folder" width={270} triggerClassName="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border border-dashed border-line-strong px-3 py-1 text-[13px] font-medium text-muted hover:border-electric hover:text-electric" trigger={<><ListPlus className="size-3.5" /> List</>}>
+          {(close) => (
+            <div className="space-y-4">
+              <ActionForm action={saveListAction} onSuccess={close} className="space-y-2">
                 <input type="hidden" name="spaceId" value={p.space.id} />
                 <label className="label">New list</label>
                 <input name="name" required placeholder="e.g. October, Clients, Sprint 3" className="field w-full" autoFocus />
@@ -271,23 +291,21 @@ function ListTree(p: SpaceViewProps & { counts: (id: string | null) => number; o
                   Add list
                 </Submit>
               </ActionForm>
-            )}
-          </Popover>
-          <Popover label="New folder" width={240} triggerClassName="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-medium text-electric hover:bg-white" trigger={<><FolderPlus className="size-3.5" /> Folder</>}>
-            {(close) => (
-              <ActionForm action={saveFolderAction} onSuccess={close} className="space-y-2 p-3">
+              <ActionForm action={saveFolderAction} onSuccess={close} className="space-y-2 border-t border-line pt-3">
                 <input type="hidden" name="spaceId" value={p.space.id} />
-                <label className="label">New folder</label>
-                <input name="name" required placeholder="e.g. Campaigns 2026" className="field w-full" autoFocus />
-                <Submit size="sm" className="w-full">
+                <label className="label">
+                  <FolderPlus className="mr-1 inline size-3.5" /> Or a folder (groups lists)
+                </label>
+                <input name="name" required placeholder="e.g. Campaigns 2026" className="field w-full" />
+                <Submit size="sm" variant="secondary" className="w-full">
                   Add folder
                 </Submit>
               </ActionForm>
-            )}
-          </Popover>
-        </div>
+            </div>
+          )}
+        </Popover>
       )}
-    </aside>
+    </div>
   );
 }
 
@@ -295,6 +313,7 @@ function ListTree(p: SpaceViewProps & { counts: (id: string | null) => number; o
 
 function groupsFor(p: SpaceViewProps, tasks: TaskView[], groupBy: GroupBy) {
   const today = todayISO();
+  if (groupBy === "none") return [{ key: "all", label: "All tasks", color: p.space.color, tasks, statusId: undefined as string | undefined, assignee: undefined as string | undefined }];
   if (groupBy === "assignee")
     return [
       ...p.people.map((x) => ({ key: x.id, label: x.name, color: "#94a3b8", tasks: tasks.filter((t) => t.assigneeIds.includes(x.id)), statusId: undefined as string | undefined, assignee: x.id })),
@@ -320,14 +339,16 @@ function groupsFor(p: SpaceViewProps, tasks: TaskView[], groupBy: GroupBy) {
 function ListView(p: SpaceViewProps & { all: TaskView[]; groupBy: GroupBy; defaultList: string; finished: Set<string> }) {
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [picking, setPicking] = useState(false);
   const groups = groupsFor(p, p.tasks, p.groupBy);
-  const cols = `minmax(260px,1fr) 96px 92px 78px${p.fields.map(() => " 150px").join("")} 70px`;
-  const minW = 260 + 96 + 92 + 78 + p.fields.length * 150 + 70 + 40;
+  const cols = `minmax(260px,1fr) 96px 92px 78px${p.fields.map(() => " 150px").join("")} 84px`;
+  const minW = 260 + 96 + 92 + 78 + p.fields.length * 150 + 84 + 40;
   if (!p.tasks.length) return <div className="card px-5 py-10 text-center text-[14px] text-muted">Nothing matches these filters.</div>;
   return (
     <div className="card overflow-x-auto">
+      {picking && <FieldPicker open onClose={() => setPicking(false)} spaceId={p.space.id} fields={p.fields} statuses={p.statuses} />}
       <div style={{ minWidth: minW }}>
-        <div className="sticky top-0 grid items-center gap-2 border-b border-line bg-[#fafbfd] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-faint" style={{ gridTemplateColumns: cols }}>
+        <div className="sticky top-0 grid items-center gap-2 border-b border-line bg-subtle px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-faint" style={{ gridTemplateColumns: cols }}>
           <span>Task</span>
           <span>People</span>
           <span>Due</span>
@@ -337,7 +358,14 @@ function ListView(p: SpaceViewProps & { all: TaskView[]; groupBy: GroupBy; defau
               {f.name}
             </span>
           ))}
-          <span>Time</span>
+          <span className="flex items-center justify-between">
+            Time
+            {p.access.manage && (
+              <button type="button" onClick={() => setPicking(true)} className="grid size-6 cursor-pointer place-items-center rounded-md border border-line bg-surface text-muted transition-colors hover:border-electric hover:text-electric" title="Add a column" aria-label="Add a column">
+                <Plus className="size-3.5" />
+              </button>
+            )}
+          </span>
         </div>
         {groups.map((g) => {
           const isClosed = closed.has(g.key);
@@ -353,7 +381,7 @@ function ListView(p: SpaceViewProps & { all: TaskView[]; groupBy: GroupBy; defau
                     return n;
                   })
                 }
-                className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left hover:bg-[#fafbfd]"
+                className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left hover:bg-subtle"
               >
                 <Chevron open={!isClosed} />
                 <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11.5px] font-bold uppercase tracking-[0.05em] text-white" style={{ background: g.color }}>
@@ -397,7 +425,7 @@ function TaskRow(p: SpaceViewProps & { t: TaskView; cols: string; subtasks: Task
   const done = p.finished.has(t.statusId);
   return (
     <>
-      <div className={clsx("group grid items-center gap-2 border-t border-line/70 px-3 py-1.5 text-[14px] transition-colors hover:bg-[#f8faff]", p.sub && "bg-[#fcfdff]")} style={{ gridTemplateColumns: p.cols }}>
+      <div className={clsx("group grid items-center gap-2 border-t border-line/70 px-3 py-1.5 text-[14px] transition-colors hover:bg-hover", p.sub && "bg-subtle")} style={{ gridTemplateColumns: p.cols }}>
         <div className={clsx("flex min-w-0 items-center gap-2", p.sub && "pl-7")}>
           {p.subtasks.length > 0 ? (
             <button type="button" onClick={p.toggle} className="cursor-pointer rounded p-0.5 hover:bg-canvas" aria-label={p.expanded ? "Hide subtasks" : "Show subtasks"} aria-expanded={p.expanded}>
@@ -542,7 +570,7 @@ function Board(p: SpaceViewProps & { all: TaskView[]; defaultList: string; showC
                 e.preventDefault();
                 drop(s.id, null);
               }}
-              className={clsx("flex w-[272px] shrink-0 flex-col rounded-2xl p-2 transition-colors", over === s.id ? "bg-electric-soft ring-2 ring-electric/30" : "bg-[#eef1f6]")}
+              className={clsx("flex w-[272px] shrink-0 flex-col rounded-2xl p-2 transition-colors", over === s.id ? "bg-electric-soft ring-2 ring-electric/30" : "bg-sunken")}
             >
               <div className="flex items-center gap-2 px-1.5 pb-2 pt-1">
                 <span className="size-2.5 rounded-full" style={{ background: s.color }} />
@@ -570,7 +598,7 @@ function Board(p: SpaceViewProps & { all: TaskView[]; defaultList: string; showC
                       e.stopPropagation();
                       drop(s.id, t.id);
                     }}
-                    className={clsx("rounded-xl border border-line bg-white p-3 shadow-[0_1px_2px_rgb(11_22_57/0.06)] transition-[transform,box-shadow,opacity] hover:-translate-y-0.5 hover:shadow-md", p.access.work && "cursor-grab active:cursor-grabbing", dragging === t.id && "opacity-40")}
+                    className={clsx("rounded-xl border border-line bg-surface p-3 shadow-[0_1px_2px_rgb(11_22_57/0.06)] transition-[transform,box-shadow,opacity] hover:-translate-y-0.5 hover:shadow-md", p.access.work && "cursor-grab active:cursor-grabbing", dragging === t.id && "opacity-40")}
                   >
                     <BoardCard {...p} t={t} done={finishedIds.has(statusOf(t))} />
                   </div>
@@ -596,7 +624,7 @@ function BoardCard(p: SpaceViewProps & { t: TaskView; done: boolean }) {
       </Link>
       {t.subtasks.total > 0 && (
         <div className="flex items-center gap-2">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#e8ecf3]">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-track">
             <div className="h-full rounded-full bg-ok transition-[width]" style={{ width: `${(t.subtasks.done / t.subtasks.total) * 100}%` }} />
           </div>
           <span className="text-[11px] tabular-nums text-muted">
@@ -644,18 +672,18 @@ function Calendar(p: SpaceViewProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={() => shift(-1)} className="cursor-pointer rounded-lg border border-line bg-white p-1.5 hover:border-line-strong" aria-label="Previous month">
+        <button type="button" onClick={() => shift(-1)} className="cursor-pointer rounded-lg border border-line bg-surface p-1.5 hover:border-line-strong" aria-label="Previous month">
           <ChevronLeft className="size-4" />
         </button>
         <span className="min-w-[150px] text-center font-display text-[16px] font-bold">{monthLabel(ym.y, ym.m)}</span>
-        <button type="button" onClick={() => shift(1)} className="cursor-pointer rounded-lg border border-line bg-white p-1.5 hover:border-line-strong" aria-label="Next month">
+        <button type="button" onClick={() => shift(1)} className="cursor-pointer rounded-lg border border-line bg-surface p-1.5 hover:border-line-strong" aria-label="Next month">
           <ChevronRight className="size-4" />
         </button>
       </div>
       <div className="card overflow-x-auto">
         <div className="grid min-w-[700px] grid-cols-7">
           {WEEKDAYS.map((d) => (
-            <div key={d} className="border-b border-line bg-[#fafbfd] px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">
+            <div key={d} className="border-b border-line bg-subtle px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">
               {d}
             </div>
           ))}
@@ -663,11 +691,11 @@ function Calendar(p: SpaceViewProps) {
             const inMonth = d >= start && d <= end;
             const items = p.tasks.filter((t) => t.dueDate === d);
             return (
-              <div key={d} className={clsx("min-h-[96px] border-b border-r border-line p-1.5", !inMonth && "bg-[#fafbfd]")}>
+              <div key={d} className={clsx("min-h-[96px] border-b border-r border-line p-1.5", !inMonth && "bg-subtle")}>
                 <div className={clsx("mb-1 text-[12px] font-semibold tabular-nums", d === today ? "inline-grid size-6 place-items-center rounded-full bg-electric text-white" : inMonth ? "text-ink-2" : "text-faint")}>{Number(d.slice(8))}</div>
                 <div className="space-y-1">
                   {items.slice(0, 4).map((t) => (
-                    <Link key={t.id} href={`/spaces/${t.spaceId}/t/${t.id}`} className="block truncate rounded-md border-l-[3px] bg-white px-1.5 py-0.5 text-[12px] font-medium shadow-[0_1px_1px_rgb(11_22_57/0.06)] hover:text-electric" style={{ borderLeftColor: color(t) }}>
+                    <Link key={t.id} href={`/spaces/${t.spaceId}/t/${t.id}`} className="block truncate rounded-md border-l-[3px] bg-surface px-1.5 py-0.5 text-[12px] font-medium shadow-[0_1px_1px_rgb(11_22_57/0.06)] hover:text-electric" style={{ borderLeftColor: color(t) }}>
                       {t.title}
                     </Link>
                   ))}
@@ -788,9 +816,9 @@ function FirstSteps(p: SpaceViewProps & { listId: string }) {
           ["2", "Columns", "Budget, phone, links, ratings… whatever this team tracks."],
           ["3", "Automations", "When a task moves, assign, notify or add a checklist by itself."],
         ].map(([n, t, d]) => (
-          <div key={n} className="bg-white p-4">
+          <div key={n} className="bg-surface p-4">
             <div className="flex items-center gap-2 text-[13.5px] font-semibold">
-              <span className="grid size-5 place-items-center rounded-full bg-navy-900 text-[11px] text-white">{n}</span> {t}
+              <span className="grid size-5 place-items-center rounded-full bg-strong text-[11px] text-white">{n}</span> {t}
             </div>
             <p className="mt-1 text-[12.5px] text-muted">{d}</p>
           </div>

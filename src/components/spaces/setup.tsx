@@ -1,5 +1,6 @@
 "use client";
 
+import { FIELD_ICON, FieldPicker } from "./field-picker";
 import { useState } from "react";
 import clsx from "clsx";
 import { ArrowDown, ArrowRight, ArrowUp, Pencil, Plus, Trash2, X, Zap } from "lucide-react";
@@ -11,7 +12,6 @@ import {
   moveStatusAction,
   removeStatusAction,
   saveAutomationAction,
-  saveFieldAction,
   saveFolderAction,
   saveListAction,
   saveStatusAction,
@@ -21,7 +21,7 @@ import {
 } from "@/app/space-actions";
 import { ActionForm, Popover, Submit } from "@/components/client";
 import { Avatar } from "@/components/avatar";
-import { ACTIONS, ACTION_LIST, FIELD_TYPES, FIELD_TYPE_LIST, PRIORITIES, PRIORITY_LIST, SPACE_COLORS, STATUS_KINDS, STATUS_KIND_LIST, TRIGGERS, TRIGGER_LIST, type Action, type ActionType, type FieldOption, type Priority, type Trigger, type TriggerType } from "@/domain/spaces";
+import { ACTIONS, ACTION_LIST, FIELD_TYPES, PRIORITIES, PRIORITY_LIST, SPACE_COLORS, STATUS_KINDS, STATUS_KIND_LIST, TRIGGERS, TRIGGER_LIST, type Action, type ActionType, type FieldConfig, type FieldOption, type FieldType, type Priority, type Trigger, type TriggerType } from "@/domain/spaces";
 import { StatusPill, type SPerson, type SStatus } from "./controls";
 
 const STATUS_COLORS = ["#94a3b8", "#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#e5484d", "#14b8a6", "#e0569b", "#6366f1", "#0ea5e9", "#f97316", "#84cc16"];
@@ -148,7 +148,7 @@ export function Statuses({ spaceId, statuses, counts }: { spaceId: string; statu
     <div className="space-y-3">
       <ul className="space-y-1.5">
         {statuses.map((s, i) => (
-          <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-white px-3 py-2">
+          <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2">
             <div className="flex flex-col">
               <MoveBtn id={s.id} dir="up" disabled={i === 0} />
               <MoveBtn id={s.id} dir="down" disabled={i === statuses.length - 1} />
@@ -241,71 +241,45 @@ function StatusForm({ spaceId, status, onDone }: { spaceId: string; status?: SSt
 
 /* -------------------------------- Columns ------------------------------ */
 
-export function Columns({ spaceId, fields }: { spaceId: string; fields: { id: string; name: string; type: string; options: FieldOption[] }[] }) {
+export function Columns({ spaceId, fields, statuses }: { spaceId: string; fields: { id: string; name: string; type: string; options: FieldOption[]; config?: FieldConfig | null }[]; statuses: { id: string; name: string; color: string }[] }) {
+  const [editing, setEditing] = useState<string | "new" | null>(null);
+  const cur = fields.find((f) => f.id === editing);
   return (
     <div className="space-y-3">
       {fields.length > 0 ? (
         <ul className="space-y-1.5">
-          {fields.map((f) => (
-            <li key={f.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-white px-3 py-2">
-              <span className="text-[14px] font-medium">{f.name}</span>
-              <span className="rounded-md bg-canvas px-1.5 py-0.5 text-[11.5px] font-semibold text-ink-2">{FIELD_TYPES[f.type as keyof typeof FIELD_TYPES]?.label ?? f.type}</span>
-              {f.options.length > 0 && <span className="truncate text-[12px] text-muted">{f.options.map((o) => o.label).join(", ")}</span>}
-              <span className="ml-auto flex items-center gap-1">
-                <Popover label={`Edit ${f.name}`} width={320} triggerClassName="cursor-pointer rounded-md p-1.5 text-faint hover:bg-canvas hover:text-ink" trigger={<Pencil className="size-3.5" />}>
-                  {(close) => <FieldForm spaceId={spaceId} field={f} onDone={close} />}
-                </Popover>
-                <ActionForm action={archiveFieldAction} inlineError={false}>
-                  <input type="hidden" name="fieldId" value={f.id} />
-                  <button type="submit" onClick={(e) => !confirm(`Remove the column “${f.name}”? Its values are hidden.`) && e.preventDefault()} className="cursor-pointer rounded-md p-1.5 text-faint hover:bg-bad-soft hover:text-bad" aria-label={`Remove ${f.name}`}>
-                    <Trash2 className="size-3.5" />
+          {fields.map((f) => {
+            const Icon = FIELD_ICON[f.type as FieldType] ?? Pencil;
+            return (
+              <li key={f.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2">
+                <Icon className="size-4 text-muted" />
+                <span className="text-[14px] font-medium">{f.name}</span>
+                <span className="rounded-md bg-canvas px-1.5 py-0.5 text-[11.5px] font-semibold text-ink-2">{FIELD_TYPES[f.type as keyof typeof FIELD_TYPES]?.label ?? f.type}</span>
+                {f.options.length > 0 && <span className="truncate text-[12px] text-muted">{f.options.map((o) => o.label).join(", ")}</span>}
+                {f.config?.formula && <span className="truncate font-mono text-[12px] text-muted">{f.config.formula}</span>}
+                <span className="ml-auto flex items-center gap-1">
+                  <button type="button" onClick={() => setEditing(f.id)} className="cursor-pointer rounded-md p-1.5 text-faint hover:bg-canvas hover:text-ink" aria-label={`Edit ${f.name}`}>
+                    <Pencil className="size-3.5" />
                   </button>
-                </ActionForm>
-              </span>
-            </li>
-          ))}
+                  <ActionForm action={archiveFieldAction} inlineError={false}>
+                    <input type="hidden" name="fieldId" value={f.id} />
+                    <button type="submit" onClick={(e) => !confirm(`Remove the column “${f.name}”? Its values are hidden.`) && e.preventDefault()} className="cursor-pointer rounded-md p-1.5 text-faint hover:bg-bad-soft hover:text-bad" aria-label={`Remove ${f.name}`}>
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </ActionForm>
+                </span>
+              </li>
+            );
+          })}
         </ul>
       ) : (
-        <p className="text-[13px] text-muted">No extra columns yet. Add what this team tracks: budget, phone, links, ratings…</p>
+        <p className="text-[13px] text-muted">No extra columns yet. Add what this team tracks: budget, phone, links, ratings, votes, formulas…</p>
       )}
-      <Popover label="New column" width={320} triggerClassName="inline-flex cursor-pointer items-center gap-1.5 text-[13px] font-medium text-electric" trigger={<><Plus className="size-4" /> Add a column</>}>
-        {(close) => <FieldForm spaceId={spaceId} onDone={close} />}
-      </Popover>
+      <button type="button" onClick={() => setEditing("new")} className="inline-flex cursor-pointer items-center gap-1.5 text-[13px] font-medium text-electric">
+        <Plus className="size-4" /> Add a column
+      </button>
+      {editing && <FieldPicker open onClose={() => setEditing(null)} spaceId={spaceId} fields={fields} statuses={statuses} field={cur} />}
     </div>
-  );
-}
-
-function FieldForm({ spaceId, field, onDone }: { spaceId: string; field?: { id: string; name: string; type: string; options: FieldOption[] }; onDone: () => void }) {
-  const [type, setType] = useState(field?.type ?? "text");
-  return (
-    <ActionForm action={saveFieldAction} onSuccess={onDone} className="space-y-2.5 p-3">
-      <input type="hidden" name="spaceId" value={spaceId} />
-      {field && <input type="hidden" name="fieldId" value={field.id} />}
-      <div>
-        <label className="label">Name</label>
-        <input name="name" defaultValue={field?.name ?? ""} required maxLength={40} placeholder="e.g. Budget" className="field w-full" autoFocus />
-      </div>
-      <div>
-        <label className="label">Type</label>
-        <select name="type" value={type} onChange={(e) => setType(e.target.value)} disabled={!!field} className="field w-full">
-          {FIELD_TYPE_LIST.map((t) => (
-            <option key={t} value={t}>
-              {FIELD_TYPES[t].label}: {FIELD_TYPES[t].hint}
-            </option>
-          ))}
-        </select>
-        {field && <input type="hidden" name="type" value={type} />}
-      </div>
-      {(type === "dropdown" || type === "labels") && (
-        <div>
-          <label className="label">Options (one per line)</label>
-          <textarea name="options" rows={4} defaultValue={field?.options.map((o) => o.label).join("\n") ?? ""} required className="field w-full" />
-        </div>
-      )}
-      <Submit size="sm" className="w-full">
-        {field ? "Save" : "Add column"}
-      </Submit>
-    </ActionForm>
   );
 }
 
@@ -315,7 +289,7 @@ export function ListsAndFolders({ spaceId, folders, lists }: { spaceId: string; 
   return (
     <div className="space-y-2">
       {[...folders.map((f) => ({ f, ls: lists.filter((l) => l.folderId === f.id) })), { f: null, ls: lists.filter((l) => !l.folderId) }].map(({ f, ls }) => (
-        <div key={f?.id ?? "none"} className="rounded-xl border border-line bg-white">
+        <div key={f?.id ?? "none"} className="rounded-xl border border-line bg-surface">
           <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[12.5px] font-semibold uppercase tracking-[0.06em] text-muted">
             {f ? f.name : "Not in a folder"}
             {f && (
@@ -418,7 +392,7 @@ export function Automations({ spaceId, automations, statuses, lists, people }: {
       {automations.length > 0 ? (
         <ul className="space-y-2">
           {automations.map((a) => (
-            <li key={a.id} className={clsx("rounded-xl border bg-white px-3.5 py-3", a.enabled ? "border-amber-200" : "border-line opacity-70")}>
+            <li key={a.id} className={clsx("rounded-xl border bg-surface px-3.5 py-3", a.enabled ? "border-amber-200" : "border-line opacity-70")}>
               <div className="flex flex-wrap items-center gap-2">
                 <Zap className={clsx("size-4", a.enabled ? "text-amber-500" : "text-faint")} />
                 <span className="text-[14px] font-semibold">{a.name}</span>
@@ -427,7 +401,7 @@ export function Automations({ spaceId, automations, statuses, lists, people }: {
                   <ActionForm action={setAutomationAction} inlineError={false}>
                     <input type="hidden" name="automationId" value={a.id} />
                     <input type="hidden" name="state" value={a.enabled ? "off" : "on"} />
-                    <button type="submit" role="switch" aria-checked={a.enabled} aria-label={`${a.name} on/off`} className={clsx("relative inline-flex h-5 w-9 cursor-pointer items-center rounded-full transition-colors", a.enabled ? "bg-amber-500" : "bg-[#d5dbe7]")}>
+                    <button type="submit" role="switch" aria-checked={a.enabled} aria-label={`${a.name} on/off`} className={clsx("relative inline-flex h-5 w-9 cursor-pointer items-center rounded-full transition-colors", a.enabled ? "bg-amber-500" : "bg-track")}>
                       <span className={clsx("inline-block size-4 rounded-full bg-white shadow transition-transform", a.enabled ? "translate-x-[18px]" : "translate-x-0.5")} />
                     </button>
                   </ActionForm>
@@ -493,7 +467,7 @@ function AutomationBuilder({ spaceId, statuses, lists, people, onDone }: { space
   };
   const set = (i: number, a: Action) => setActions((xs) => xs.map((x, j) => (j === i ? a : x)));
   return (
-    <ActionForm action={saveAutomationAction} onSuccess={onDone} className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
+    <ActionForm action={saveAutomationAction} onSuccess={onDone} className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/40 dark:bg-amber-400/10 p-4">
       <input type="hidden" name="spaceId" value={spaceId} />
       <input type="hidden" name="actions" value={JSON.stringify(actions)} />
       <div>
@@ -502,7 +476,7 @@ function AutomationBuilder({ spaceId, statuses, lists, people, onDone }: { space
         </label>
         <input id="au-name" name="name" required maxLength={80} placeholder="e.g. Review: tell the account manager" className="field w-full" />
       </div>
-      <div className="rounded-xl bg-white p-3">
+      <div className="rounded-xl bg-surface p-3">
         <div className="eyebrow mb-2">When</div>
         <div className="flex flex-wrap gap-2">
           <select name="trigger" value={trigger} onChange={(e) => setTrigger(e.target.value as TriggerType)} className="field field-sm h-9 w-auto" aria-label="When">
@@ -543,7 +517,7 @@ function AutomationBuilder({ spaceId, statuses, lists, people, onDone }: { space
           )}
         </div>
       </div>
-      <div className="rounded-xl bg-white p-3">
+      <div className="rounded-xl bg-surface p-3">
         <div className="eyebrow mb-2">Then</div>
         <ol className="space-y-2">
           {actions.map((a, i) => (
@@ -567,7 +541,7 @@ function AutomationBuilder({ spaceId, statuses, lists, people, onDone }: { space
               </option>
             ))}
           </select>
-          <button type="button" onClick={add} className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg border border-line bg-white px-3 text-[13px] font-medium hover:border-electric hover:text-electric">
+          <button type="button" onClick={add} className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium hover:border-electric hover:text-electric">
             <Plus className="size-3.5" /> Add
           </button>
         </div>
@@ -663,7 +637,7 @@ export function ArchiveSpace({ spaceId, name }: { spaceId: string; name: string 
   return (
     <ActionForm action={archiveSpaceAction}>
       <input type="hidden" name="spaceId" value={spaceId} />
-      <button type="submit" onClick={(e) => !confirm(`Archive “${name}”? It disappears for everyone; its history is kept.`) && e.preventDefault()} className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-2 text-[13.5px] font-medium text-bad hover:border-bad/30 hover:bg-bad-soft">
+      <button type="submit" onClick={(e) => !confirm(`Archive “${name}”? It disappears for everyone; its history is kept.`) && e.preventDefault()} className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[13.5px] font-medium text-bad hover:border-bad/30 hover:bg-bad-soft">
         <Trash2 className="size-4" /> Archive this space
       </button>
     </ActionForm>

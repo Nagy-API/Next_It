@@ -15,6 +15,7 @@ import {
   type ContentType,
   type StageKind,
 } from "@/db/schema";
+import { cleanPriority } from "@/domain/priority";
 import { STAGE_META, TYPE_META, routeFor } from "@/domain/workflow";
 import { cairoDate, formatDay, isValidISODate, isValidTime, monthLabel, monthOf, plural } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
@@ -452,7 +453,7 @@ export async function addComment(
       [to] = await tx.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, opts.mentionUserId));
       assert(to, "That person doesn't exist.");
     }
-    await tx.insert(comments).values({ itemId, authorId: actor.id, body: text, parentId: parent?.id ?? null, mentionUserId: to?.id ?? null });
+    const [created] = await tx.insert(comments).values({ itemId, authorId: actor.id, body: text, parentId: parent?.id ?? null, mentionUserId: to?.id ?? null }).returning({ id: comments.id });
     // @Name anywhere in the text notifies that person too.
     const people = await tx.select({ id: users.id, name: users.name }).from(users).where(eq(users.isActive, true));
     const tagged = findMentions(text, people).filter((id) => id !== to?.id && id !== parent?.authorId && id !== parent?.mentionUserId);
@@ -484,6 +485,7 @@ export async function addComment(
         ? `${actor.name} replied: “${truncate(text, 140)}”`
         : `${actor.name} ${to ? `wrote to ${to.name}` : "commented"}: “${truncate(text, 140)}”`,
     });
+    return created.id;
   });
 }
 
@@ -628,6 +630,7 @@ export type ExtraTaskInput = {
   step: StageKind;
   type: ContentType;
   dueDate?: string | null;
+  priority?: string | null;
 };
 
 /**
@@ -669,7 +672,7 @@ export async function createExtraTasks(actor: Actor, input: ExtraTaskInput, opts
       assert(p?.isActive, "That person is not an active team member.");
       const [item] = await tx
         .insert(contentItems)
-        .values({ title, type: input.type, planId, extraRequestedById: actor.id, createdAt: now, createdById: actor.id })
+        .values({ title, type: input.type, planId, extraRequestedById: actor.id, priority: cleanPriority(input.priority), createdAt: now, createdById: actor.id })
         .returning();
       await tx.insert(stages).values(
         kinds.map((kind, i) => ({

@@ -90,11 +90,16 @@ src/
     (app)/               ← everything behind sign-in (shared layout = sidebar/top bar)
       layout.tsx         ← loads user, counts, people; shows FirstPassword screen when a password is temporary
       first-password.tsx ← "choose your own password" screen
-      my-work/           ← My tasks (per person): my brands first, each brand by day; approvals; "Sent, waiting approval"
-      overview/          ← Notes (12 h), tiles, "move now (48h)", Team right now (statuses + clocks), pipeline, brands
+      my-work/           ← My tasks (per person): posting today, my shoots, my brands first, each brand by day (or my own
+                           drag order, personal_order); approvals; "Sent, waiting approval"
+      overview/          ← "The agency today": tiles, Big updates, Posting today, shoots today/tomorrow, move now (48h),
+                           Team right now, mood / kudos / birthdays / stars (module "fun"), pipeline, brands
+      shoots/            ← Shoot schedule (week / month / list): item shoots + standalone slots (several per day), crew, notes
       tasks/             ← (removed: Day tasks) redirects to My tasks
-      spaces/            ← Spaces (workflow builder): list, new/ (templates), [id] (List / Board / Calendar),
-                           [id]/settings (statuses, automations, columns, lists, members), [id]/t/[taskId] (one task)
+      spaces/            ← Spaces (workflow builder): list (+ deleted spaces to restore), new/ = the template library
+                           (space / whiteboard / doc / sheet, by shelf, with previews), [id] (tabs: Tasks + its pages;
+                           List / Board / Calendar; lists as one row; one Filter button; "+" column picker),
+                           [id]/settings, [id]/t/[taskId] (one task), [id]/p/[pageId] (a doc, whiteboard or sheet)
       dashboards/        ← Spaces dashboards: build one (scope + cards), [id] = live view
       quick/             ← Quick update: a whole step at once (paste a list of links → Save all), every team
       reports/           ← Reports (managers): People / Brands for today, a week, a month; Excel
@@ -106,23 +111,33 @@ src/
       projects/          ← one-off clients & projects (owner, delete/restore)
       add/               ← add content (rows or "Paste a list" with preview)
       team/              ← people directory; team/[username] = personal numbers (self or managers)
-      settings/          ← Workspace (white label, modules, auto pause), Access (per-person permissions),
-                           Brands (default people per step), People, Platforms, My account — tabs by permission
+      settings/          ← Workspace (white label, modules, auto pause), Messages (daily message lines + Big updates),
+                           Access (per-person permissions), Brands (default people per step, deleted brands to restore),
+                           People, Platforms, My account (photo, birthday, password) — tabs by permission
       work/, search/     ← all open work with filters; search
     api/
       notifications/     ← bell feed (GET, polled every 30 s)
-      chat/              ← new chat messages since a time (GET, polled every 4 s)
+      chat/              ← new chat messages since a time + who's online + who's typing + reactions (GET, polled every 3 s);
+                           chat/typing (POST "I'm typing", kept 6 s in memory)
       avatar/[id]/       ← profile photos (signed-in only); brand-logo/[id]/ = brand logos (cached by hash)
       files/             ← POST upload (25 MB, allowed types only); files/[id]/ = open/download (signed-in only)
-      export/dashboard, export/person/[username] (?from&to), export/report ← Excel downloads
+      export/dashboard, export/person/[username] (?from&to), export/report, export/plan (?brand&m: one brand's month:
+                           title, posting date, Canva slide link…) ← Excel downloads
       backup/            ← admin: download a full backup (built-in database)
       workspace-asset/[key] ← the workspace's uploaded logos (public: the sign-in page shows them)
   components/            ← UI. handoff.tsx = task cards + step panels (content/shoot/versions with options/social),
                            ProgressPicker + ChangesBanner; send-back.tsx; attachments.tsx; date-input.tsx (dd/mm/yyyy);
                            platform-icon.tsx (app marks); notes-bar.tsx; report-parts.tsx; scroll-memory.tsx;
-                           shell.tsx = sidebar/top bar; bell.tsx; tasks.tsx; comments.tsx; charts.tsx;
+                           shell.tsx = sidebar (resizable + hideable, cookie "sb"; ⋯ menus to delete a brand / space with
+                           typed name, danger.tsx) + top bar (greeting, daily message, search, theme-toggle.tsx, bell);
+                           back-link.tsx (Back goes where you came from); inline-edit.tsx (rename / re-date in place);
+                           people.tsx (Big updates, reactions, mood, kudos); reorder.tsx; shoots.tsx;
+                           pages/ (doc-editor, whiteboard, sheet-editor); spaces/field-picker.tsx;
+                           bell.tsx; tasks.tsx; comments.tsx; charts.tsx;
                            avatar.tsx (photos + manager star / role label); client.tsx (ActionForm, Modal, Popover, toasts)
-  domain/                ← PURE rules, no database: workflow.ts (stages, routes, deadlines, health),
+  domain/                ← PURE rules, no database: workflow.ts (stages, routes, deadlines, health), shoot.ts (times),
+                           pages.ts (doc / whiteboard / sheet content + cleanContent), page-templates.ts,
+                           space-templates-extra.ts (more spaces + ALL_SPACE_TEMPLATES), field-formula.ts, priority.ts,
                            permissions.ts (who can do what: PERMISSIONS keys + defaults + per-person overrides),
                            spaces.ts (status kinds, priorities, column types, templates, automation catalogue)
   server/                ← everything that reads/writes the database
@@ -145,12 +160,16 @@ src/
     access.ts            ← Settings → Access (permission overrides; someone always keeps "Manage access")
     auto-pause.ts        ← every 5 min: stops clocks left running past the pause time; runs due-date automations
     time.ts              ← correcting worked time (edit / add / remove a stretch), logged
-    announcements.ts     ← message of the day
+    fun.ts               ← Big updates, daily message (Settings → Messages, never shows who wrote it), reactions, kudos,
+                           moods, birthdays, stars of the week
+    shoots.ts            ← shoot schedule (item shoots + slots), "shot" → editing item / task for the editor
+    pages.ts             ← docs / whiteboards / sheets in spaces (create, autosave, rename, copy, delete)
+    order.ts             ← each person's own order in My tasks
     spaces.ts            ← Spaces: spaces, members, statuses, folders, lists, columns, tasks, subtasks, comments,
                            the task clock and the automations engine (fire / runAction, max 3 levels deep)
     dashboards.ts        ← Spaces dashboards (scope + widgets), dashboardData() computes everything live
   db/schema.ts           ← ALL tables (Drizzle). db/index.ts = PostgreSQL or PGlite connection; db/local.ts = PGlite lock, backups, self-healing
-  lib/                   ← dates (Cairo timezone, formatDuration, formatDMY), links.ts (name a link: Canva / Google Doc / Drive…),
+  lib/                   ← formula.ts (sheet formulas, hand-written parser — never eval), sidebar.ts, dates (Cairo timezone, formatDuration, formatDMY), links.ts (name a link: Canva / Google Doc / Drive…),
                            paste parser, ranges, passwords
 drizzle/                 ← SQL migrations, in order. Never edit an applied migration — add a new one. Embedded in src/db/migrations.generated.ts.
 scripts/                 ← migrate, seed (thin wrapper), local.mjs, production.mjs, restore.mjs, tracker-to-seed.mjs (Excel → import data)
@@ -193,7 +212,15 @@ docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
 - **notifications** — per person; `kind`, `title`, `body`, `itemId` or `href`, `readAt`.
 - **permission_overrides** — per person + key (from `PERMISSIONS`): allow true/false. No row = the default rule.
 - **workspace_settings** — key/value: `workspace` (names, colours, watermark, modules, autoPauseAt) and `image.*` (logos).
-- **announcements** — message of the day (one live at a time, `expiresAt`, `deletedAt`).
+- **announcements** — Big updates (`title`, `pinned`, `expiresAt`, `deletedAt`); reactions in **reactions**
+  (targetKind announcement / chat / kudos + target + user + emoji). **kudos**, **moods** (one per person per day).
+- **shoots** — standalone shoot slots: title, brand, day, start/end, location, people, rentals/purchases (+ready), notes,
+  crewIds, after none|edit + editorId, status planned|shot|cancelled, itemId/taskId (made when shot). Item shoots use
+  content_items `shootDate/shootTime/shootEndTime/shootNotes/shootCrewIds`.
+- **space_pages** — docs / whiteboards / sheets in a space: kind, title, icon, content jsonb (only via `cleanContent`).
+- **personal_order** — my own order in My tasks (`item:<id>` → position). users: `lastSeenAt` (online), `birthday` (MM-DD).
+  brands: `deletedAt` (soft delete with its items; restore). tasks / content_items: `priority` (urgent | important | null).
+  attachments: `commentId` (files written with a comment). space_fields: `config` (formula, rollup, button settings).
 - **Spaces**: `spaces` (privacy, colour, icon, optional brand), `space_members` (admin/member/viewer), `space_statuses`
   (kind open/active/review/done/closed — active runs the clock, done/closed set `completedAt`), `folders`, `lists`,
   `space_fields` (custom columns: text, number, money, date, dropdown, labels, checkbox, link, email, phone, person,
@@ -237,14 +264,22 @@ Waiting approval (version sent), done, Scheduled, Paused, send-back, reassignmen
 later pauses at midnight) is closed at that instant and the step reads *Paused*. People with "Edit worked time" (admins;
 Assem by default) correct times on the item page ("Time on each step").
 Shoot extras (Pre-production): how many people, things to rent / buy, each ticked "ready"; shown in `ShootSummary`.
+Shooting never needs "In progress": planning the shoot (day, from–to, who goes, notes) sets the step to *Scheduled* for
+that day; "Shooting done" credits the time of the shoot window (work_sessions endReason "shoot") when no clock ran.
+Shoot schedule (/shoots): every planned item shoot + standalone slots (several per day, each with brand, people, from–to,
+notes). Marking a slot "Shot" with "Send for editing" creates a brand item starting at editing for the editor (or a task).
 Every work card shows one "Next:" line (`NextStep` in handoff.tsx). Brand groups in My tasks fold (`fold.tsx`, per device).
-Message of the day (`announcements.ts`, `AnnouncementStrip` in the shell): one line on every page, posted by "announce". `StageView.time` = total + running.
+Daily message: one line under the greeting in the top bar (never shows who wrote it), lines from Settings → Messages, one per
+day in turn (`dailyMessage`, fun.ts). Big updates (fun.ts) show large on the Overview with reactions. Dark mode: `.dark` on
+<html> from the cookie "theme" (theme-toggle.tsx); colours are tokens (bg-surface, bg-subtle, bg-hover, bg-sunken, text-ink…)
+so pages flip by themselves — never use bg-white or a light hex for a surface. `StageView.time` = total + running.
 My tasks hides work that's *Waiting approval* (it's with the reviewer) in "Sent, waiting approval" with the time it took.
 The month follows the posting date: an item dated in another month lives in that month's plan (`followPostingMonthTx`,
 on create and on date change; a one-time upgrade moved older items — marker `plans_follow_posting_date`).
 Social: pasting a live link marks that platform Published; when every planned platform is published the item is
 done automatically; un-publishing reopens Social. Every planned platform scheduled (or live) → the Social step reads
 *Scheduled* (with the first date) from outside.
+Posting today is highlighted everywhere (rows, item status, Overview "Posting today", My tasks "it's your turn").
 "Hot": posting or current deadline within 48 hours (`isHot` in queries.ts) → highlighted and sorted first.
 Reviewer of a version: the item's content creator, else the brand's default content creator (`reviewersFor`, `WorkItem.reviewerId`).
 
@@ -300,7 +335,8 @@ below). Settings → Access turns any key on/off per person (`permission_overrid
 | Brands, people, platforms, backups, workspace customization, access, build workflows (Spaces) | admin |
 | Create spaces | managers (+ anyone given it). Inside a space: its admins set it up, members work, viewers only see |
 | Edit worked time | admin (+ Assem by default) |
-| Message of the day | managers |
+| Daily message (`announce`), Big updates (`updates.post`) | admin by default (Settings → Access) |
+| Export a brand's month plan (`exportPlan`) | content + managers |
 | Comment, chat, send back | everyone |
 
 Rules: every server function asserts its permission itself (never rely on hiding a button). Pages redirect when
@@ -397,7 +433,10 @@ people made in Settings.
 **Spaces (workflow builder)** — add a template: `SPACE_TEMPLATES` in domain/spaces.ts (statuses by name, columns,
 folders/lists, automations referring to statuses by name). Add an automation trigger/action: `TRIGGERS` / `ACTIONS`
 (domain/spaces.ts) → `fire` / `runAction` (server/spaces.ts) → builder UI (`components/spaces/setup.tsx`) → test.
-Add a column type: `FIELD_TYPES` → `cleanValue` (validation) → `FieldValue` / `FieldForm` (components/spaces/controls.tsx).  **Timezone** → `TIMEZONE` in `src/lib/dates.ts`.
+Add a column type: `FIELD_TYPES` (with its group) → `cleanValue` / `setFieldValue` (validation) or `withComputed` (worked
+out) → `FieldValue` / `FieldEditor` / `FieldForm` (components/spaces/controls.tsx) → icon + settings in field-picker.tsx.
+Add a doc / whiteboard / sheet template: `PAGE_TEMPLATES` (domain/page-templates.ts; `build()` returns fresh content that
+passes `cleanContent`). Add a space template: `EXTRA_SPACE_TEMPLATES` (domain/space-templates-extra.ts) with a `category`.  **Timezone** → `TIMEZONE` in `src/lib/dates.ts`.
 
 ## 13. Deployment & Git
 
