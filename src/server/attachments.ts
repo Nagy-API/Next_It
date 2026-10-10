@@ -14,6 +14,7 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db, databaseMode, type Tx } from "@/db";
 import { attachments, contentItems, tasks, type Attachment } from "@/db/schema";
 import { isManager } from "@/domain/permissions";
+import { assertTaskWork } from "./spaces";
 import { logActivity, type Actor } from "./activity";
 import { assert } from "./errors";
 import { loadItemCtx, normalizeUrl, truncate } from "./workflow";
@@ -74,7 +75,7 @@ async function assertTaskAccess(tx: Tx, actor: Actor, taskId: string) {
   assert(t.assigneeId === actor.id || t.createdById === actor.id || isManager(actor), "This task isn't yours.");
 }
 
-type Target = { itemId?: string | null; taskId?: string | null };
+type Target = { itemId?: string | null; taskId?: string | null; workTaskId?: string | null };
 
 async function checkTarget(tx: Tx, actor: Actor, target: Target) {
   if (target.itemId) {
@@ -82,6 +83,7 @@ async function checkTarget(tx: Tx, actor: Actor, target: Target) {
     return ctx;
   }
   if (target.taskId) await assertTaskAccess(tx, actor, target.taskId);
+  if (target.workTaskId) await assertTaskWork(tx, actor, target.workTaskId);
   return null;
 }
 
@@ -108,7 +110,7 @@ export async function saveFile(actor: Actor, file: File, target: Target = {}): P
       const ctx = await checkTarget(tx, actor, target);
       const [a] = await tx
         .insert(attachments)
-        .values({ itemId: target.itemId || null, taskId: target.taskId || null, kind: "file", name: cleanName(file.name), mime, size: file.size, storageKey: key, createdById: actor.id })
+        .values({ itemId: target.itemId || null, taskId: target.taskId || null, workTaskId: target.workTaskId || null, kind: "file", name: cleanName(file.name), mime, size: file.size, storageKey: key, createdById: actor.id })
         .returning();
       if (ctx) await logActivity(tx, actor, { action: "attachment_added", itemId: ctx.item.id, brandId: ctx.brandId, projectId: ctx.projectId, clientId: ctx.clientId, summary: `${actor.name} attached “${a.name}”.` });
       return a;
@@ -127,7 +129,7 @@ export async function addLink(actor: Actor, input: { url: string; name?: string 
     const ctx = await checkTarget(tx, actor, input);
     const [a] = await tx
       .insert(attachments)
-      .values({ itemId: input.itemId || null, taskId: input.taskId || null, kind: "link", name: truncate(name, 120), url, createdById: actor.id })
+      .values({ itemId: input.itemId || null, taskId: input.taskId || null, workTaskId: input.workTaskId || null, kind: "link", name: truncate(name, 120), url, createdById: actor.id })
       .returning();
     if (ctx) await logActivity(tx, actor, { action: "attachment_added", itemId: ctx.item.id, brandId: ctx.brandId, projectId: ctx.projectId, clientId: ctx.clientId, summary: `${actor.name} attached a link: ${a.name}.` });
     return a;
@@ -141,7 +143,7 @@ export async function linkPendingTx(tx: Tx, actor: Actor, ids: string[], targets
   const pending = await tx
     .select()
     .from(attachments)
-    .where(and(inArray(attachments.id, clean), eq(attachments.createdById, actor.id), isNull(attachments.itemId), isNull(attachments.taskId), isNull(attachments.deletedAt)));
+    .where(and(inArray(attachments.id, clean), eq(attachments.createdById, actor.id), isNull(attachments.itemId), isNull(attachments.taskId), isNull(attachments.workTaskId), isNull(attachments.deletedAt)));
   for (const a of pending) {
     const [first, ...rest] = targets;
     await tx.update(attachments).set({ itemId: first.itemId ?? null, taskId: first.taskId ?? null }).where(eq(attachments.id, a.id));
@@ -196,7 +198,7 @@ function view(a: Attachment): AttachmentView {
   };
 }
 
-export async function attachmentsFor(target: { itemIds?: string[]; taskIds?: string[] }): Promise<Map<string, AttachmentView[]>> {
+export async function attachmentsFor(target: { itemIds?: string[]; taskIds?: string[]; workTaskIds?: string[] }): Promise<Map<string, AttachmentView[]>> {
   const out = new Map<string, AttachmentView[]>();
   const add = (key: string, a: Attachment) => out.set(key, [...(out.get(key) ?? []), view(a)]);
   if (target.itemIds?.length) {
@@ -206,6 +208,10 @@ export async function attachmentsFor(target: { itemIds?: string[]; taskIds?: str
   if (target.taskIds?.length) {
     const rows = await db.select().from(attachments).where(and(inArray(attachments.taskId, target.taskIds), isNull(attachments.deletedAt))).orderBy(asc(attachments.createdAt));
     for (const a of rows) add(a.taskId!, a);
+  }
+  if (target.workTaskIds?.length) {
+    const rows = await db.select().from(attachments).where(and(inArray(attachments.workTaskId, target.workTaskIds), isNull(attachments.deletedAt))).orderBy(asc(attachments.createdAt));
+    for (const a of rows) add(a.workTaskId!, a);
   }
   return out;
 }

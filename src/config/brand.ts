@@ -3,6 +3,9 @@
  *  BRANDING — the ONE place to change the company name, colours and logos.
  * ============================================================================
  *
+ *  These are the DEFAULTS. Owners can change the name, colours, logos and watermark without code in
+ *  Settings → Workspace (src/server/settings.ts); anything they don't change comes from here.
+ *
  *  To use this system for another company (or to refresh NEXORA's look):
  *   1. Change the values below.
  *   2. Replace the image files in /public/brand/ (keep the same file names, or change the paths below).
@@ -46,8 +49,10 @@ export const BRAND = {
  * classes like bg-electric / bg-navy-900 / text-ink follow the brand. Lighter/darker shades are mixed
  * from the two colours, so changing two hex values re-colours the whole app.
  */
-export function brandCss() {
-  const p = BRAND.colors.primary;
-  const d = BRAND.colors.dark;
+export function brandCss(colors: { primary: string; dark: string } = BRAND.colors) {
+  // Settings → Workspace can change the two colours; anything that isn't a plain hex value is ignored.
+  const hex = (v: string, fallback: string) => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : fallback);
+  const p = hex(colors.primary, BRAND.colors.primary);
+  const d = hex(colors.dark, BRAND.colors.dark);
   return `:root:root{--color-electric:${p};--color-electric-bright:color-mix(in srgb,${p} 70%,white);--color-electric-soft:color-mix(in srgb,${p} 11%,white);--color-navy-950:color-mix(in srgb,${d} 72%,black);--color-navy-900:${d};--color-navy-850:color-mix(in srgb,${d} 92%,white);--color-navy-800:color-mix(in srgb,${d} 86%,white);--color-navy-700:color-mix(in srgb,${d} 76%,white);--color-ink:${d};}`;
 }

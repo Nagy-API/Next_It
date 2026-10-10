@@ -3,6 +3,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Actor } from "./activity";
+import { can } from "@/domain/permissions";
 import { createSession, deleteSession, validateSession, type SessionUser } from "./sessions";
 
 export const SESSION_COOKIE = "nexora_session";
@@ -52,11 +53,11 @@ export async function requireUser(): Promise<SessionUser> {
 
 export async function requireActor(): Promise<Actor & { user: SessionUser }> {
   const user = await requireUser();
-  return { id: user.id, name: user.name, isAdmin: user.isAdmin, isManager: user.isManager, teams: user.teams, user };
+  return { id: user.id, name: user.name, isAdmin: user.isAdmin, isManager: user.isManager, teams: user.teams, perms: user.perms, user };
 }
 
 export async function requireAdmin(): Promise<Actor & { user: SessionUser }> {
   const actor = await requireActor();
-  if (!actor.user.isAdmin) throw new Error("Only account administrators can do that.");
+  if (!can.managePeople(actor)) throw new Error("Only account administrators can do that.");
   return actor;
 }

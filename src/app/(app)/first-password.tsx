@@ -1,11 +1,12 @@
 import { ShieldCheck } from "lucide-react";
 import { ToastProvider } from "@/components/client";
-import { BRAND } from "@/config/brand";
+import { getWorkspace } from "@/server/settings";
 import { ChangePasswordForm } from "./settings/forms";
 import { logoutAction } from "@/app/actions";
 
 /** Shown instead of the app while someone is on a temporary password. */
-export function FirstPassword({ name }: { name: string }) {
+export async function FirstPassword({ name }: { name: string }) {
+  const BRAND = await getWorkspace();
   return (
     <ToastProvider>
       <div className="flex min-h-dvh items-center justify-center bg-canvas px-4 py-12">

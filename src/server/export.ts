@@ -7,13 +7,14 @@ import { contentPlans, users } from "@/db/schema";
 import { PROGRESS_META, STAGE_META, TEAM_META, TYPE_META, finalLabel } from "@/domain/workflow";
 import { cairoDate, formatDMY, formatDateTime, formatTime, monthLabel, monthRange, todayISO } from "@/lib/dates";
 import { getDashboard, personPerMonth } from "./stats";
-import { BRAND as brand } from "@/config/brand";
+import { BRAND } from "@/config/brand";
+import { getWorkspace } from "./settings";
 import { getPersonCompletions, getPersonWork, getWorkItems, type WorkItem } from "./queries";
 import { brandsReport, peopleReport, type PersonReport } from "./reports";
 
-const NAVY = `FF${brand.colors.dark.slice(1).toUpperCase()}`;
+const NAVY = `FF${BRAND.colors.dark.slice(1).toUpperCase()}`;
 const fileSafe = (s: string) => s.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "report";
-const BLUE = `FF${brand.colors.primary.slice(1).toUpperCase()}`;
+const BLUE = `FF${BRAND.colors.primary.slice(1).toUpperCase()}`;
 const SOFT = "FFEFF5FF";
 
 const sheet = baseSheet;
@@ -111,6 +112,7 @@ function styleItemSheet(ws: ExcelJS.Worksheet) {
 }
 
 export async function dashboardWorkbook(year: number, month: number) {
+  const brand = await getWorkspace();
   const d = await getDashboard(year, month);
   const plans = await db.select({ id: contentPlans.id }).from(contentPlans).where(and(eq(contentPlans.year, year), eq(contentPlans.month, month)));
   const items = await getWorkItems({ planIds: plans.map((p) => p.id), includeDone: true });
@@ -217,6 +219,7 @@ export async function dashboardWorkbook(year: number, month: number) {
 }
 
 export async function personWorkbook(username: string, range?: { from: string; to: string }) {
+  const brand = await getWorkspace();
   const [u] = await db.select().from(users).where(eq(users.username, username));
   if (!u) return null;
   const today = todayISO();
@@ -357,6 +360,7 @@ function addPeopleSheets(wb: ExcelJS.Workbook, rows: PersonReport[], opts: { pre
 }
 
 export async function reportWorkbook(view: "people" | "brands", from: string, to: string, dueBy: string, onlyUserId?: string) {
+  const brand = await getWorkspace();
   const wb = new ExcelJS.Workbook();
   wb.creator = brand.appName;
   const span = from === to ? from : `${from}_${to}`;

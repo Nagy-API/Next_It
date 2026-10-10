@@ -210,3 +210,15 @@ export function formatDMY(iso: string | null | undefined): string {
   if (!iso) return "—";
   return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 }
+
+/** An instant as a datetime-local value in Cairo ("2026-10-05T14:30"). */
+export function toCairoLocal(d: Date): string {
+  return `${cairoDate(d)}T${formatTime(d)}`;
+}
+
+/** A datetime-local value typed in Cairo time → the instant. null when it isn't one. */
+export function fromCairoLocal(v: string | null | undefined): Date | null {
+  const m = v?.match(/^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!m || !isValidISODate(m[1])) return null;
+  return new Date(startOfCairoDay(m[1]).getTime() + (Number(m[2]) * 60 + Number(m[3])) * 60_000);
+}

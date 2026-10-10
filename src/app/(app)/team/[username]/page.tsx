@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { isManager } from "@/domain/permissions";
+import { can } from "@/domain/permissions";
 import { eq } from "drizzle-orm";
 import { ArrowLeft, FileSpreadsheet } from "lucide-react";
 import { db } from "@/db";
@@ -22,7 +22,7 @@ export default async function PersonPage({ params, searchParams }: PageProps<"/t
   const me = await requireUser();
   const { username } = await params;
   // Everyone can see their own numbers; only managers see other people's.
-  if (!isManager(me) && username !== me.username) redirect(`/team/${me.username}`);
+  if (!can.seeEveryone(me) && username !== me.username) redirect(`/team/${me.username}`);
   const [person] = await db.select().from(users).where(eq(users.username, username));
   if (!person) notFound();
   const range = resolveRange({ range: "today", ...(await searchParams) });

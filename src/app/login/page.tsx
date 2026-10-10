@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { BRAND } from "@/config/brand";
+import { getWorkspace } from "@/server/settings";
 import { getCurrentUser } from "@/server/auth";
 import { LoginForm } from "./login-form";
 
@@ -8,6 +8,7 @@ export const metadata = { title: "Sign in" };
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   if (await getCurrentUser()) redirect("/");
   const { next } = await searchParams;
+  const ws = await getWorkspace();
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
       <div className="relative hidden overflow-hidden bg-navy-950 lg:block">
@@ -20,14 +21,14 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         />
         <div className="relative flex h-full flex-col justify-between p-12">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={BRAND.logos.wordmarkOnDark} alt={BRAND.name} className="h-7 w-auto max-w-[260px] self-start object-contain" />
+          <img src={ws.logos.wordmark} alt={ws.name} className="h-7 w-auto max-w-[260px] self-start object-contain" />
           <div className="max-w-md">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={BRAND.logos.markOnDark} alt="" className="mb-8 size-16 object-contain opacity-95" />
+            <img src={ws.logos.mark} alt="" className="mb-8 size-16 object-contain opacity-95" />
             <h1 className="font-display text-[34px] font-bold leading-[1.15] text-white">Every piece of content. Every hand-off. One place.</h1>
             <p className="mt-4 text-[15px] leading-relaxed text-white/60">From the idea in Canva to the live post — see who has it, what&rsquo;s next, and what needs attention.</p>
           </div>
-          <p className="text-[12px] uppercase tracking-[0.2em] text-white/35">{BRAND.name} · {BRAND.tagline}</p>
+          <p className="text-[12px] uppercase tracking-[0.2em] text-white/35">{[ws.name, ws.tagline].filter(Boolean).join(" · ")}</p>
         </div>
       </div>
       <div className="flex items-center justify-center bg-white px-6 py-12">
@@ -35,13 +36,13 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           <div className="mb-10 lg:hidden">
             <div className="inline-flex rounded-xl bg-navy-900 px-4 py-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={BRAND.logos.wordmarkOnDark} alt={BRAND.name} className="h-5 w-auto max-w-[220px] object-contain" />
+              <img src={ws.logos.wordmark} alt={ws.name} className="h-5 w-auto max-w-[220px] object-contain" />
             </div>
           </div>
           <h2 className="font-display text-[24px] font-bold">Sign in</h2>
           <p className="mt-1 text-[14px] text-muted">Use the username your admin gave you.</p>
           <LoginForm next={typeof next === "string" ? next : ""} />
-          <p className="mt-8 text-[12px] text-faint">No account? Ask {BRAND.adminContact} to create one for you.</p>
+          <p className="mt-8 text-[12px] text-faint">No account? Ask {ws.adminContact} to create one for you.</p>
           <a href="/privacy" className="mt-2 inline-block text-[12px] text-faint underline hover:text-ink">
             Privacy & security
           </a>

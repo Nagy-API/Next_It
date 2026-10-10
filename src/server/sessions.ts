@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, lt } from "drizzle-orm";
 import { hash, verify } from "@node-rs/argon2";
 import { db } from "@/db";
-import { sessions, users, type User } from "@/db/schema";
+import { permissionOverrides, sessions, users, type User } from "@/db/schema";
 
 /** Sessions last 14 days and renew while in use; signing out or changing a password ends them. */
 export const SESSION_DAYS = 14;
@@ -22,7 +22,17 @@ export async function createSession(userId: string) {
   return { token, expiresAt };
 }
 
-export type SessionUser = Pick<User, "id" | "username" | "name" | "title" | "teams" | "isAdmin" | "isManager" | "mustChangePassword" | "roleLabel"> & { hasAvatar: boolean };
+export type SessionUser = Pick<User, "id" | "username" | "name" | "title" | "teams" | "isAdmin" | "isManager" | "mustChangePassword" | "roleLabel"> & {
+  hasAvatar: boolean;
+  /** Per-person changes to the default permissions (Settings → Access). */
+  perms: Record<string, boolean>;
+};
+
+/** Settings → Access changes for one person: key → allowed. */
+export async function permsOf(userId: string): Promise<Record<string, boolean>> {
+  const rows = await db.select({ key: permissionOverrides.key, allow: permissionOverrides.allow }).from(permissionOverrides).where(eq(permissionOverrides.userId, userId));
+  return Object.fromEntries(rows.map((r) => [r.key, r.allow]));
+}
 
 export async function validateSession(token: string): Promise<{ user: SessionUser; renewedExpiry: Date | null } | null> {
   const id = hashToken(token);
@@ -41,7 +51,8 @@ export async function validateSession(token: string): Promise<{ user: SessionUse
     await db.update(sessions).set({ expiresAt: renewedExpiry }).where(eq(sessions.id, id));
   }
   const u = row.user;
-  return { user: { id: u.id, username: u.username, name: u.name, title: u.title, teams: u.teams, isAdmin: u.isAdmin, isManager: u.isManager, roleLabel: u.roleLabel, mustChangePassword: u.mustChangePassword, hasAvatar: !!u.avatarUpdatedAt }, renewedExpiry };
+  const perms = await permsOf(u.id);
+  return { user: { id: u.id, username: u.username, name: u.name, title: u.title, teams: u.teams, isAdmin: u.isAdmin, isManager: u.isManager, roleLabel: u.roleLabel, mustChangePassword: u.mustChangePassword, hasAvatar: !!u.avatarUpdatedAt, perms }, renewedExpiry };
 }
 
 /** Sign a person out on every device (e.g. a lost phone). */

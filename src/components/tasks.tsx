@@ -224,7 +224,7 @@ function TaskForm({ people, brands, onDone }: { people: P[]; brands: B[]; onDone
           Files & links <span className="font-normal text-muted">(optional · PDF, Word, images, or a document link)</span>
         </div>
         <PendingAttachments />
-        {!brandId && <p className="mt-1.5 text-[12px] text-muted">Tasks without a brand show in Day tasks, with their files.</p>}
+        {!brandId && <p className="mt-1.5 text-[12px] text-muted">Tasks without a brand show in the person&rsquo;s My tasks, with their files.</p>}
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
         <button type="button" onClick={onDone} className={btn("ghost")}>

@@ -7,7 +7,7 @@ import { reportWorkbook, workbookResponse } from "@/server/export";
 export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!user) return new Response("Sign in first.", { status: 401 });
-  if (!can.seeDashboard(user)) return new Response("Only managers can export reports.", { status: 403 });
+  if (!can.seeReports(user)) return new Response("Only managers can export reports.", { status: 403 });
   const sp = new URL(req.url).searchParams;
   const t = todayISO();
   const from = isValidISODate(sp.get("from")) ? sp.get("from")! : t;

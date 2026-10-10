@@ -28,7 +28,7 @@ People and roles (seeded in `src/server/seed.ts`, managed in Settings → People
 | Shahenda | leadership, social | CEO — **admin** + manager |
 | King | content | Content creator — also **IT: admin + manager** (full access, same position) |
 | Ammar | content | Content lead — manager |
-| Kemo | content | Content creator |
+| Kemo | content | Content creator — also **IT: admin + manager** (like King) |
 | Ayman | media | Media Production lead — manager (does shooting by default) |
 | Jana | media | Video editor (post-production by default) |
 | Gannah | design | Graphic designer (in the Media Production department) |
@@ -78,12 +78,13 @@ Default password for seeded accounts: `SEED_DEFAULT_PASSWORD` (default `Nexora@2
 
 ```
 src/
-  config/brand.ts        ← BRANDING: company name, app name, colours, logo paths (the ONLY place to rebrand)
+  config/brand.ts        ← BRANDING DEFAULTS (owners change them without code in Settings → Workspace)
   proxy.ts               ← runs before every page: sign-in redirect + per-request CSP nonce
   app/
     layout.tsx           ← root HTML; injects brand colours; forces per-request rendering (CSP nonce)
     globals.css          ← Tailwind v4 theme tokens (colours, shadows, fonts)
-    actions.ts           ← ALL server actions (form handlers). Thin: parse FormData → call src/server/* → message
+    actions.ts           ← server actions (form handlers). Thin: parse FormData → call src/server/* → message
+    space-actions.ts     ← server actions for Spaces and their dashboards (same run() pattern)
     login/               ← sign-in page + form
     privacy/             ← public privacy & security policy
     (app)/               ← everything behind sign-in (shared layout = sidebar/top bar)
@@ -91,7 +92,10 @@ src/
       first-password.tsx ← "choose your own password" screen
       my-work/           ← My tasks (per person): my brands first, each brand by day; approvals; "Sent, waiting approval"
       overview/          ← Notes (12 h), tiles, "move now (48h)", Team right now (statuses + clocks), pipeline, brands
-      tasks/             ← Day tasks: to-dos without a brand, day by day, with their files
+      tasks/             ← (removed: Day tasks) redirects to My tasks
+      spaces/            ← Spaces (workflow builder): list, new/ (templates), [id] (List / Board / Calendar),
+                           [id]/settings (statuses, automations, columns, lists, members), [id]/t/[taskId] (one task)
+      dashboards/        ← Spaces dashboards: build one (scope + cards), [id] = live view
       quick/             ← Quick update: a whole step at once (paste a list of links → Save all), every team
       reports/           ← Reports (managers): People / Brands for today, a week, a month; Excel
       chat/              ← Team chat (page + client room with @mentions, polling /api/chat)
@@ -102,7 +106,8 @@ src/
       projects/          ← one-off clients & projects (owner, delete/restore)
       add/               ← add content (rows or "Paste a list" with preview)
       team/              ← people directory; team/[username] = personal numbers (self or managers)
-      settings/          ← Brands (default people per step), People (admins), Platforms, My account
+      settings/          ← Workspace (white label, modules, auto pause), Access (per-person permissions),
+                           Brands (default people per step), People, Platforms, My account — tabs by permission
       work/, search/     ← all open work with filters; search
     api/
       notifications/     ← bell feed (GET, polled every 30 s)
@@ -111,17 +116,19 @@ src/
       files/             ← POST upload (25 MB, allowed types only); files/[id]/ = open/download (signed-in only)
       export/dashboard, export/person/[username] (?from&to), export/report ← Excel downloads
       backup/            ← admin: download a full backup (built-in database)
+      workspace-asset/[key] ← the workspace's uploaded logos (public: the sign-in page shows them)
   components/            ← UI. handoff.tsx = task cards + step panels (content/shoot/versions with options/social),
                            ProgressPicker + ChangesBanner; send-back.tsx; attachments.tsx; date-input.tsx (dd/mm/yyyy);
                            platform-icon.tsx (app marks); notes-bar.tsx; report-parts.tsx; scroll-memory.tsx;
                            shell.tsx = sidebar/top bar; bell.tsx; tasks.tsx; comments.tsx; charts.tsx;
                            avatar.tsx (photos + manager star / role label); client.tsx (ActionForm, Modal, Popover, toasts)
   domain/                ← PURE rules, no database: workflow.ts (stages, routes, deadlines, health),
-                           permissions.ts (who can do what)
+                           permissions.ts (who can do what: PERMISSIONS keys + defaults + per-person overrides),
+                           spaces.ts (status kinds, priorities, column types, templates, automation catalogue)
   server/                ← everything that reads/writes the database
     workflow.ts          ← stage transitions: complete/hand-off, send back, assign, deadlines, versions, shoot
     items.ts             ← create/update/delete items, comments, bulk actions, month links
-    tasks.ts             ← manager tasks (one-off / repeating), Day tasks
+    tasks.ts             ← manager tasks (one-off / repeating); without a brand they show in My tasks
     attachments.ts       ← files & links on items and tasks (files on disk next to the database, see §5)
     reports.ts           ← people report (finished, time, from–to per day, open) and brands report
     notes.ts             ← team notes (12 h); quick.ts = Quick update (many rows through the normal workflow)
@@ -134,6 +141,14 @@ src/
     auth.ts, sessions.ts ← sign-in cookie, sessions (hashed tokens), current user
     security.ts          ← sign-in lock-outs, client IP; lib/passwords.ts = password rules, safe redirects
     export.ts            ← Excel workbooks
+    settings.ts          ← workspace settings (name, colours, logos, watermark, modules, auto pause), cached in memory
+    access.ts            ← Settings → Access (permission overrides; someone always keeps "Manage access")
+    auto-pause.ts        ← every 5 min: stops clocks left running past the pause time; runs due-date automations
+    time.ts              ← correcting worked time (edit / add / remove a stretch), logged
+    announcements.ts     ← message of the day
+    spaces.ts            ← Spaces: spaces, members, statuses, folders, lists, columns, tasks, subtasks, comments,
+                           the task clock and the automations engine (fire / runAction, max 3 levels deep)
+    dashboards.ts        ← Spaces dashboards (scope + widgets), dashboardData() computes everything live
   db/schema.ts           ← ALL tables (Drizzle). db/index.ts = PostgreSQL or PGlite connection; db/local.ts = PGlite lock, backups, self-healing
   lib/                   ← dates (Cairo timezone, formatDuration, formatDMY), links.ts (name a link: Canva / Google Doc / Drive…),
                            paste parser, ranges, passwords
@@ -154,13 +169,15 @@ docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
 - **content_plans** — one per brand + month; month `canvaUrl` and `driveFolderUrl`.
 - **clients / projects** — one-off work; `projects.ownerId` (content person), `deletedAt`.
 - **content_items** — title, type (reel/static/carousel/story), plan XOR project, `canvaUrl` (the content link: ANY link, optional), `driveUrl` (latest file),
-  posting date/time, `slideNumber`, shoot date/time/duration/location, `completedAt`, `cancelledAt` (= deleted).
+  posting date/time, `slideNumber`, shoot date/time/duration/location + extras (`shootPeople`, `shootRentals(Ready)`,
+  `shootPurchases(Ready)`, all optional), `completedAt`, `cancelledAt` (= deleted).
 - **stages** — one row per step of an item: `kind` (content, shooting, media, design, social, delivery), `position`,
   `status` (waiting/active/done), `assigneeId`, `deadline` + `originalDeadline` + `shiftDays` (automatic delay shifts),
-  `round` (+1 each send-back), `progress` (not_started/processing/adjusting/changes_requested/scheduled/waiting_approval),
+  `round` (+1 each send-back), `progress` (not_started/processing/adjusting/changes_requested/scheduled/waiting_approval/paused),
   `scheduledFor` (the day, when Scheduled), exception fields.
 - **work_sessions** — the step's clock: one row per stretch of In progress / Adjusting (`kind`), `startedAt`, `endedAt`,
-  `endReason` (sent/done/status/returned/reassigned/cancelled). Written only by `trackTimeTx` (workflow.ts), never by hand.
+  `endReason` (sent/done/status/paused/auto_paused/returned/reassigned/cancelled, edited/added). Written by `trackTimeTx`
+  (workflow.ts), `autoPauseClocks` and the time corrections in time.ts (`editedById`/`editedAt`), never by hand.
 - **attachments** — files and links on an item (`itemId`) or a task (`taskId`); files: `storageKey` (random name) in
   `filesDir()` = `<database folder>-files` (production `~/nexora-ops-data-files`, outside the app folder); `deletedAt`.
 - **notes** — team notes: text, colour, `expiresAt` (12 h); one live note per person. **alert_dismissals** — bell reminders
@@ -174,6 +191,15 @@ docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
   (todo/in_progress/scheduled/waiting — the person picks it; `scheduledDate` for scheduled; done = `doneAt`), `deletedAt`.
 - **chat_messages** — Team chat, `mentions[]`, `deletedAt`.
 - **notifications** — per person; `kind`, `title`, `body`, `itemId` or `href`, `readAt`.
+- **permission_overrides** — per person + key (from `PERMISSIONS`): allow true/false. No row = the default rule.
+- **workspace_settings** — key/value: `workspace` (names, colours, watermark, modules, autoPauseAt) and `image.*` (logos).
+- **announcements** — message of the day (one live at a time, `expiresAt`, `deletedAt`).
+- **Spaces**: `spaces` (privacy, colour, icon, optional brand), `space_members` (admin/member/viewer), `space_statuses`
+  (kind open/active/review/done/closed — active runs the clock, done/closed set `completedAt`), `folders`, `lists`,
+  `space_fields` (custom columns: text, number, money, date, dropdown, labels, checkbox, link, email, phone, person,
+  rating, progress), `work_tasks` (+ `parentId` for subtasks, `dueFiredAt`), `work_task_assignees`, `work_task_values`,
+  `work_task_comments` (`system` = history line / automation), `work_task_sessions` (the task clock),
+  `automations` (trigger + actions jsonb, runs), `dashboards` (scope + widgets). Attachments get `workTaskId`.
 - **activity_log** — IMMUTABLE history (a DB trigger in `drizzle/0001_activity_log_immutable.sql` rejects UPDATE/DELETE/TRUNCATE).
 
 ## 6. The workflow (src/domain/workflow.ts + src/server/workflow.ts)
@@ -206,7 +232,13 @@ received the work is never "late" (`stageHealth` → blocked/waiting). Admin can
 Send back (`returnToStage`): anyone, to an earlier step, optional note, optionally choosing who fixes it (themselves or that
 team; managers anyone) → that step reopens (round+1, *Changes requested*), later steps go back to waiting, the person is notified.
 Time: `trackTimeTx` keeps one open `work_sessions` row while a step is In progress / Adjusting for its person; it closes on
-Waiting approval (version sent), done, Scheduled, send-back, reassignment or delete. `StageView.time` = total + running.
+Waiting approval (version sent), done, Scheduled, Paused, send-back, reassignment or delete. **Automatic pause**
+(auto-pause.ts, every 5 min): a clock still running at the workspace pause time (default 21:00 Cairo; one started
+later pauses at midnight) is closed at that instant and the step reads *Paused*. People with "Edit worked time" (admins;
+Assem by default) correct times on the item page ("Time on each step").
+Shoot extras (Pre-production): how many people, things to rent / buy, each ticked "ready"; shown in `ShootSummary`.
+Every work card shows one "Next:" line (`NextStep` in handoff.tsx). Brand groups in My tasks fold (`fold.tsx`, per device).
+Message of the day (`announcements.ts`, `AnnouncementStrip` in the shell): one line on every page, posted by "announce". `StageView.time` = total + running.
 My tasks hides work that's *Waiting approval* (it's with the reviewer) in "Sent, waiting approval" with the time it took.
 The month follows the posting date: an item dated in another month lives in that month's plan (`followPostingMonthTx`,
 on create and on date change; a one-time upgrade moved older items — marker `plans_follow_posting_date`).
@@ -248,7 +280,10 @@ steps finished late. Per brand and per person too; all read-only from existing d
 
 ## 7. Permissions (src/domain/permissions.ts) — always enforced on the server
 
-`isManager(w) = w.isAdmin || w.isManager`.
+`isManager(w) = w.isAdmin || w.isManager`. Every permission is a key in `PERMISSIONS` with a default rule (the table
+below). Settings → Access turns any key on/off per person (`permission_overrides`, loaded into the session as
+`perms`); `allowed(w, key)` = the override, else the default. Use `can.*` (it calls `allowed`) everywhere — never test
+`isAdmin` for a feature. Making someone admin/manager or changing role labels needs "Manage access".
 
 | Action | Who |
 | --- | --- |
@@ -262,7 +297,10 @@ steps finished late. Per brand and per person too; all read-only from existing d
 | Publishing (platforms) | managers + social |
 | Give tasks, Dashboard, Reports, Activity log, everyone's numbers, exports, mark extra / not extra | managers |
 | Attach files & links | anyone on items; on a task: its person, who gave it, managers. Remove: who attached it or managers |
-| Brands, people, platforms, backups | admin |
+| Brands, people, platforms, backups, workspace customization, access, build workflows (Spaces) | admin |
+| Create spaces | managers (+ anyone given it). Inside a space: its admins set it up, members work, viewers only see |
+| Edit worked time | admin (+ Assem by default) |
+| Message of the day | managers |
 | Comment, chat, send back | everyone |
 
 Rules: every server function asserts its permission itself (never rely on hiding a button). Pages redirect when
@@ -279,11 +317,13 @@ notifications for new work, approvals, changes, mentions, deadlines, finished; b
 
 ## 9. Branding — how to rebrand (for NEXORA or another company)
 
-Edit **only** `src/config/brand.ts` (`BRAND.name`, `appName`, `tagline`, `adminContact`, `colors.primary`,
+Owners do it **without code** in Settings → Workspace (name, tagline, colours with presets, the four logos, watermark
+picture/opacity, modules on/off, auto pause time). `src/config/brand.ts` holds the DEFAULTS used for anything not set.
+For the defaults, edit **only** `src/config/brand.ts` (`BRAND.name`, `appName`, `tagline`, `adminContact`, `colors.primary`,
 `colors.dark`, `logos.*`) and replace images in `public/brand/` + `src/app/icon.png` / `apple-icon.png`.
 `brandCss()` turns the two colours into the whole palette. NEXORA identity: navy `#0B1639`, electric blue `#3B82F6`
 — don't introduce other brand colours. Status colours (ok/warn/bad/back) live in `globals.css`. See WHITE-LABEL.md.
-There is intentionally **no** in-app branding screen.
+`getWorkspace()` (server/settings.ts) is what pages read; colours go through `brandCss()` (hex-validated).
 
 ## 10. Security & privacy — rules that must never be weakened (details: docs/SECURITY.md)
 
@@ -352,7 +392,12 @@ Existing items (same title + posting date) aren't duplicated. For a new import, 
 add a one-time upgrade function guarded by an activity-log marker (see `kingFullAccess`) — never overwrite choices
 people made in Settings.
 
-**Change colours / logo / name** → §9.  **Timezone** → `TIMEZONE` in `src/lib/dates.ts`.
+**Change colours / logo / name** → §9.
+
+**Spaces (workflow builder)** — add a template: `SPACE_TEMPLATES` in domain/spaces.ts (statuses by name, columns,
+folders/lists, automations referring to statuses by name). Add an automation trigger/action: `TRIGGERS` / `ACTIONS`
+(domain/spaces.ts) → `fire` / `runAction` (server/spaces.ts) → builder UI (`components/spaces/setup.tsx`) → test.
+Add a column type: `FIELD_TYPES` → `cleanValue` (validation) → `FieldValue` / `FieldForm` (components/spaces/controls.tsx).  **Timezone** → `TIMEZONE` in `src/lib/dates.ts`.
 
 ## 13. Deployment & Git
 

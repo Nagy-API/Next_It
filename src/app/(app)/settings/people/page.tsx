@@ -8,20 +8,21 @@ import { TEAM_META } from "@/domain/workflow";
 import { requireUser } from "@/server/auth";
 import { getPeople } from "@/server/queries";
 import { EditUser, NewUserForm, ResetPassword, UserActiveToggle } from "../forms";
+import { can } from "@/domain/permissions";
 
 export const metadata = { title: "People · Settings" };
 
 export default async function PeopleSettings() {
   const me = await requireUser();
-  if (!me.isAdmin) redirect("/settings/account");
+  if (!can.managePeople(me)) redirect("/settings/account");
   const people = await getPeople({ includeInactive: true });
   const admins = new Set((await db.select({ id: users.id }).from(users).where(eq(users.isAdmin, true))).map((u) => u.id));
   const sorted = [...people].sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name));
   return (
     <div className="space-y-4">
-      {me.isAdmin ? (
+      {can.managePeople(me) ? (
         <div className="flex justify-end">
-          <NewUserForm />
+          <NewUserForm roles={can.manageAccess(me)} />
         </div>
       ) : (
         <p className="rounded-lg bg-wait-soft px-3 py-2 text-[13px] text-ink-2">Only an admin can create or change accounts.</p>
@@ -49,10 +50,10 @@ export default async function PeopleSettings() {
                 </Badge>
               ))}
             </div>
-            {me.isAdmin && (
+            {can.managePeople(me) && (
               <div className="flex items-center gap-1">
                 <PhotoPicker userId={p.id} name={p.name} hasPhoto={!!p.avatarUpdatedAt} compact />
-                <EditUser u={{ id: p.id, name: p.name, title: p.title, teams: p.teams, isAdmin: admins.has(p.id), isManager: p.isManager }} />
+                <EditUser u={{ id: p.id, name: p.name, title: p.title, teams: p.teams, isAdmin: admins.has(p.id), isManager: p.isManager, roleLabel: p.roleLabel }} roles={can.manageAccess(me)} />
                 <ResetPassword userId={p.id} name={p.name} />
                 {p.id !== me.id && <UserActiveToggle userId={p.id} active={p.isActive} />}
               </div>

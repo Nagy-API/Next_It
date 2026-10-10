@@ -38,7 +38,7 @@ export const STAGE_STATUSES = ["waiting", "active", "done"] as const;
 export const stageStatusEnum = pgEnum("stage_status", STAGE_STATUSES);
 
 /** Where the person doing a step is with it (same statuses as the old tracker). Done = the step is completed. */
-export const STAGE_PROGRESS = ["not_started", "processing", "adjusting", "waiting_approval", "changes_requested", "scheduled"] as const;
+export const STAGE_PROGRESS = ["not_started", "processing", "adjusting", "waiting_approval", "changes_requested", "scheduled", "paused"] as const;
 export const stageProgressEnum = pgEnum("stage_progress", STAGE_PROGRESS);
 
 export const PLATFORM_STATUSES = ["not_planned", "pending", "scheduled", "published", "cancelled"] as const;
@@ -199,6 +199,12 @@ export const contentItems = pgTable(
     shootTime: text("shoot_time"),
     shootDuration: text("shoot_duration"),
     shootLocation: text("shoot_location"),
+    /** Pre-production extras (all optional): how many people appear, what to rent / buy, and whether it's ready. */
+    shootPeople: integer("shoot_people"),
+    shootRentals: text("shoot_rentals"),
+    shootRentalsReady: boolean("shoot_rentals_ready").notNull().default(false),
+    shootPurchases: text("shoot_purchases"),
+    shootPurchasesReady: boolean("shoot_purchases_ready").notNull().default(false),
     completedAt: ts("completed_at"),
     cancelledAt: ts("cancelled_at"),
     cancelledById: uuid("cancelled_by_id").references(() => users.id),
@@ -466,8 +472,11 @@ export const workSessions = pgTable(
     kind: text("kind").notNull(),
     startedAt: ts("started_at").notNull(),
     endedAt: ts("ended_at"),
-    /** Why it stopped: sent (waiting approval) | done | status | returned | reassigned */
+    /** Why it stopped: sent (waiting approval) | done | status | paused | auto_paused | returned | reassigned */
     endReason: text("end_reason"),
+    /** Set when someone allowed to (Settings → Access: "Edit worked time") corrected the times. */
+    editedById: uuid("edited_by_id").references(() => users.id),
+    editedAt: ts("edited_at"),
   },
   (t) => [index("work_sessions_user_idx").on(t.userId, t.startedAt), index("work_sessions_stage_idx").on(t.stageId), index("work_sessions_item_idx").on(t.itemId)],
 );
@@ -482,6 +491,8 @@ export const attachments = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     itemId: uuid("item_id").references(() => contentItems.id),
     taskId: uuid("task_id").references(() => tasks.id),
+    /** A task in a Space (workflow builder). */
+    workTaskId: uuid("work_task_id").references(() => workTasks.id),
     /** file | link */
     kind: text("kind").notNull(),
     name: text("name").notNull(),
@@ -496,7 +507,7 @@ export const attachments = pgTable(
     createdAt: ts("created_at").notNull().defaultNow(),
     deletedAt: ts("deleted_at"),
   },
-  (t) => [index("attachments_item_idx").on(t.itemId), index("attachments_task_idx").on(t.taskId)],
+  (t) => [index("attachments_item_idx").on(t.itemId), index("attachments_task_idx").on(t.taskId), index("attachments_work_task_idx").on(t.workTaskId)],
 );
 
 /* ------------------------------------------------------------------ */
@@ -613,3 +624,296 @@ export type Recurrence = (typeof RECURRENCES)[number];
 export type WorkSession = typeof workSessions.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type Note = typeof notes.$inferSelect;
+
+
+/* ------------------------------------------------------------------ */
+/* Access: per-person changes to the default permissions                 */
+/* ------------------------------------------------------------------ */
+
+export const permissionOverrides = pgTable(
+  "permission_overrides",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    /** A key from PERMISSIONS in src/domain/permissions.ts */
+    key: text("key").notNull(),
+    allow: boolean("allow").notNull(),
+    updatedById: uuid("updated_by_id").references(() => users.id),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.key] })],
+);
+
+/* ------------------------------------------------------------------ */
+/* Workspace settings (name, colours, logos, modules…) — no code needed  */
+/* ------------------------------------------------------------------ */
+
+export const workspaceSettings = pgTable("workspace_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedById: uuid("updated_by_id").references(() => users.id),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});
+
+/** Message of the day: one pinned line for everyone (Overview + My tasks). */
+export const announcements = pgTable("announcements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  text: text("text").notNull(),
+  emoji: text("emoji"),
+  color: text("color").notNull(),
+  createdById: uuid("created_by_id")
+    .notNull()
+    .references(() => users.id),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  expiresAt: ts("expires_at"),
+  deletedAt: ts("deleted_at"),
+});
+
+/* ------------------------------------------------------------------ */
+/* Spaces: the workflow builder (departments, statuses, lists, tasks)    */
+/* ------------------------------------------------------------------ */
+
+export const spaces = pgTable("spaces", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  color: text("color").notNull(),
+  /** An emoji shown as the space's icon. */
+  icon: text("icon"),
+  description: text("description"),
+  /** Private: only its members (and people with "See every space") see it. */
+  isPrivate: boolean("is_private").notNull().default(false),
+  /** Optional: the brand this space belongs to (its tasks show on the brand page). */
+  brandId: uuid("brand_id").references(() => brands.id),
+  position: integer("position").notNull().default(0),
+  createdById: uuid("created_by_id").references(() => users.id),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  archivedAt: ts("archived_at"),
+});
+
+export const spaceMembers = pgTable(
+  "space_members",
+  {
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    /** member (works on tasks) | viewer (sees only) */
+    role: text("role").notNull().default("member"),
+  },
+  (t) => [primaryKey({ columns: [t.spaceId, t.userId] })],
+);
+
+export const spaceStatuses = pgTable(
+  "space_statuses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id),
+    name: text("name").notNull(),
+    color: text("color").notNull(),
+    /** open (not started) | active (being worked on: the clock runs) | review | done | closed (cancelled) */
+    kind: text("kind").notNull(),
+    position: integer("position").notNull().default(0),
+    archivedAt: ts("archived_at"),
+  },
+  (t) => [index("space_statuses_space_idx").on(t.spaceId)],
+);
+
+export const folders = pgTable(
+  "folders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id),
+    name: text("name").notNull(),
+    position: integer("position").notNull().default(0),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    archivedAt: ts("archived_at"),
+  },
+  (t) => [index("folders_space_idx").on(t.spaceId)],
+);
+
+export const lists = pgTable(
+  "lists",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id),
+    folderId: uuid("folder_id").references(() => folders.id),
+    name: text("name").notNull(),
+    color: text("color"),
+    description: text("description"),
+    position: integer("position").notNull().default(0),
+    createdById: uuid("created_by_id").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    archivedAt: ts("archived_at"),
+  },
+  (t) => [index("lists_space_idx").on(t.spaceId)],
+);
+
+/** Columns a space adds to its tasks: text, number, date, dropdown, checkbox, link, email, person, rating, money. */
+export const spaceFields = pgTable(
+  "space_fields",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    /** Dropdown choices: [{ id, label, color }] */
+    options: jsonb("options").notNull().default(sql`'[]'::jsonb`),
+    position: integer("position").notNull().default(0),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    archivedAt: ts("archived_at"),
+  },
+  (t) => [index("space_fields_space_idx").on(t.spaceId)],
+);
+
+export const workTasks = pgTable(
+  "work_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id),
+    listId: uuid("list_id")
+      .notNull()
+      .references(() => lists.id),
+    /** A subtask's parent. */
+    parentId: uuid("parent_id"),
+    title: text("title").notNull(),
+    description: text("description"),
+    statusId: uuid("status_id")
+      .notNull()
+      .references(() => spaceStatuses.id),
+    /** urgent | high | normal | low (or none) */
+    priority: text("priority"),
+    startDate: date("start_date", { mode: "string" }),
+    dueDate: date("due_date", { mode: "string" }),
+    position: integer("position").notNull().default(0),
+    createdById: uuid("created_by_id").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+    statusAt: ts("status_at"),
+    completedAt: ts("completed_at"),
+    /** When the "due date passes" automations ran for the current due date (cleared when it changes). */
+    dueFiredAt: ts("due_fired_at"),
+    archivedAt: ts("archived_at"),
+  },
+  (t) => [index("work_tasks_list_idx").on(t.listId), index("work_tasks_space_idx").on(t.spaceId), index("work_tasks_parent_idx").on(t.parentId)],
+);
+
+export const workTaskAssignees = pgTable(
+  "work_task_assignees",
+  {
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => workTasks.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.userId] }), index("work_task_assignees_user_idx").on(t.userId)],
+);
+
+export const workTaskValues = pgTable(
+  "work_task_values",
+  {
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => workTasks.id),
+    fieldId: uuid("field_id")
+      .notNull()
+      .references(() => spaceFields.id),
+    value: jsonb("value"),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.fieldId] })],
+);
+
+export const workTaskComments = pgTable(
+  "work_task_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => workTasks.id),
+    authorId: uuid("author_id").references(() => users.id),
+    body: text("body").notNull(),
+    /** Written by an automation or the system (not a person). */
+    system: boolean("system").notNull().default(false),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("work_task_comments_task_idx").on(t.taskId)],
+);
+
+/** The clock on a Space task: runs while its status is an "active" one and the person works on it. */
+export const workTaskSessions = pgTable(
+  "work_task_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => workTasks.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    startedAt: ts("started_at").notNull(),
+    endedAt: ts("ended_at"),
+    endReason: text("end_reason"),
+  },
+  (t) => [index("work_task_sessions_task_idx").on(t.taskId), index("work_task_sessions_user_idx").on(t.userId, t.startedAt)],
+);
+
+/** "When this happens → do that" rules of a space. */
+export const automations = pgTable(
+  "automations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id),
+    name: text("name").notNull(),
+    /** { type: "task_created" | "status_changed" | "all_subtasks_done" | "due_passed" | "assignee_added" | "priority_changed", statusId?, listId? } */
+    trigger: jsonb("trigger").notNull(),
+    /** [{ type: "set_status" | "assign" | "unassign_all" | "notify" | "set_priority" | "set_due_in_days" | "move_to_list" | "add_subtasks" | "add_comment" | "complete_parent", … }] */
+    actions: jsonb("actions").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    runs: integer("runs").notNull().default(0),
+    lastRunAt: ts("last_run_at"),
+    createdById: uuid("created_by_id").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    archivedAt: ts("archived_at"),
+  },
+  (t) => [index("automations_space_idx").on(t.spaceId)],
+);
+
+/** Dashboards someone builds: what to count (a space, a folder, a list, or everything) and which cards to show. */
+export const dashboards = pgTable("dashboards", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  /** { spaceId?, folderId?, listId? } — empty = every space the viewer can see */
+  scope: jsonb("scope").notNull(),
+  /** ["status", "people", "priority", "overdue", "done_weeks", "due_soon", "progress"] */
+  widgets: jsonb("widgets").notNull(),
+  ownerId: uuid("owner_id")
+    .notNull()
+    .references(() => users.id),
+  shared: boolean("shared").notNull().default(true),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  archivedAt: ts("archived_at"),
+});
+
+export type Space = typeof spaces.$inferSelect;
+export type SpaceStatus = typeof spaceStatuses.$inferSelect;
+export type SpaceField = typeof spaceFields.$inferSelect;
+export type WorkTask = typeof workTasks.$inferSelect;
+export type Automation = typeof automations.$inferSelect;
+export type Dashboard = typeof dashboards.$inferSelect;

@@ -143,7 +143,7 @@ export async function trackTimeTx(
   stage: { id: string; itemId: string },
   next: { progress: StageProgress | "done"; userId: string | null },
   now: Date,
-  reason: "status" | "sent" | "done" | "returned" | "reassigned" | "cancelled",
+  reason: "status" | "sent" | "paused" | "auto_paused" | "done" | "returned" | "reassigned" | "cancelled",
 ) {
   const open = await tx.select().from(workSessions).where(and(eq(workSessions.stageId, stage.id), isNull(workSessions.endedAt)));
   const timed = next.progress !== "done" && TIMED_PROGRESS.includes(next.progress) && !!next.userId;
@@ -491,7 +491,7 @@ export async function setStageDeadlineTx(tx: Tx, actor: Actor, ctx: ItemCtx, sta
   if ((stage.deadline ?? null) === deadline && stage.shiftDays === 0) return false;
   // Once a deadline is set it is a commitment: only an admin can change or remove it.
   // (Automatic shifts for late upstream work still happen — they don't go through here.)
-  if (stage.deadline && !actor.isAdmin) {
+  if (stage.deadline && !can.changeDeadline(actor)) {
     throw new UserError(`The ${STAGE_META[stage.kind].label} deadline is already set (${formatDay(stage.deadline)}). Only an admin can change it.`);
   }
   await tx
@@ -853,7 +853,7 @@ export async function setStageProgress(
     // Starting work on an unclaimed step claims it.
     const assigneeId = stage.assigneeId ?? (progress !== "not_started" ? actor.id : null);
     await tx.update(stages).set({ progress, progressAt: now, assigneeId, scheduledFor }).where(eq(stages.id, stage.id));
-    await trackTimeTx(tx, stage, { progress, userId: assigneeId }, now, progress === "waiting_approval" ? "sent" : "status");
+    await trackTimeTx(tx, stage, { progress, userId: assigneeId }, now, progress === "waiting_approval" ? "sent" : progress === "paused" ? "paused" : "status");
     await logActivity(tx, actor, {
       ...refs(ctx),
       action: "stage_progress",
@@ -1029,23 +1029,56 @@ export async function reviewVersion(
 export async function setShootDetails(
   actor: Actor,
   itemId: string,
-  input: { shootDate?: string | null; shootTime?: string | null; shootDuration?: string | null; shootLocation?: string | null },
+  input: {
+    shootDate?: string | null;
+    shootTime?: string | null;
+    shootDuration?: string | null;
+    shootLocation?: string | null;
+    /** What the shoot needs (all optional): how many people appear, what to rent / buy, and whether each is ready. */
+    shootPeople?: number | null;
+    shootRentals?: string | null;
+    shootRentalsReady?: boolean;
+    shootPurchases?: string | null;
+    shootPurchasesReady?: boolean;
+  },
 ) {
   return db.transaction(async (tx) => {
     const ctx = await loadItemCtx(tx, itemId);
     ensureOpen(ctx);
     assert(can.planShoot(actor), NOT_ALLOWED);
+    const text = (v: string | null | undefined, cur: string | null, max = 500) => (v !== undefined ? v?.trim().slice(0, max) || null : cur);
     const next = {
       shootDate: input.shootDate !== undefined ? input.shootDate || null : ctx.item.shootDate,
-      shootTime: input.shootTime !== undefined ? input.shootTime?.trim() || null : ctx.item.shootTime,
-      shootDuration: input.shootDuration !== undefined ? input.shootDuration?.trim() || null : ctx.item.shootDuration,
-      shootLocation: input.shootLocation !== undefined ? input.shootLocation?.trim() || null : ctx.item.shootLocation,
+      shootTime: text(input.shootTime, ctx.item.shootTime, 10),
+      shootDuration: text(input.shootDuration, ctx.item.shootDuration, 40),
+      shootLocation: text(input.shootLocation, ctx.item.shootLocation, 200),
+      shootPeople: input.shootPeople !== undefined ? input.shootPeople : ctx.item.shootPeople,
+      shootRentals: text(input.shootRentals, ctx.item.shootRentals),
+      shootRentalsReady: input.shootRentalsReady ?? ctx.item.shootRentalsReady,
+      shootPurchases: text(input.shootPurchases, ctx.item.shootPurchases),
+      shootPurchasesReady: input.shootPurchasesReady ?? ctx.item.shootPurchasesReady,
     };
     if (next.shootDate) assert(isValidISODate(next.shootDate), "Invalid shoot date.");
     if (next.shootTime) assert(isValidTime(next.shootTime), "Time must look like 14:30.");
+    if (next.shootPeople !== null) assert(Number.isInteger(next.shootPeople) && next.shootPeople >= 0 && next.shootPeople <= 999, "How many people: a whole number.");
+    // Nothing to rent / buy can't be "ready".
+    if (!next.shootRentals) next.shootRentalsReady = false;
+    if (!next.shootPurchases) next.shootPurchasesReady = false;
     const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => next[k] !== ctx.item[k]);
     if (!changed.length) return false;
     await tx.update(contentItems).set(next).where(eq(contentItems.id, itemId));
+    const planChanged = changed.some((k) => ["shootDate", "shootTime", "shootDuration", "shootLocation"].includes(k));
+    if (!planChanged) {
+      const bits = [
+        changed.includes("shootPeople") ? (next.shootPeople ? `${next.shootPeople} ${next.shootPeople === 1 ? "person" : "people"} on camera` : "no people count") : null,
+        changed.includes("shootRentals") ? (next.shootRentals ? `to rent: ${next.shootRentals}` : "nothing to rent") : null,
+        changed.includes("shootRentalsReady") && next.shootRentals ? (next.shootRentalsReady ? "rentals are ready ✓" : "rentals not ready yet") : null,
+        changed.includes("shootPurchases") ? (next.shootPurchases ? `to buy: ${next.shootPurchases}` : "nothing to buy") : null,
+        changed.includes("shootPurchasesReady") && next.shootPurchases ? (next.shootPurchasesReady ? "purchases are ready ✓" : "purchases not ready yet") : null,
+      ].filter(Boolean);
+      await logActivity(tx, actor, { ...refs(ctx), action: "shoot_needs", stageKind: "shooting", summary: `${actor.name} updated what the shoot needs: ${bits.join("; ")}.`, meta: next });
+      return true;
+    }
     const parts = [
       next.shootDate ? `${formatDay(next.shootDate)}${next.shootTime ? ` ${next.shootTime}` : ""}` : null,
       next.shootDuration ? `for ${next.shootDuration}` : null,

@@ -6,7 +6,7 @@ import { formatDay, cairoDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
 import { getClientsWithProjects } from "@/server/queries";
 import { getActivePeople } from "@/server/cached";
-import { BRAND } from "@/config/brand";
+import { getWorkspace } from "@/server/settings";
 import { Avatar } from "@/components/ui";
 import { NewProject } from "./new-project";
 
@@ -14,6 +14,7 @@ export const metadata = { title: "One-off projects" };
 
 export default async function ProjectsPage() {
   const me = await requireUser();
+  const BRAND = await getWorkspace();
   const [clients, people] = await Promise.all([getClientsWithProjects(), getActivePeople()]);
   const creators = people.filter((p) => p.teams.includes("content")).map((p) => ({ id: p.id, name: p.name }));
   const canCreate = can.manageProjects(me);

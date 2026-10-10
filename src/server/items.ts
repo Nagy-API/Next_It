@@ -408,7 +408,7 @@ export async function setItemCancelled(actor: Actor, itemId: string, cancelled: 
  * Extra work is counted for the person and the brand (on top of the month's plan).
  */
 export async function setItemExtra(actor: Actor, itemId: string, extra: boolean) {
-  assert(isManager(actor), "Only managers decide what counts as extra.");
+  assert(can.markExtra(actor), "Only managers decide what counts as extra.");
   return db.transaction(async (tx) => {
     const ctx = await loadItemCtx(tx, itemId);
     assert(ctx.context === "plan", "Extra work is counted for brand content.");

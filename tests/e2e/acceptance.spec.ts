@@ -263,14 +263,13 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.getByLabel("Title").first().fill("Cover Reel");
     await page.getByRole("button", { name: "Add 1 item" }).click();
     await expect(page).toHaveURL(/m=2026-12/);
-    // Kemo (content creator, not a manager) sends it on.
+    // Kemo (content creator) sends it on.
     await login(page, "kemo");
     await openItem(page, "vanilla-roza", "Cover Reel", "2026-12");
     await page.getByLabel(/^Content link/).fill("https://canva.link/cover-reel");
     await page.getByRole("radio", { name: /Graphic Design/ }).click();
     // Anyone sending work on may pick the person in that team, or themselves.
     await expect(page.getByRole("combobox", { name: "Who works on it?" })).toBeVisible();
-    await expect(page.getByLabel(/Deadline/)).toHaveCount(0); // content creators don't set deadlines
     await page.getByRole("button", { name: /Done, send to Gannah/ }).click();
     await toast(page, "Sent to Gannah (Graphic Design).");
 
@@ -513,5 +512,32 @@ test.describe.serial("NEXORA acceptance", () => {
     await expect(page.getByText(/approved v2 of Post-production/).first()).toBeVisible();
     await page.goto("/team/ayman?range=last_30");
     await expect(page.getByText("The Ampoule").first()).toBeVisible();
+  });
+
+  test("Spaces: build a workflow from a template, add tasks, finish one; access is per person", async ({ page }) => {
+    await login(page, "king");
+    await page.goto("/spaces/new");
+    await page.getByRole("button", { name: /Simple board/ }).click();
+    await page.getByLabel("Space name").fill("IT requests");
+    await page.getByRole("button", { name: /Create IT requests/ }).click();
+    await expect(page.getByRole("heading", { level: 1, name: /IT requests/ })).toBeVisible();
+    await page.getByRole("textbox", { name: /e.g. Book the studio/ }).fill("New laptop for Jana\nFix the office Wi-Fi");
+    await page.getByRole("button", { name: "Add 2" }).click();
+    await toast(page, "2 tasks added.");
+    await page.getByRole("button", { name: /Mark Fix the office Wi-Fi Done/ }).click();
+    await toast(page, "Done! 🎉");
+    await page.getByLabel(/Show done/).check();
+    await expect(page.getByRole("link", { name: "Fix the office Wi-Fi" })).toBeVisible();
+    await page.getByRole("tab", { name: "Board" }).click();
+    await expect(page.getByText("New laptop for Jana")).toBeVisible();
+
+    await page.goto("/settings/access?u=assem");
+    await expect(page.getByRole("switch", { name: "Edit worked time for Assem" })).toHaveAttribute("aria-checked", "true");
+
+    await login(page, "esraa");
+    await page.goto("/settings/access");
+    await expect(page).toHaveURL(/\/settings\/account/);
+    await page.goto("/spaces");
+    await expect(page.getByRole("link", { name: /IT requests/ }).first()).toBeVisible(); // public space: the whole team sees it
   });
 });

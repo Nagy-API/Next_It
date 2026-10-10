@@ -5,12 +5,13 @@ import { BrandLogoPicker } from "@/components/photo";
 import { requireUser } from "@/server/auth";
 import { getActivePeople, getAllBrands } from "@/server/cached";
 import { BrandActiveToggle, BrandDefaultSelect, BrandEdit, NewBrandForm } from "../forms";
+import { can } from "@/domain/permissions";
 
 export const metadata = { title: "Brands · Settings" };
 
 export default async function BrandSettings() {
   const me = await requireUser();
-  if (!me.isAdmin) redirect("/settings/account");
+  if (!can.manageBrands(me)) redirect("/settings/account");
   const [brands, people] = await Promise.all([getAllBrands(), getActivePeople()]);
   const pickable = people.map((p) => ({ id: p.id, name: p.name }));
   const inTeam = (t: string) => people.filter((p) => (p.teams as string[]).includes(t)).map((p) => ({ id: p.id, name: p.name }));

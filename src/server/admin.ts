@@ -223,7 +223,7 @@ export async function setProjectDeleted(actor: Actor, projectId: string, deleted
 /* ------------------------------ Platforms ---------------------------- */
 
 export async function createPlatform(actor: Actor, name: string) {
-  assert(!!actor.isAdmin, ADMIN_ONLY);
+  assert(can.managePlatforms(actor), ADMIN_ONLY);
   const n = name.trim();
   assert(n, "Platform name is required.");
   const [dupe] = await db.select({ id: platforms.id }).from(platforms).where(ilike(platforms.name, n));
@@ -238,7 +238,7 @@ export async function createPlatform(actor: Actor, name: string) {
 }
 
 export async function updatePlatform(actor: Actor, platformId: string, input: { name?: string; isActive?: boolean }) {
-  assert(!!actor.isAdmin, ADMIN_ONLY);
+  assert(can.managePlatforms(actor), ADMIN_ONLY);
   return db.transaction(async (tx) => {
     const [p] = await tx.select().from(platforms).where(eq(platforms.id, platformId));
     assert(p, "Platform not found.");
@@ -278,6 +278,8 @@ export async function createUser(
   input: { username: string; name: string; title?: string | null; teams?: string[]; isAdmin?: boolean; isManager?: boolean; password: string },
 ) {
   assert(can.managePeople(actor), ADMIN_ONLY);
+  // Making someone an admin or a manager is an access decision (Settings → Access).
+  assert(!(input.isAdmin || input.isManager) || can.manageAccess(actor), "Only people who manage access can make someone an admin or a manager.");
   const username = input.username.trim().toLowerCase();
   assert(USERNAME_RE.test(username), "Usernames use 2–32 lowercase letters, numbers, dots, dashes or underscores.");
   const name = input.name.trim();
@@ -305,7 +307,7 @@ export async function createUser(
 export async function updateUser(
   actor: Actor,
   userId: string,
-  input: { name?: string; title?: string | null; teams?: string[]; isAdmin?: boolean; isManager?: boolean },
+  input: { name?: string; title?: string | null; teams?: string[]; isAdmin?: boolean; isManager?: boolean; roleLabel?: string | null },
 ) {
   assert(can.managePeople(actor), ADMIN_ONLY);
   return db.transaction(async (tx) => {
@@ -328,6 +330,10 @@ export async function updateUser(
         changes.push(`teams → ${teams.map((t) => TEAM_META[t].label).join(", ") || "none"}`);
       }
     }
+    const label = input.roleLabel === undefined ? undefined : input.roleLabel?.trim().slice(0, 20) || null;
+    const roleChange =
+      (input.isAdmin !== undefined && input.isAdmin !== u.isAdmin) || (input.isManager !== undefined && input.isManager !== u.isManager) || (label !== undefined && label !== u.roleLabel);
+    assert(!roleChange || can.manageAccess(actor), "Only people who manage access can change who is an admin or a manager.");
     if (input.isAdmin !== undefined && input.isAdmin !== u.isAdmin) {
       if (!input.isAdmin) await assertAnotherAdmin(userId);
       set.isAdmin = input.isAdmin;
@@ -336,6 +342,10 @@ export async function updateUser(
     if (input.isManager !== undefined && input.isManager !== u.isManager) {
       set.isManager = input.isManager;
       changes.push(input.isManager ? "made a manager" : "no longer a manager");
+    }
+    if (label !== undefined && label !== u.roleLabel) {
+      set.roleLabel = label;
+      changes.push(`role label → ${label ?? "none"}`);
     }
     if (!changes.length) return;
     await tx.update(users).set(set).where(eq(users.id, userId));
@@ -371,7 +381,7 @@ export async function setUserActive(actor: Actor, userId: string, active: boolea
 
 /** Profile photo: a small image data URL (the browser resizes it before upload). null removes it. */
 export async function setAvatar(actor: Actor, userId: string, dataUrl: string | null) {
-  assert(actor.id === userId || actor.isAdmin, "You can only change your own photo.");
+  assert(actor.id === userId || can.managePeople(actor), "You can only change your own photo.");
   if (dataUrl) {
     assert(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(dataUrl), "That file isn't a photo (use JPG or PNG).");
     assert(dataUrl.length < 400_000, "That photo is too big — pick a smaller one.");
@@ -390,7 +400,7 @@ export async function setAvatar(actor: Actor, userId: string, dataUrl: string | 
 
 export async function setUserPassword(actor: Actor, userId: string, password: string) {
   const self = actor.id === userId;
-  assert(self || actor.isAdmin, "Only an admin can reset someone else's password.");
+  assert(self || can.managePeople(actor), "Only an admin can reset someone else's password.");
   const [target] = await db.select({ username: users.username }).from(users).where(eq(users.id, userId));
   validatePassword(password, { username: target?.username });
   const passwordHash = await hashPassword(password);

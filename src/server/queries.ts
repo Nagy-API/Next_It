@@ -129,7 +129,17 @@ export type WorkItem = {
   project: { id: string; name: string; clientId: string; clientName: string; clientSlug: string } | null;
   stages: StageView[];
   current: StageView | null;
-  shoot: { date: string | null; time: string | null; duration: string | null; location: string | null };
+  shoot: {
+    date: string | null;
+    time: string | null;
+    duration: string | null;
+    location: string | null;
+    people: number | null;
+    rentals: string | null;
+    rentalsReady: boolean;
+    purchases: string | null;
+    purchasesReady: boolean;
+  };
   /** The brand's default person per step (Settings → Brands) — shown before the work is sent there. */
   defaults: Partial<Record<StageKind, string>>;
   /** Versions sent for approval (post-production & design), oldest first. */
@@ -326,7 +336,17 @@ async function enrich(
       project: project?.id ? (project as WorkItem["project"]) : null,
       stages: st,
       current: cur,
-      shoot: { date: item.shootDate, time: item.shootTime, duration: item.shootDuration, location: item.shootLocation },
+      shoot: {
+        date: item.shootDate,
+        time: item.shootTime,
+        duration: item.shootDuration,
+        location: item.shootLocation,
+        people: item.shootPeople,
+        rentals: item.shootRentals,
+        rentalsReady: item.shootRentalsReady,
+        purchases: item.shootPurchases,
+        purchasesReady: item.shootPurchasesReady,
+      },
       defaults: (() => {
         const b = brandDefaults.find((x) => x.id === brand?.id);
         const out: Partial<Record<StageKind, string>> = {};
@@ -404,7 +424,17 @@ export async function getItemDetail(id: string) {
       .where(and(eq(comments.itemId, id), isNull(comments.deletedAt)))
       .orderBy(desc(comments.createdAt)),
     db
-      .select({ id: workSessions.id, stageId: workSessions.stageId, kind: workSessions.kind, startedAt: workSessions.startedAt, endedAt: workSessions.endedAt, endReason: workSessions.endReason, userName: users.name })
+      .select({
+        id: workSessions.id,
+        stageId: workSessions.stageId,
+        kind: workSessions.kind,
+        startedAt: workSessions.startedAt,
+        endedAt: workSessions.endedAt,
+        endReason: workSessions.endReason,
+        userId: workSessions.userId,
+        userName: users.name,
+        editedAt: workSessions.editedAt,
+      })
       .from(workSessions)
       .innerJoin(users, eq(users.id, workSessions.userId))
       .where(eq(workSessions.itemId, id))
