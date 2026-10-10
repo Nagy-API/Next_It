@@ -50,7 +50,7 @@ export function Avatar({
     return (
       <span
         title="Unassigned"
-        className={clsx("inline-flex shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong bg-white text-faint", className)}
+        className={clsx("inline-flex shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong bg-surface text-faint", className)}
         style={{ width: size, height: size, fontSize: size * 0.42 }}
       >
         ?
@@ -69,10 +69,10 @@ export function Avatar({
     <span className={clsx("relative inline-flex shrink-0", className)} style={{ width: size, height: size }} title={p?.role ? `${name} · ${p.role}` : p?.manager ? `${name} · Manager` : name}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={name} width={size} height={size} className={clsx("size-full rounded-full object-cover", ring && "ring-2 ring-white")} />
+        <img src={src} alt={name} width={size} height={size} className={clsx("size-full rounded-full object-cover", ring && "ring-2 ring-surface")} />
       ) : (
         <span
-          className={clsx("inline-flex size-full items-center justify-center rounded-full font-semibold text-white", ring && "ring-2 ring-white")}
+          className={clsx("inline-flex size-full items-center justify-center rounded-full font-semibold text-white", ring && "ring-2 ring-surface")}
           style={{ fontSize: Math.max(9, size * 0.4), background: personColor(name) }}
         >
           {initials}
@@ -81,7 +81,7 @@ export function Avatar({
       {star && (
         <span
           aria-label="Manager"
-          className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-[#f5b301] text-white ring-2 ring-white"
+          className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-[#f5b301] text-white ring-2 ring-surface"
           style={{ width: Math.max(12, size * 0.42), height: Math.max(12, size * 0.42) }}
         >
           <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: "70%", height: "70%" }} aria-hidden>

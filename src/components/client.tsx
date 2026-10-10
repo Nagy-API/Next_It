@@ -32,7 +32,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             key={t.id}
             className={clsx(
               "pointer-events-auto flex max-w-[92vw] animate-in items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-medium shadow-pop",
-              t.kind === "ok" ? "bg-navy-900 text-white" : "bg-bad text-white",
+              t.kind === "ok" ? "bg-strong text-white" : "bg-bad text-white",
             )}
           >
             {t.kind === "ok" ? <CheckCircle2 className="size-4 text-emerald-300" /> : <XCircle className="size-4" />}
@@ -243,7 +243,7 @@ export function Popover({
         createPortal(
           <div
             ref={panelRef}
-            className="fixed z-[90] animate-in rounded-xl border border-line bg-white p-3 text-ink shadow-pop"
+            className="fixed z-[90] animate-in rounded-xl border border-line bg-surface p-3 text-ink shadow-pop"
             style={{ width: Math.min(width, typeof window === "undefined" ? width : window.innerWidth - 16), top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
           >
             {children(() => setOpen(false))}

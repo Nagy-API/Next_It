@@ -41,21 +41,21 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
         title="Reports"
         subtitle={`${label} · ${view === "people" ? "what each person worked on, finished and still has" : "what happened in each brand, and what's due"}`}
         actions={
-          <a href={exportHref} className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-white px-3.5 text-[14px] font-semibold text-ink shadow-card hover:border-[#1d6f42] hover:text-[#1d6f42]">
+          <a href={exportHref} className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surface px-3.5 text-[14px] font-semibold text-ink shadow-card hover:border-[#1d6f42] hover:text-[#1d6f42]">
             <FileSpreadsheet className="size-4 text-[#1d6f42]" /> Excel
           </a>
         }
       />
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <div className="flex rounded-xl border border-line bg-white p-1 shadow-card" role="tablist">
+        <div className="flex rounded-xl border border-line bg-surface p-1 shadow-card" role="tablist">
           {(
             [
               ["people", "People", Users],
               ["brands", "Brands", Tags],
             ] as const
           ).map(([k, l, Icon]) => (
-            <Link key={k} href={qs({ view: k })} role="tab" aria-selected={view === k} className={clsx("inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-[14px] font-semibold", view === k ? "bg-navy-900 text-white" : "text-muted hover:text-ink")}>
+            <Link key={k} href={qs({ view: k })} role="tab" aria-selected={view === k} className={clsx("inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-[14px] font-semibold", view === k ? "bg-strong text-white" : "text-muted hover:text-ink")}>
               <Icon className="size-4" /> {l}
             </Link>
           ))}
@@ -83,10 +83,10 @@ async function People({ from, to, single, open }: { from: string; to: string; si
       </p>
       {active.map((r) => (
         <details key={r.person.id} className="card group overflow-hidden" open={active.length === 1}>
-          <summary className="cursor-pointer list-none px-4 py-3 hover:bg-[#fafbfe]">
+          <summary className="cursor-pointer list-none px-4 py-3 hover:bg-subtle">
             <PersonReportHead r={r} single={single} />
           </summary>
-          <div className="border-t border-line bg-[#fbfcfe] px-4 py-4">
+          <div className="border-t border-line bg-subtle px-4 py-4">
             <PersonReportBody r={r} single={single} />
             <div className="mt-4 text-right">
               <Link href={`/team/${r.person.username}`} className="text-[13px] font-medium text-electric hover:underline">

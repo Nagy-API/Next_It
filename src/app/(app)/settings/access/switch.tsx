@@ -19,7 +19,7 @@ export function AccessSwitch({ userId, perm, label, on, def }: { userId: string;
         role="switch"
         aria-checked={on}
         aria-label={label}
-        className={clsx("relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200", on ? "bg-electric" : "bg-[#d5dbe7]")}
+        className={clsx("relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200", on ? "bg-electric" : "bg-track")}
       >
         <span className={clsx("inline-block size-5 rounded-full bg-white shadow transition-transform duration-200", on ? "translate-x-[22px]" : "translate-x-0.5")} />
       </button>
@@ -49,7 +49,7 @@ export function ResetAll({ userId, name }: { userId: string; name: string }) {
         onClick={(e) => {
           if (!confirm(`Reset ${name}'s access to the defaults for their role and team?`)) e.preventDefault();
         }}
-        className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] font-medium text-ink-2 hover:border-electric hover:text-electric"
+        className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] font-medium text-ink-2 hover:border-electric hover:text-electric"
       >
         <RotateCcw className="size-3.5" /> Reset to defaults
       </button>

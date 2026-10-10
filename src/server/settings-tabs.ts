@@ -7,6 +7,7 @@ export async function settingsTabsFor(me: Who): Promise<SettingsTab[]> {
   const ws = await getWorkspace();
   const tabs: SettingsTab[] = [];
   if (can.customizeWorkspace(me)) tabs.push("workspace");
+  if (can.announce(me) || can.postUpdates(me)) tabs.push("messages");
   if (can.manageAccess(me)) tabs.push("access");
   if (ws.modules.content && can.manageBrands(me)) tabs.push("brands");
   if (can.managePeople(me)) tabs.push("people");

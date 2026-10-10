@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { AlarmClock, ClipboardCheck, Coffee, Flame, Hourglass, Inbox, MessageSquareText, Send, Star, ThumbsUp, Trophy, type LucideIcon } from "lucide-react";
+import { AlarmClock, Clapperboard, ClipboardCheck, Coffee, Flame, Hourglass, Inbox, MessageSquareText, Send, Star, ThumbsUp, Trophy, type LucideIcon } from "lucide-react";
 import { TaskCard } from "@/components/handoff";
 import { TaskRow } from "@/components/tasks";
 import { Avatar, Badge, BrandDot, BrandMark, ProgressChip, SectionTitle, StageChip, TimeSpent, TypeIcon } from "@/components/ui";
@@ -17,7 +17,11 @@ import { getWorkspace } from "@/server/settings";
 import { mySpaceTasks } from "@/server/spaces";
 import { MySpaceTasks } from "@/components/spaces/my-space-tasks";
 import { Fold } from "@/components/fold";
-import { dailyLine, teamEmoji } from "@/lib/cheer";
+import { teamEmoji } from "@/lib/cheer";
+import { applyOrder, getOrder } from "@/server/order";
+import { shootsFor, type ShootEntry } from "@/server/shoots";
+import { priorityRank } from "@/domain/priority";
+import { Reorderable } from "@/components/reorder";
 
 export const metadata = { title: "My tasks" };
 
@@ -31,18 +35,13 @@ const PERIODS = [
   { key: "month", label: "This month" },
 ] as const;
 
-function greeting() {
-  const h = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "numeric", hour12: false }).format(new Date()));
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-}
-
 export default async function MyTasksPage({ searchParams }: PageProps<"/my-work">) {
   const user = await requireUser();
   const BRAND = await getWorkspace();
   const sp = await searchParams;
   const today = todayISO();
   const manager = isManager(user);
-  const [{ next }, recent, open, people, messages, myTasks, given, brands, platforms, spaceTasks] = await Promise.all([
+  const [{ next }, recent, open, people, messages, myTasks, given, brands, platforms, spaceTasks, myShoots] = await Promise.all([
     getPersonWork(user.id, today),
     getPersonCompletions(user.id, addDays(today, -13), today),
     getOpenItems(),
@@ -53,6 +52,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
     getAllBrands(),
     getActivePlatforms(),
     BRAND.modules.spaces ? mySpaceTasks(user) : Promise.resolve([]),
+    BRAND.modules.content ? shootsFor(user.id, 6).catch(() => [] as ShootEntry[]) : Promise.resolve([] as ShootEntry[]),
   ]);
   const pick = people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }));
   const rights = { deadline: can.setDeadline(user), assign: can.assign(user), review: can.review(user) };
@@ -68,7 +68,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const sent = mine.filter((i) => i.current?.progress === "waiting_approval" && i.current.assignee?.id === user.id);
   const allItems = mine
     .filter((i) => !sent.includes(i))
-    .sort((a, b) => (dayOf(a) ?? "9").localeCompare(dayOf(b) ?? "9") || (b.current?.activatedAt?.getTime() ?? 0) - (a.current?.activatedAt?.getTime() ?? 0));
+    .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || (dayOf(a) ?? "9").localeCompare(dayOf(b) ?? "9") || (b.current?.activatedAt?.getTime() ?? 0) - (a.current?.activatedAt?.getTime() ?? 0));
   const reviews = reviewsFor(open, user).filter((i) => !mine.includes(i));
   const openTasks = myTasks.filter((t) => !t.doneAt);
   // Manager to-dos: new ones first (newest on top), then by deadline; finished ones last.
@@ -76,6 +76,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   myTasks.sort(
     (a, b) =>
       taskOrder(a) - taskOrder(b) ||
+      (a.doneAt || b.doneAt ? 0 : priorityRank(a.priority) - priorityRank(b.priority)) ||
       (taskOrder(a) === 0 ? b.createdAt.getTime() - a.createdAt.getTime() : (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9")),
   );
 
@@ -91,6 +92,15 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
     g.items.push(i);
     groups.set(key, g);
   }
+  // My own order (drag) wins inside a brand; never-placed work keeps the automatic order after it.
+  const myOrder = await getOrder(user.id, items.map((i) => `item:${i.id}`));
+  const customGroups = new Set<string>();
+  for (const g of groups.values()) {
+    const r = applyOrder(g.items, (i) => `item:${i.id}`, myOrder);
+    g.items = r.list;
+    if (r.custom) customGroups.add(g.key);
+  }
+  const postingToday = allItems.filter((i) => i.postingDate === today);
   const ordered = [...groups.values()].sort((a, b) => Number(b.mine) - Number(a.mine) || Number(a.key === "projects") - Number(b.key === "projects") || a.label.localeCompare(b.label));
   const mineGroups = ordered.filter((g) => g.mine);
   const otherGroups = ordered.filter((g) => !g.mine);
@@ -120,12 +130,11 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
             <Avatar name={user.name} size={46} ring />
             <div>
               <h1 className="font-display text-[21px] font-bold leading-tight tracking-[-0.01em] sm:text-[26px]">
-                {greeting()}, {user.name} <span className="inline-block origin-bottom-right animate-wave">{teamEmoji(user.teams)}</span>
+                {user.name.split(" ")[0]}&rsquo;s tasks <span className="inline-block origin-bottom-right animate-wave">{teamEmoji(user.teams)}</span>
               </h1>
               <p className="text-[14px] text-white/65">
                 {total ? (hotCount ? `${hotCount} thing${hotCount > 1 ? "s" : ""} must move in the next 48 hours — they're at the top.` : "Here's everything on you, from every brand.") : "Nothing waiting for you right now — enjoy it ☕"}
               </p>
-              <p className="mt-1 hidden text-[13px] italic text-electric-bright/90 sm:block">{dailyLine(user.name, today)}</p>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-4 gap-2 sm:mt-5 sm:gap-3">
@@ -149,6 +158,63 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
         <span className="ml-auto text-[12.5px] text-muted">{until ? `Due or posting by ${until === today ? "today" : until}` : "All open work"}</span>
       </nav>
 
+      {postingToday.length > 0 && (
+        <section className="overflow-hidden rounded-2xl border border-electric/35 bg-electric-soft/60 shadow-[0_14px_30px_-24px_rgb(59_130_246/0.9)]">
+          <div className="flex items-center gap-2.5 px-4 py-3">
+            <span className="relative flex size-2.5">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-electric opacity-60" />
+              <span className="relative inline-flex size-2.5 rounded-full bg-electric" />
+            </span>
+            <h2 className="font-display text-[15.5px] font-bold">Posting today: it&rsquo;s your turn</h2>
+            <span className="text-[13px] text-muted">These go live today. Finish your step so it reaches Social in time.</span>
+          </div>
+          <div className="divide-y divide-electric/15 border-t border-electric/20 bg-surface">
+            {postingToday.map((i) => (
+              <Link key={i.id} href={`#i-${i.id}`} className="flex items-center gap-3 px-4 py-2.5 text-[14px] hover:bg-hover">
+                <span className="w-11 font-display font-bold tabular-nums text-electric">{i.postingTime ?? "Today"}</span>
+                <TypeIcon type={i.type} />
+                <span className="min-w-0 flex-1 truncate font-semibold">{i.title}</span>
+                {i.brand && (
+                  <span className="hidden items-center gap-1.5 text-[12.5px] text-muted sm:flex">
+                    <BrandDot color={i.brand.color} /> {i.brand.name}
+                  </span>
+                )}
+                {i.current && <StageChip kind={i.current.kind} short />}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {myShoots.length > 0 && (
+        <section>
+          <SectionTitle right={<Link href="/shoots" className="text-[13px] font-medium text-electric hover:underline">Shoot schedule</Link>}>
+            <span className="inline-flex items-center gap-2">
+              <Clapperboard className="size-4 text-[#7c3aed]" /> Your shoots
+            </span>
+          </SectionTitle>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {myShoots.map((s) => (
+              <Link key={`${s.kind}-${s.id}`} href={s.href} className="card flex gap-3 p-3.5 transition hover:-translate-y-0.5 hover:shadow-pop" style={s.brand ? { boxShadow: `inset 3px 0 0 ${s.brand.color}` } : undefined}>
+                <div className="w-[68px] shrink-0 text-center">
+                  <div className={clsx("text-[11px] font-bold uppercase", s.day === today ? "text-electric" : "text-muted")}>{s.day === today ? "Today" : formatDay(s.day, { weekday: true }).split(" ")[0]}</div>
+                  <div className="font-display text-[15px] font-bold tabular-nums">{s.start ?? formatDay(s.day, { weekday: false })}</div>
+                  {s.end && <div className="text-[11.5px] tabular-nums text-muted">to {s.end}</div>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-semibold">{s.title}</div>
+                  <div className="truncate text-[12.5px] text-muted">
+                    {s.brand?.name ?? "No brand"}
+                    {s.location ? ` · 📍 ${s.location}` : ""}
+                  </div>
+                  {s.notes && <div className="mt-1 line-clamp-2 text-[12.5px] text-ink-2">📝 {s.notes}</div>}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {messages.length > 0 && (
         <section>
           <SectionTitle>
@@ -159,7 +225,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
           </SectionTitle>
           <div className="card divide-y divide-line">
             {messages.map((m) => (
-              <Link key={m.id} href={`/items/${m.itemId}#c-${m.id}`} className="flex items-start gap-3 px-4 py-3 hover:bg-[#f8faff]">
+              <Link key={m.id} href={`/items/${m.itemId}#c-${m.id}`} className="flex items-start gap-3 px-4 py-3 hover:bg-hover">
                 <Avatar name={m.authorName} size={28} />
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] text-muted">
@@ -223,7 +289,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
       {ordered.length > 1 && (
         <nav aria-label="Jump to a brand" className="-mt-4 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
           {ordered.map((g) => (
-            <a key={g.key} href={`#b-${g.key}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-white py-1 pl-1 pr-2.5 text-[12.5px] font-medium text-ink-2 transition-colors hover:border-line-strong">
+            <a key={g.key} href={`#b-${g.key}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface py-1 pl-1 pr-2.5 text-[12.5px] font-medium text-ink-2 transition-colors hover:border-line-strong">
               {g.color ? <BrandMark name={g.label} color={g.color} logoUrl={g.logoUrl} size={18} className="!rounded-full" /> : <span className="size-[18px] rounded-full bg-canvas" />}
               {g.label} <span className="text-faint">{g.items.length}</span>
             </a>
@@ -239,7 +305,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
             </span>
           </SectionTitle>
           {mineGroups.map((g) => (
-            <BrandGroup key={g.key} g={g} render={(i) => <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} allPlatforms={platforms} attachments={files.get(i.id)} manager={manager} />} />
+            <BrandGroup key={g.key} g={g} custom={customGroups.has(g.key)} render={(i) => <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} allPlatforms={platforms} attachments={files.get(i.id)} manager={manager} />} />
           ))}
         </section>
       )}
@@ -254,7 +320,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
             </SectionTitle>
           )}
           {otherGroups.map((g) => (
-            <BrandGroup key={g.key} g={g} render={(i) => <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} allPlatforms={platforms} attachments={files.get(i.id)} manager={manager} />} />
+            <BrandGroup key={g.key} g={g} custom={customGroups.has(g.key)} render={(i) => <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} allPlatforms={platforms} attachments={files.get(i.id)} manager={manager} />} />
           ))}
         </section>
       )}
@@ -269,7 +335,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
           </SectionTitle>
           <div className="card divide-y divide-line">
             {sent.map((i) => (
-              <Link key={i.id} href={`/items/${i.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 hover:bg-[#f8faff]">
+              <Link key={i.id} href={`/items/${i.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 hover:bg-hover">
                 <TypeIcon type={i.type} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{i.title}</div>
@@ -312,7 +378,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
           </summary>
           <div className="card divide-y divide-line">
             {next.map((i) => (
-              <Link key={i.id} href={`/items/${i.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-[#f8faff]">
+              <Link key={i.id} href={`/items/${i.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-hover">
                 <TypeIcon type={i.type} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{i.title}</div>
@@ -337,7 +403,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
         {recent.length ? (
           <div className="card divide-y divide-line">
             {recent.slice(0, 8).map((r) => (
-              <Link key={r.id} href={`/items/${r.itemId}`} className="flex items-center gap-3 px-4 py-2.5 text-[13.5px] hover:bg-[#f8faff]">
+              <Link key={r.id} href={`/items/${r.itemId}`} className="flex items-center gap-3 px-4 py-2.5 text-[13.5px] hover:bg-hover">
                 <TypeIcon type={r.type} />
                 <span className="min-w-0 flex-1 truncate">
                   <span className="font-medium">{r.title}</span>
@@ -357,8 +423,8 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   );
 }
 
-/** One brand's work, by day: a small day heading whenever the day changes. */
-function BrandGroup({ g, render }: { g: { key: string; label: string; color: string | null; logoUrl: string | null; items: WorkItem[] }; render: (i: WorkItem) => React.ReactNode }) {
+/** One brand's work, by day (a small day heading whenever the day changes) — or in the person's own order. */
+function BrandGroup({ g, render, custom }: { g: { key: string; label: string; color: string | null; logoUrl: string | null; items: WorkItem[] }; render: (i: WorkItem) => React.ReactNode; custom: boolean }) {
   return (
     <div id={`b-${g.key}`} className="scroll-mt-24">
       <Fold
@@ -368,21 +434,23 @@ function BrandGroup({ g, render }: { g: { key: string; label: string; color: str
           <>
             {g.color ? <BrandMark name={g.label} color={g.color} logoUrl={g.logoUrl} size={26} /> : <span className="grid size-[26px] place-items-center rounded-md bg-canvas text-[12px]">◆</span>}
             <span className="font-display text-[16px] font-bold text-ink">{g.label}</span>
-            <span className="rounded-full bg-white px-2 py-0.5 text-[12px] font-semibold text-muted ring-1 ring-line">{g.items.length}</span>
+            <span className="rounded-full bg-surface px-2 py-0.5 text-[12px] font-semibold text-muted ring-1 ring-line">{g.items.length}</span>
           </>
         }
       >
-        <div className="space-y-3 border-l-2 pl-3 sm:pl-4" style={{ borderColor: g.color ? `${g.color}40` : "var(--color-line)" }}>
-          {g.items.map((i, n) => {
-            const day = dayOf(i);
-            const head = n === 0 || day !== dayOf(g.items[n - 1]);
-            return (
-              <div key={i.id} className="space-y-2">
-                {head && <div className="pt-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">{day ? formatDay(day, { weekday: true }) : "No date"}</div>}
-                {render(i)}
-              </div>
-            );
-          })}
+        <div className="border-l-2 pl-5 sm:pl-6" style={{ borderColor: g.color ? `${g.color}40` : "var(--color-line)" }}>
+          <Reorderable
+            custom={custom}
+            rows={g.items.map((i, n) => {
+              const day = dayOf(i);
+              const head = !custom && (n === 0 || day !== dayOf(g.items[n - 1]));
+              return {
+                key: `item:${i.id}`,
+                head: head ? <div key={`h-${i.id}`} className="pb-2 pt-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">{day ? formatDay(day, { weekday: true }) : "No date"}</div> : undefined,
+                node: <div key={`n-${i.id}`} id={`i-${i.id}`} className="scroll-mt-24">{render(i)}</div>,
+              };
+            })}
+          />
         </div>
       </Fold>
     </div>
@@ -392,7 +460,7 @@ function BrandGroup({ g, render }: { g: { key: string; label: string; color: str
 function chip(on: boolean) {
   return clsx(
     "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition-colors",
-    on ? "border-navy-900 bg-navy-900 text-white" : "border-line bg-white text-ink-2 hover:border-line-strong",
+    on ? "border-strong bg-strong text-white" : "border-line bg-surface text-ink-2 hover:border-line-strong",
   );
 }
 

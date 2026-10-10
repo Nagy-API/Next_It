@@ -2,73 +2,30 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { Check, Globe2, Lock, Zap } from "lucide-react";
+import { Globe2, Lock } from "lucide-react";
 import { createSpaceAction } from "@/app/space-actions";
 import { ActionForm, Submit } from "@/components/client";
 import { Avatar } from "@/components/avatar";
 import { SPACE_COLORS } from "@/domain/spaces";
 
-type T = { key: string; name: string; icon: string; color: string; description: string; statuses: { name: string; color: string }[]; fields: string[]; automations: string[] };
-
 const ICONS = ["✅", "📣", "🧑‍💼", "💼", "🎬", "🎧", "🛠️", "📸", "🎨", "📦", "💡", "🚀", "📊", "🏷️", "🤝", "🗓️"];
 
-export function NewSpaceForm({ templates, people, brands }: { templates: T[]; people: { id: string; name: string }[]; brands: { id: string; name: string }[] }) {
-  const [tpl, setTpl] = useState(templates[0]);
+/** The right side of the template library when making a space: name, icon & colour, who sees it, members, brand. */
+export function NewSpaceFields({ template: tpl, people, brands }: { template: { key: string; name: string; icon: string; color: string }; people: { id: string; name: string }[]; brands: { id: string; name: string }[] }) {
   const [name, setName] = useState("");
-  const [icon, setIcon] = useState(templates[0].icon);
-  const [color, setColor] = useState(templates[0].color);
+  const [icon, setIcon] = useState(tpl.icon);
+  const [color, setColor] = useState(tpl.color);
   const [priv, setPriv] = useState(false);
   return (
-    <ActionForm action={createSpaceAction} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="space-y-3">
-        <div className="eyebrow">1. Start from</div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {templates.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => {
-                setTpl(t);
-                setIcon(t.icon);
-                setColor(t.color);
-              }}
-              aria-pressed={tpl.key === t.key}
-              className={clsx("relative cursor-pointer rounded-2xl border bg-white p-4 text-left transition-[border-color,box-shadow,transform] hover:-translate-y-0.5", tpl.key === t.key ? "border-electric shadow-[0_0_0_3px_rgb(59_130_246/0.15)]" : "border-line hover:border-line-strong")}
-            >
-              {tpl.key === t.key && <Check className="absolute right-3 top-3 size-4 text-electric" strokeWidth={3} />}
-              <div className="flex items-center gap-2.5">
-                <span className="grid size-9 place-items-center rounded-xl text-[18px]" style={{ background: `color-mix(in srgb, ${t.color} 15%, white)` }}>
-                  {t.icon}
-                </span>
-                <span className="font-display text-[15px] font-bold">{t.name}</span>
-              </div>
-              <p className="mt-2 text-[12.5px] text-muted">{t.description}</p>
-              <div className="mt-3 flex flex-wrap gap-1">
-                {t.statuses.map((s) => (
-                  <span key={s.name} className="rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold" style={{ background: `color-mix(in srgb, ${s.color} 15%, white)`, color: `color-mix(in srgb, ${s.color} 80%, black)` }}>
-                    {s.name}
-                  </span>
-                ))}
-              </div>
-              {t.automations.length > 0 && (
-                <div className="mt-2 flex items-start gap-1 text-[11.5px] text-ink-2">
-                  <Zap className="mt-0.5 size-3 shrink-0 text-amber-500" /> {t.automations.length} automation{t.automations.length > 1 ? "s" : ""} included
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-        <div className="eyebrow">2. Name it</div>
+    <ActionForm action={createSpaceAction}>
+      <div className="space-y-4">
         <div className="card space-y-4 p-5">
           <input type="hidden" name="template" value={tpl.key} />
           <input type="hidden" name="icon" value={icon} />
           <input type="hidden" name="color" value={color} />
           <input type="hidden" name="private" value={priv ? "1" : "0"} />
           <div className="flex items-center gap-3">
-            <span className="grid size-12 shrink-0 place-items-center rounded-2xl text-[24px]" style={{ background: `color-mix(in srgb, ${color} 18%, white)` }}>
+            <span className="grid size-12 shrink-0 place-items-center rounded-2xl text-[24px]" style={{ background: `color-mix(in srgb, ${color} 18%, var(--color-surface))` }}>
               {icon}
             </span>
             <div className="min-w-0 flex-1">

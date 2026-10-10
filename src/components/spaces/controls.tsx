@@ -1,18 +1,25 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { createContext, useContext, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Check, ChevronDown, Flag, Plus, Star, UserPlus, X } from "lucide-react";
+import { Check, ChevronDown, Flag, MapPin, Paperclip, PenLine, Plus, Search, Star, ThumbsUp, UserPlus, X } from "lucide-react";
 import { createWorkTaskAction, setFieldValueAction, updateWorkTaskAction } from "@/app/space-actions";
 import { ActionForm, Popover, Submit } from "@/components/client";
 import { Avatar } from "@/components/avatar";
 import { DateInput } from "@/components/date-input";
-import { FIELD_TYPES, PRIORITIES, PRIORITY_LIST, STATUS_KINDS, type FieldOption, type FieldType, type Priority } from "@/domain/spaces";
+import { FIELD_TYPES, PRIORITIES, PRIORITY_LIST, STATUS_KINDS, isComputedField, type FieldConfig, type FieldOption, type FieldType, type Priority } from "@/domain/spaces";
 import { addDays, formatDay, relativeDays, todayISO } from "@/lib/dates";
 
 export type SStatus = { id: string; name: string; color: string; kind: string };
 export type SPerson = { id: string; name: string };
-export type SField = { id: string; name: string; type: FieldType; options: FieldOption[] };
+export type SField = { id: string; name: string; type: FieldType; options: FieldOption[]; config?: FieldConfig | null };
+
+/** What some columns need to know besides their value: who I am (voting) and the space's tasks (relationship). */
+const FieldCtx = createContext<{ meId: string; tasks: { id: string; title: string }[] }>({ meId: "", tasks: [] });
+export function FieldContext({ meId, tasks, children }: { meId: string; tasks: { id: string; title: string }[]; children: React.ReactNode }) {
+  const value = useMemo(() => ({ meId, tasks }), [meId, tasks]);
+  return <FieldCtx.Provider value={value}>{children}</FieldCtx.Provider>;
+}
 
 /* ------------------------------ Status ------------------------------ */
 
@@ -20,8 +27,8 @@ export function StatusPill({ status, size = "md", className }: { status: SStatus
   if (!status) return null;
   return (
     <span
-      className={clsx("inline-flex max-w-full items-center gap-1.5 truncate rounded-full font-semibold uppercase tracking-[0.04em]", size === "sm" ? "px-2 py-0.5 text-[10.5px]" : "px-2.5 py-1 text-[11px]", className)}
-      style={{ background: `color-mix(in srgb, ${status.color} 14%, white)`, color: `color-mix(in srgb, ${status.color} 80%, black)` }}
+      className={clsx("tint inline-flex max-w-full items-center gap-1.5 truncate rounded-full font-semibold uppercase tracking-[0.04em]", size === "sm" ? "px-2 py-0.5 text-[10.5px]" : "px-2.5 py-1 text-[11px]", className)}
+      style={{ "--tint": `color-mix(in srgb, ${status.color} 82%, #0b1639)` } as React.CSSProperties}
     >
       <span className="size-1.5 shrink-0 rounded-full" style={{ background: status.color }} />
       <span className="truncate">{status.name}</span>
@@ -114,7 +121,7 @@ export function Faces({ ids, people, size = 24, max = 3 }: { ids: string[]; peop
         <Avatar key={n} name={n} size={size} ring badge={false} />
       ))}
       {names.length > max && (
-        <span className="grid place-items-center rounded-full bg-canvas text-[10.5px] font-semibold text-ink-2 ring-2 ring-white" style={{ width: size, height: size }}>
+        <span className="grid place-items-center rounded-full bg-canvas text-[10.5px] font-semibold text-ink-2 ring-2 ring-surface" style={{ width: size, height: size }}>
           +{names.length - max}
         </span>
       )}
@@ -215,8 +222,79 @@ export function DuePicker({ taskId, value, done, disabled, name = "dueDate", lab
 const money = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
 export function FieldValue({ field, value, people }: { field: SField; value: unknown; people: SPerson[] }) {
-  if (value === null || value === undefined || value === "") return <span className="text-[12.5px] text-faint">—</span>;
+  const ctx = useContext(FieldCtx);
+  if (field.type === "button") return null;
+  if (value === null || value === undefined || value === "") return <span className="text-[12.5px] text-faint">{field.type === "voting" ? "0 votes" : "—"}</span>;
   switch (field.type) {
+    case "textarea":
+      return <span className="line-clamp-2 whitespace-pre-wrap text-[13px]">{String(value)}</span>;
+    case "location":
+      return (
+        <a
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(String(value))}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex max-w-[220px] items-center gap-1 text-[12.5px] text-electric hover:underline"
+        >
+          <MapPin className="size-3.5 shrink-0" /> <span className="truncate">{String(value)}</span>
+        </a>
+      );
+    case "voting": {
+      const ids = value as string[];
+      return (
+        <span className={clsx("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold", ids.includes(ctx.meId) ? "bg-electric-soft text-electric" : "bg-sunken text-ink-2")} title={ids.map((id) => people.find((p) => p.id === id)?.name ?? "").join(", ")}>
+          <ThumbsUp className="size-3.5" /> {ids.length}
+        </span>
+      );
+    }
+    case "signature": {
+      const sig = value as { name: string; at: string };
+      return (
+        <span className="inline-flex items-center gap-1 text-[12.5px]" title={new Date(sig.at).toLocaleString("en-GB")}>
+          <PenLine className="size-3.5 text-ok" /> <span className="font-[cursive] italic">{sig.name}</span> <span className="text-faint">· {formatDay(sig.at.slice(0, 10))}</span>
+        </span>
+      );
+    }
+    case "relationship":
+      return (
+        <span className="flex flex-wrap gap-1">
+          {(value as string[]).map((id) => {
+            const t = ctx.tasks.find((x) => x.id === id);
+            return t ? (
+              <span key={id} className="max-w-[160px] truncate rounded-md border border-line bg-subtle px-1.5 py-0.5 text-[11.5px] font-medium text-ink-2">
+                ↗ {t.title}
+              </span>
+            ) : null;
+          })}
+        </span>
+      );
+    case "tasks": {
+      const v = value as { done: number; total: number };
+      return (
+        <span className={clsx("inline-flex items-center gap-1 text-[12.5px] font-semibold tabular-nums", v.done === v.total ? "text-ok" : "text-ink-2")}>
+          <Check className="size-3.5" /> {v.done}/{v.total}
+        </span>
+      );
+    }
+    case "files":
+      return (
+        <span className="inline-flex items-center gap-1 text-[12.5px] text-ink-2">
+          <Paperclip className="size-3.5" /> {Number(value)}
+        </span>
+      );
+    case "formula":
+    case "rollup":
+      return value === "#ERR" ? <span className="text-[12.5px] font-semibold text-bad" title="Check the formula">#ERR</span> : <span className="text-[13px] font-semibold tabular-nums">{money.format(Number(value))}</span>;
+    case "progress_auto":
+      return (
+        <span className="flex min-w-[90px] items-center gap-1.5">
+          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-track">
+            <span className="block h-full rounded-full bg-electric" style={{ width: `${Number(value)}%` }} />
+          </span>
+          <span className="text-[11.5px] tabular-nums text-muted">{Number(value)}%</span>
+        </span>
+      );
     case "dropdown": {
       const o = field.options.find((x) => x.id === value);
       return o ? <OptionChip o={o} /> : <span className="text-faint">—</span>;
@@ -277,7 +355,7 @@ export function FieldValue({ field, value, people }: { field: SField; value: unk
     case "progress":
       return (
         <span className="flex min-w-[90px] items-center gap-1.5">
-          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#e8ecf3]">
+          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-track">
             <span className="block h-full rounded-full bg-ok" style={{ width: `${Number(value)}%` }} />
           </span>
           <span className="text-[11.5px] tabular-nums text-muted">{Number(value)}%</span>
@@ -290,21 +368,48 @@ export function FieldValue({ field, value, people }: { field: SField; value: unk
 
 function OptionChip({ o }: { o: FieldOption }) {
   return (
-    <span className="inline-flex rounded-md px-1.5 py-0.5 text-[11.5px] font-semibold" style={{ background: `color-mix(in srgb, ${o.color} 15%, white)`, color: `color-mix(in srgb, ${o.color} 80%, black)` }}>
+    <span className="tint inline-flex rounded-md px-1.5 py-0.5 text-[11.5px] font-semibold" style={{ "--tint": `color-mix(in srgb, ${o.color} 82%, #0b1639)` } as React.CSSProperties}>
       {o.label}
     </span>
   );
 }
 
 export function FieldEditor({ taskId, field, value, people, disabled }: { taskId: string; field: SField; value: unknown; people: SPerson[]; disabled?: boolean }) {
-  if (disabled) return <FieldValue field={field} value={value} people={people} />;
+  if (field.type === "button")
+    return disabled ? null : (
+      <ActionForm action={setFieldValueAction} toast={false} inlineError={false}>
+        <input type="hidden" name="taskId" value={taskId} />
+        <input type="hidden" name="fieldId" value={field.id} />
+        <Submit size="sm" variant="secondary" className="!h-7 !px-2 !text-[12px]">
+          {field.config?.buttonLabel || (field.config?.action === "take" ? "Take it" : field.config?.action === "status" ? "Move" : "Mark done")}
+        </Submit>
+      </ActionForm>
+    );
+  if (disabled || isComputedField(field.type)) return <FieldValue field={field} value={value} people={people} />;
+  if (field.type === "voting" || (field.type === "signature" && !value))
+    return (
+      <ActionForm action={setFieldValueAction} toast={false} inlineError={false}>
+        <input type="hidden" name="taskId" value={taskId} />
+        <input type="hidden" name="fieldId" value={field.id} />
+        <input type="hidden" name="value" value={field.type === "signature" ? "sign" : "toggle"} />
+        <button type="submit" className="cursor-pointer rounded-md px-1 py-0.5 hover:bg-hover" title={field.type === "voting" ? "Vote / take back your vote" : "Sign with your name and the time"}>
+          {field.type === "signature" ? (
+            <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-line-strong px-2 py-0.5 text-[12px] font-medium text-muted">
+              <PenLine className="size-3.5" /> Sign
+            </span>
+          ) : (
+            <FieldValue field={field} value={value} people={people} />
+          )}
+        </button>
+      </ActionForm>
+    );
   if (field.type === "checkbox")
     return (
       <ActionForm action={setFieldValueAction} toast={false} inlineError={false}>
         <input type="hidden" name="taskId" value={taskId} />
         <input type="hidden" name="fieldId" value={field.id} />
         <input type="hidden" name="value" value={value ? "" : "on"} />
-        <button type="submit" role="checkbox" aria-checked={!!value} aria-label={field.name} className={clsx("grid size-[18px] cursor-pointer place-items-center rounded border transition-colors", value ? "border-ok bg-ok text-white" : "border-line-strong bg-white hover:border-electric")}>
+        <button type="submit" role="checkbox" aria-checked={!!value} aria-label={field.name} className={clsx("grid size-[18px] cursor-pointer place-items-center rounded border transition-colors", value ? "border-ok bg-ok text-white" : "border-line-strong bg-surface hover:border-electric")}>
           {!!value && <Check className="size-3" strokeWidth={3} />}
         </button>
       </ActionForm>
@@ -388,6 +493,18 @@ function FieldForm({ taskId, field, value, people, close }: { taskId: string; fi
         ))}
       </div>
     );
+  if (field.type === "signature")
+    return (
+      <ActionForm action={setFieldValueAction} toast={false} onSuccess={close} className="space-y-2 p-3">
+        {hidden}
+        <input type="hidden" name="value" value="" />
+        <FieldValue field={field} value={value} people={people} />
+        <Submit size="sm" variant="secondary" className="w-full">
+          Remove the signature
+        </Submit>
+      </ActionForm>
+    );
+  if (field.type === "relationship") return <RelationForm hidden={hidden} value={Array.isArray(value) ? (value as string[]) : []} taskId={taskId} close={close} />;
   if (field.type === "date")
     return (
       <ActionForm action={setFieldValueAction} toast={false} onSuccess={close} className="p-3">
@@ -402,13 +519,45 @@ function FieldForm({ taskId, field, value, people, close }: { taskId: string; fi
       <label className="label">
         {field.name} <span className="font-normal text-muted">· {FIELD_TYPES[field.type].label}</span>
       </label>
-      {field.type === "text" ? (
-        <textarea name="value" defaultValue={value ? String(value) : ""} rows={3} className="field w-full" autoFocus />
+      {field.type === "text" || field.type === "textarea" ? (
+        <textarea name="value" defaultValue={value ? String(value) : ""} rows={field.type === "textarea" ? 6 : 3} className="field w-full" autoFocus />
       ) : (
         <input name="value" type={type} step="any" min={field.type === "progress" ? 0 : undefined} max={field.type === "progress" ? 100 : undefined} defaultValue={value !== null && value !== undefined ? String(value) : ""} className="field w-full" autoFocus />
       )}
       <Submit size="sm" className="w-full">
         Save
+      </Submit>
+    </ActionForm>
+  );
+}
+
+/** Link this task to others in the space: search, tick, save. */
+function RelationForm({ hidden, value, taskId, close }: { hidden: React.ReactNode; value: string[]; taskId: string; close: () => void }) {
+  const { tasks } = useContext(FieldCtx);
+  const [q, setQ] = useState("");
+  const list = tasks.filter((t) => t.id !== taskId && t.title.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 60);
+  return (
+    <ActionForm action={setFieldValueAction} toast={false} onSuccess={close} className="p-2">
+      {hidden}
+      <input type="hidden" name="multi" value="1" />
+      {value.filter((id) => !list.some((t) => t.id === id)).map((id) => (
+        <input key={id} type="hidden" name="value" value={id} />
+      ))}
+      <div className="relative mb-1.5">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a task…" className="field field-sm h-8 w-full pl-8" autoFocus />
+      </div>
+      <div className="max-h-[220px] overflow-y-auto">
+        {list.map((t) => (
+          <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] hover:bg-hover">
+            <input type="checkbox" name="value" value={t.id} defaultChecked={value.includes(t.id)} className="size-4 accent-[var(--color-electric)]" />
+            <span className="truncate">{t.title}</span>
+          </label>
+        ))}
+        {!list.length && <p className="px-2 py-3 text-center text-[12.5px] text-muted">No tasks found.</p>}
+      </div>
+      <Submit size="sm" className="mt-1.5 w-full">
+        Save links
       </Submit>
     </ActionForm>
   );

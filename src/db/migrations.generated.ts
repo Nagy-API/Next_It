@@ -323,5 +323,59 @@ export const MIGRATIONS: { sql: string[]; bps: boolean; folderMillis: number; ha
     "bps": true,
     "folderMillis": 1791636610113,
     "hash": "ad82238885691eb32a17f2d72276a308d6769ba00582d2b508eecfcf1a8f5888"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"kudos\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"from_id\" uuid NOT NULL,\n\t\"to_id\" uuid NOT NULL,\n\t\"emoji\" text NOT NULL,\n\t\"text\" text NOT NULL,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"moods\" (\n\t\"user_id\" uuid NOT NULL,\n\t\"day\" date NOT NULL,\n\t\"emoji\" text NOT NULL,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\tCONSTRAINT \"moods_user_id_day_pk\" PRIMARY KEY(\"user_id\",\"day\")\n);\n",
+      "\nCREATE TABLE \"personal_order\" (\n\t\"user_id\" uuid NOT NULL,\n\t\"key\" text NOT NULL,\n\t\"position\" integer NOT NULL,\n\tCONSTRAINT \"personal_order_user_id_key_pk\" PRIMARY KEY(\"user_id\",\"key\")\n);\n",
+      "\nCREATE TABLE \"reactions\" (\n\t\"target_kind\" text NOT NULL,\n\t\"target_id\" uuid NOT NULL,\n\t\"user_id\" uuid NOT NULL,\n\t\"emoji\" text NOT NULL,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\tCONSTRAINT \"reactions_target_kind_target_id_user_id_emoji_pk\" PRIMARY KEY(\"target_kind\",\"target_id\",\"user_id\",\"emoji\")\n);\n",
+      "\nCREATE TABLE \"shoots\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"title\" text NOT NULL,\n\t\"brand_id\" uuid,\n\t\"day\" date NOT NULL,\n\t\"start_time\" text NOT NULL,\n\t\"end_time\" text NOT NULL,\n\t\"location\" text,\n\t\"people\" integer,\n\t\"rentals\" text,\n\t\"rentals_ready\" boolean DEFAULT false NOT NULL,\n\t\"purchases\" text,\n\t\"purchases_ready\" boolean DEFAULT false NOT NULL,\n\t\"notes\" text,\n\t\"crew_ids\" uuid[] DEFAULT '{}'::uuid[] NOT NULL,\n\t\"after\" text DEFAULT 'none' NOT NULL,\n\t\"editor_id\" uuid,\n\t\"status\" text DEFAULT 'planned' NOT NULL,\n\t\"item_id\" uuid,\n\t\"task_id\" uuid,\n\t\"created_by_id\" uuid NOT NULL,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"shot_at\" timestamp with time zone,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"space_pages\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"space_id\" uuid NOT NULL,\n\t\"folder_id\" uuid,\n\t\"kind\" text NOT NULL,\n\t\"title\" text NOT NULL,\n\t\"icon\" text,\n\t\"content\" jsonb NOT NULL,\n\t\"position\" integer DEFAULT 0 NOT NULL,\n\t\"created_by_id\" uuid,\n\t\"updated_by_id\" uuid,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"updated_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"archived_at\" timestamp with time zone\n);\n",
+      "\nALTER TABLE \"announcements\" ADD COLUMN \"title\" text;",
+      "\nALTER TABLE \"announcements\" ADD COLUMN \"pinned\" boolean DEFAULT false NOT NULL;",
+      "\nALTER TABLE \"attachments\" ADD COLUMN \"comment_id\" uuid;",
+      "\nALTER TABLE \"attachments\" ADD COLUMN \"work_task_comment_id\" uuid;",
+      "\nALTER TABLE \"brands\" ADD COLUMN \"deleted_at\" timestamp with time zone;",
+      "\nALTER TABLE \"content_items\" ADD COLUMN \"shoot_end_time\" text;",
+      "\nALTER TABLE \"content_items\" ADD COLUMN \"shoot_notes\" text;",
+      "\nALTER TABLE \"content_items\" ADD COLUMN \"shoot_crew_ids\" uuid[] DEFAULT '{}'::uuid[] NOT NULL;",
+      "\nALTER TABLE \"content_items\" ADD COLUMN \"priority\" text;",
+      "\nALTER TABLE \"tasks\" ADD COLUMN \"priority\" text;",
+      "\nALTER TABLE \"users\" ADD COLUMN \"last_seen_at\" timestamp with time zone;",
+      "\nALTER TABLE \"users\" ADD COLUMN \"birthday\" text;",
+      "\nALTER TABLE \"kudos\" ADD CONSTRAINT \"kudos_from_id_users_id_fk\" FOREIGN KEY (\"from_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"kudos\" ADD CONSTRAINT \"kudos_to_id_users_id_fk\" FOREIGN KEY (\"to_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"moods\" ADD CONSTRAINT \"moods_user_id_users_id_fk\" FOREIGN KEY (\"user_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"personal_order\" ADD CONSTRAINT \"personal_order_user_id_users_id_fk\" FOREIGN KEY (\"user_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"reactions\" ADD CONSTRAINT \"reactions_user_id_users_id_fk\" FOREIGN KEY (\"user_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"shoots\" ADD CONSTRAINT \"shoots_brand_id_brands_id_fk\" FOREIGN KEY (\"brand_id\") REFERENCES \"public\".\"brands\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"shoots\" ADD CONSTRAINT \"shoots_editor_id_users_id_fk\" FOREIGN KEY (\"editor_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"shoots\" ADD CONSTRAINT \"shoots_item_id_content_items_id_fk\" FOREIGN KEY (\"item_id\") REFERENCES \"public\".\"content_items\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"shoots\" ADD CONSTRAINT \"shoots_task_id_tasks_id_fk\" FOREIGN KEY (\"task_id\") REFERENCES \"public\".\"tasks\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"shoots\" ADD CONSTRAINT \"shoots_created_by_id_users_id_fk\" FOREIGN KEY (\"created_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"space_pages\" ADD CONSTRAINT \"space_pages_space_id_spaces_id_fk\" FOREIGN KEY (\"space_id\") REFERENCES \"public\".\"spaces\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"space_pages\" ADD CONSTRAINT \"space_pages_folder_id_folders_id_fk\" FOREIGN KEY (\"folder_id\") REFERENCES \"public\".\"folders\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"space_pages\" ADD CONSTRAINT \"space_pages_created_by_id_users_id_fk\" FOREIGN KEY (\"created_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"space_pages\" ADD CONSTRAINT \"space_pages_updated_by_id_users_id_fk\" FOREIGN KEY (\"updated_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nCREATE INDEX \"kudos_created_idx\" ON \"kudos\" USING btree (\"created_at\");",
+      "\nCREATE INDEX \"kudos_to_idx\" ON \"kudos\" USING btree (\"to_id\");",
+      "\nCREATE INDEX \"reactions_target_idx\" ON \"reactions\" USING btree (\"target_kind\",\"target_id\");",
+      "\nCREATE INDEX \"shoots_day_idx\" ON \"shoots\" USING btree (\"day\");",
+      "\nCREATE INDEX \"space_pages_space_idx\" ON \"space_pages\" USING btree (\"space_id\");",
+      "\nALTER TABLE \"attachments\" ADD CONSTRAINT \"attachments_comment_id_comments_id_fk\" FOREIGN KEY (\"comment_id\") REFERENCES \"public\".\"comments\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"attachments\" ADD CONSTRAINT \"attachments_work_task_comment_id_work_task_comments_id_fk\" FOREIGN KEY (\"work_task_comment_id\") REFERENCES \"public\".\"work_task_comments\"(\"id\") ON DELETE no action ON UPDATE no action;"
+    ],
+    "bps": true,
+    "folderMillis": 1791653968757,
+    "hash": "a7e8817d66391f4ffa0cdcb3880f8ca306ad034eed82457f2dd712f98b67c396"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"space_fields\" ADD COLUMN \"config\" jsonb;"
+    ],
+    "bps": true,
+    "folderMillis": 1791656645392,
+    "hash": "815c2cc123ed5c3ba6f735084ee2bf16ff208339bd334cbe251263158d1195d5"
   }
 ];

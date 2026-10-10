@@ -94,7 +94,7 @@ export function Attachments({
             const Icon = iconFor(a);
             const label = a.kind === "link" ? linkInfo(a.href).label : sizeText(a.size);
             return (
-              <li key={a.id} className="group flex max-w-full items-center rounded-lg border border-line bg-white pr-1 text-[13px] transition-colors hover:border-line-strong">
+              <li key={a.id} className="group flex max-w-full items-center rounded-lg border border-line bg-surface pr-1 text-[13px] transition-colors hover:border-line-strong">
                 <a href={a.href} target="_blank" rel="noopener noreferrer" className="flex min-w-0 items-center gap-1.5 py-1.5 pl-2.5 pr-1.5">
                   <Icon className={clsx("size-4 shrink-0", a.kind === "link" ? "text-electric" : "text-muted")} strokeWidth={1.8} />
                   <span className="truncate font-medium text-ink">{a.name}</span>
@@ -186,7 +186,7 @@ export function PendingAttachments() {
       {(files.length > 0 || links.length > 0) && (
         <ul className="flex flex-wrap gap-1.5">
           {links.map((l) => (
-            <li key={l} className="flex items-center gap-1.5 rounded-lg border border-line bg-white py-1 pl-2.5 pr-1 text-[13px]">
+            <li key={l} className="flex items-center gap-1.5 rounded-lg border border-line bg-surface py-1 pl-2.5 pr-1 text-[13px]">
               <Link2 className="size-3.5 text-electric" />
               <span className="max-w-[220px] truncate font-medium">{l.replace(/^https?:\/\//, "")}</span>
               <button type="button" onClick={() => setLinks((all) => all.filter((x) => x !== l))} className="rounded p-0.5 text-faint hover:text-bad" aria-label="Remove link">
@@ -195,7 +195,7 @@ export function PendingAttachments() {
             </li>
           ))}
           {files.map((f) => (
-            <li key={f.id} className="flex items-center gap-1.5 rounded-lg border border-line bg-white py-1 pl-2.5 pr-1 text-[13px]">
+            <li key={f.id} className="flex items-center gap-1.5 rounded-lg border border-line bg-surface py-1 pl-2.5 pr-1 text-[13px]">
               <Paperclip className="size-3.5 text-muted" />
               <span className="max-w-[200px] truncate font-medium">{f.name}</span>
               <span className="text-[11.5px] text-faint">{sizeText(f.size)}</span>

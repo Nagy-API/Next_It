@@ -39,9 +39,10 @@ import {
   SPACE_COLORS,
   STATUS_KINDS,
   TRIGGERS,
+  isComputedField,
   isFinishedKind,
-  templateByKey,
   type Action,
+  type FieldConfig,
   type FieldOption,
   type FieldType,
   type Priority,
@@ -54,6 +55,8 @@ import { logActivity, type Actor } from "./activity";
 import { assert } from "./errors";
 import { notify } from "./notify";
 import { normalizeUrl, truncate } from "./workflow";
+import { evaluateFormula, formulaProblem, formulaRefs } from "@/domain/field-formula";
+import { spaceTemplateByKey } from "@/domain/space-templates-extra";
 
 export type SpaceRole = "admin" | "member" | "viewer";
 export type SpaceAccess = { see: boolean; work: boolean; manage: boolean; role: SpaceRole | null };
@@ -73,7 +76,8 @@ export function accessFor(actor: Actor, space: Pick<Space, "isPrivate" | "create
   return { see, work, manage, role };
 }
 
-async function loadSpace(tx: Tx | typeof db, actor: Actor, spaceId: string) {
+/** The space and what this person may do in it (throws when they can't see it). */
+export async function loadSpace(tx: Tx | typeof db, actor: Actor, spaceId: string) {
   assert(/^[0-9a-f-]{36}$/i.test(spaceId), NOT_FOUND);
   const [space] = await tx.select().from(spaces).where(and(eq(spaces.id, spaceId), isNull(spaces.archivedAt)));
   assert(space, NOT_FOUND);
@@ -139,7 +143,7 @@ export async function createSpace(
   assert(can.createSpaces(actor), "Only people allowed to create spaces can do that (Settings → Access).");
   const name = truncate(input.name.trim(), 60);
   assert(name, "Give the space a name.");
-  const t = templateByKey(input.template);
+  const t = spaceTemplateByKey(input.template);
   const color = input.color && HEX.test(input.color) ? input.color : t.color;
   return db.transaction(async (tx) => {
     const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(spaces);
@@ -152,7 +156,7 @@ export async function createSpace(
       .values(t.statuses.map((x, i) => ({ spaceId: s.id, name: x.name, color: x.color, kind: x.kind, position: i })))
       .returning();
     for (const [i, f] of t.fields.entries())
-      await tx.insert(spaceFields).values({ spaceId: s.id, name: f.name, type: f.type, position: i, options: (f.options ?? []).map((label, j) => ({ id: crypto.randomUUID().slice(0, 8), label, color: SPACE_COLORS[j % SPACE_COLORS.length] })) });
+      await tx.insert(spaceFields).values({ spaceId: s.id, name: f.name, type: f.type, position: i, config: f.config ?? null, options: (f.options ?? []).map((label, j) => ({ id: crypto.randomUUID().slice(0, 8), label, color: SPACE_COLORS[j % SPACE_COLORS.length] })) });
     let pos = 0;
     for (const [fi, f] of t.folders.entries()) {
       const [folder] = await tx.insert(folders).values({ spaceId: s.id, name: f.name, position: fi }).returning();
@@ -205,12 +209,33 @@ export async function updateSpace(actor: Actor, spaceId: string, input: { name?:
   });
 }
 
-export async function archiveSpace(actor: Actor, spaceId: string) {
+/** Deletes a space (soft: archived, restorable from Spaces). From the sidebar the person types its name to confirm. */
+export async function archiveSpace(actor: Actor, spaceId: string, typedName?: string) {
   return db.transaction(async (tx) => {
     const s = await assertManage(tx, actor, spaceId);
+    if (typedName !== undefined) assert(typedName.trim().toLowerCase() === s.name.trim().toLowerCase(), `Type the space's name (${s.name}) exactly to confirm.`);
     await tx.update(spaces).set({ archivedAt: new Date() }).where(eq(spaces.id, spaceId));
     await tx.update(workTaskSessions).set({ endedAt: new Date(), endReason: "archived" }).where(and(isNull(workTaskSessions.endedAt), inArray(workTaskSessions.taskId, tx.select({ id: workTasks.id }).from(workTasks).where(eq(workTasks.spaceId, spaceId)))));
     await logActivity(tx, actor, { action: "space_archived", summary: `${actor.name} archived the space “${s.name}”. Its tasks and history are kept.`, meta: { spaceId } });
+  });
+}
+
+/** Deleted (archived) spaces this person could manage — they can bring them back. */
+export async function archivedSpaces(actor: Actor) {
+  const rows = await db.select().from(spaces).where(sql`${spaces.archivedAt} is not null`).orderBy(sql`${spaces.archivedAt} desc`);
+  const mine = await db.select().from(spaceMembers).where(eq(spaceMembers.userId, actor.id));
+  return rows.filter((s) => accessFor(actor, s, (mine.find((m) => m.spaceId === s.id)?.role as SpaceRole) ?? null).manage);
+}
+
+export async function restoreSpace(actor: Actor, spaceId: string) {
+  assert(/^[0-9a-f-]{36}$/i.test(spaceId), NOT_FOUND);
+  return db.transaction(async (tx) => {
+    const [s] = await tx.select().from(spaces).where(eq(spaces.id, spaceId));
+    assert(s?.archivedAt, "That space isn't deleted.");
+    const [m] = await tx.select({ role: spaceMembers.role }).from(spaceMembers).where(and(eq(spaceMembers.spaceId, spaceId), eq(spaceMembers.userId, actor.id)));
+    assert(accessFor(actor, s, (m?.role as SpaceRole) ?? null).manage, "Only this space's admins can restore it.");
+    await tx.update(spaces).set({ archivedAt: null }).where(eq(spaces.id, spaceId));
+    await logActivity(tx, actor, { action: "space_restored", summary: `${actor.name} restored the space “${s.name}”.`, meta: { spaceId } });
   });
 }
 
@@ -356,7 +381,40 @@ export async function archiveList(actor: Actor, listId: string) {
   });
 }
 
-export async function saveField(actor: Actor, spaceId: string, input: { id?: string | null; name: string; type: FieldType; options?: string[] }) {
+const NUMERIC: string[] = ["number", "money", "rating", "progress", "progress_auto", "formula", "rollup", "files"];
+
+/** Checks the extra settings of smart columns against the space's other columns. */
+function cleanConfig(type: FieldType, raw: FieldConfig | null | undefined, all: SpaceField[], statusIds: string[], selfName: string): FieldConfig | null {
+  const c = raw ?? {};
+  if (type === "formula") {
+    const formula = String(c.formula ?? "").trim();
+    const problem = formulaProblem(formula);
+    assert(!problem, problem ?? "");
+    for (const ref of formulaRefs(formula)) {
+      assert(ref.toLowerCase() !== selfName.toLowerCase(), "A formula can't use its own column.");
+      const f = all.find((x) => x.name.toLowerCase() === ref.toLowerCase());
+      assert(f, `There's no column called “${ref}”.`);
+      assert(NUMERIC.includes(f.type) && f.type !== "formula", `“${ref}” isn't a number column.`);
+    }
+    return { formula };
+  }
+  if (type === "rollup") {
+    const rel = all.find((x) => x.id === c.relationFieldId && x.type === "relationship");
+    assert(rel, "Pick the Relationship column whose linked tasks to add up.");
+    const fn = c.fn && ["sum", "avg", "min", "max", "count"].includes(c.fn) ? c.fn : "sum";
+    const target = all.find((x) => x.id === c.targetFieldId && ["number", "money", "rating", "progress"].includes(x.type));
+    assert(fn === "count" || target, "Pick the number column to add up.");
+    return { relationFieldId: rel.id, targetFieldId: target?.id, fn };
+  }
+  if (type === "button") {
+    const action = c.action && ["done", "status", "take"].includes(c.action) ? c.action : "done";
+    if (action === "status") assert(c.statusId && statusIds.includes(c.statusId), "Pick the status the button moves to.");
+    return { action, statusId: action === "status" ? c.statusId : undefined, buttonLabel: truncate(String(c.buttonLabel ?? "").trim(), 24) || undefined };
+  }
+  return null;
+}
+
+export async function saveField(actor: Actor, spaceId: string, input: { id?: string | null; name: string; type: FieldType; options?: string[]; config?: FieldConfig | null }) {
   const name = truncate(input.name.trim(), 40);
   assert(name, "Name the column.");
   assert(input.type in FIELD_TYPES, "Pick a column type.");
@@ -374,12 +432,14 @@ export async function saveField(actor: Actor, spaceId: string, input: { id?: str
       .slice(0, 30)
       .map((label, i) => old.find((o) => o.label === label) ?? { id: crypto.randomUUID().slice(0, 8), label, color: SPACE_COLORS[i % SPACE_COLORS.length] });
     if (input.type === "dropdown" || input.type === "labels") assert(options.length, "Add at least one option (one per line).");
+    const statuses = await statusesOf(tx, spaceId);
+    const config = cleanConfig(input.type, input.config ?? (cur?.config as FieldConfig | null), all.filter((f) => f.id !== input.id), statuses.map((x) => x.id), name);
     if (cur) {
       assert(cur.type === input.type, "A column's type can't change. Add a new column instead.");
-      await tx.update(spaceFields).set({ name, options }).where(eq(spaceFields.id, cur.id));
+      await tx.update(spaceFields).set({ name, options, config }).where(eq(spaceFields.id, cur.id));
     } else {
       assert(all.length < 30, "A space can have up to 30 columns.");
-      await tx.insert(spaceFields).values({ spaceId, name, type: input.type, options, position: all.length });
+      await tx.insert(spaceFields).values({ spaceId, name, type: input.type, options, config, position: all.length });
     }
   });
 }
@@ -652,7 +712,28 @@ export async function setFieldValue(actor: Actor, taskId: string, fieldId: strin
     const { task, space } = await loadTask(tx, actor, taskId);
     const [f] = await tx.select().from(spaceFields).where(and(eq(spaceFields.id, fieldId), eq(spaceFields.spaceId, space.id), isNull(spaceFields.archivedAt)));
     assert(f, "Column not found.");
-    const value = await cleanValue(tx, f, raw);
+    assert(!isComputedField(f.type) || f.type === "button", `${f.name} is worked out by itself.`);
+    if (f.type === "button") return pressButton(tx, actor, space, task, f);
+    const cur = (await tx.select({ value: workTaskValues.value }).from(workTaskValues).where(and(eq(workTaskValues.taskId, task.id), eq(workTaskValues.fieldId, f.id))))[0]?.value;
+    let value: unknown;
+    if (f.type === "voting") {
+      // One tap adds my vote, a second tap takes it back.
+      const votes = Array.isArray(cur) ? (cur as string[]) : [];
+      const next = votes.includes(actor.id) ? votes.filter((x) => x !== actor.id) : [...votes, actor.id];
+      value = next.length ? next : null;
+    } else if (f.type === "signature") {
+      // You can only sign as yourself; clearing is for the signer or the space's admins.
+      const sig = cur as { id?: string } | undefined;
+      if (raw === "sign") value = { id: actor.id, name: actor.name, at: new Date().toISOString() };
+      else {
+        assert(!sig || sig.id === actor.id || (await loadSpace(tx, actor, space.id)).access.manage, "Only who signed (or the space's admins) can remove a signature.");
+        value = null;
+      }
+    } else if (f.type === "relationship") {
+      const ids = (Array.isArray(raw) ? raw : String(raw ?? "").split(",")).map(String).filter((x) => /^[0-9a-f-]{36}$/i.test(x) && x !== task.id).slice(0, 50);
+      const ok = ids.length ? await tx.select({ id: workTasks.id }).from(workTasks).where(and(inArray(workTasks.id, ids), eq(workTasks.spaceId, space.id), isNull(workTasks.archivedAt))) : [];
+      value = ok.length ? ok.map((x) => x.id) : null;
+    } else value = await cleanValue(tx, f, raw);
     if (value === null) await tx.delete(workTaskValues).where(and(eq(workTaskValues.taskId, task.id), eq(workTaskValues.fieldId, f.id)));
     else await tx.insert(workTaskValues).values({ taskId: task.id, fieldId: f.id, value }).onConflictDoUpdate({ target: [workTaskValues.taskId, workTaskValues.fieldId], set: { value } });
     await tx.update(workTasks).set({ updatedAt: new Date() }).where(eq(workTasks.id, task.id));
@@ -667,6 +748,10 @@ async function cleanValue(tx: Tx, f: SpaceField, raw: unknown): Promise<unknown>
   switch (f.type as FieldType) {
     case "text":
       return truncate(String(s), 2000);
+    case "textarea":
+      return String(s).slice(0, 5000);
+    case "location":
+      return truncate(String(s), 300);
     case "number":
     case "money": {
       const n = Number(String(s).replace(/,/g, ""));
@@ -713,6 +798,21 @@ async function cleanValue(tx: Tx, f: SpaceField, raw: unknown): Promise<unknown>
     }
   }
   return null;
+}
+
+/** A Button column: one click marks the task done, moves it to a status, or gives it to me. */
+async function pressButton(tx: Tx, actor: Actor, space: Space, task: WorkTask, f: SpaceField) {
+  const c = (f.config as FieldConfig | null) ?? {};
+  const now = new Date();
+  if (c.action === "take") {
+    const cur = await assigneesOf(tx, task.id);
+    if (!cur.includes(actor.id)) await setAssigneesTx(tx, actor, space, task, [...cur, actor.id], now, 0);
+    return;
+  }
+  const statuses = await statusesOf(tx, space.id);
+  const target = c.action === "status" ? statuses.find((x) => x.id === c.statusId) : statuses.find((x) => x.kind === "done");
+  assert(target, "This button's status no longer exists — fix it in the column settings.");
+  if (target.id !== task.statusId) await setStatusTx(tx, actor, space, task, target.id, now, 0);
 }
 
 export async function archiveWorkTask(actor: Actor, taskId: string, archived = true) {
@@ -1017,6 +1117,48 @@ async function taskViews(rows: WorkTask[], finished: Set<string>, now = new Date
   });
 }
 
+/** Smart columns are worked out here, each time the space is shown: they're never stale. */
+function withComputed(tasks: TaskView[], fields: SpaceField[]): TaskView[] {
+  const smart = fields.filter((f) => isComputedField(f.type) && f.type !== "button");
+  if (!smart.length) return tasks;
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const numberOf = (t: TaskView, f: SpaceField | undefined): number | null => {
+    if (!f) return null;
+    if (f.type === "progress_auto") return t.subtasks.total ? Math.round((t.subtasks.done / t.subtasks.total) * 100) : null;
+    if (f.type === "files") return t.files;
+    const v = t.values[f.id];
+    return typeof v === "number" ? v : null;
+  };
+  // Simple columns first, then formulas (they may use them), then rollups (they may use formulas of other tasks).
+  for (const t of tasks)
+    for (const f of smart) {
+      if (f.type === "tasks") t.values[f.id] = t.subtasks.total ? { done: t.subtasks.done, total: t.subtasks.total } : null;
+      else if (f.type === "progress_auto") t.values[f.id] = numberOf(t, f);
+      else if (f.type === "files") t.values[f.id] = t.files || null;
+    }
+  for (const t of tasks)
+    for (const f of smart.filter((x) => x.type === "formula")) {
+      const expr = (f.config as FieldConfig | null)?.formula ?? "";
+      try {
+        const r = evaluateFormula(expr, (name) => numberOf(t, fields.find((x) => x.name.toLowerCase() === name.toLowerCase() && x.type !== "formula")));
+        t.values[f.id] = r === null ? null : Number.isNaN(r) ? "#ERR" : r;
+      } catch {
+        t.values[f.id] = "#ERR";
+      }
+    }
+  for (const t of tasks)
+    for (const f of smart.filter((x) => x.type === "rollup")) {
+      const c = (f.config as FieldConfig | null) ?? {};
+      const linked = (Array.isArray(t.values[c.relationFieldId ?? ""]) ? (t.values[c.relationFieldId ?? ""] as string[]) : []).map((id) => byId.get(id)).filter(Boolean) as TaskView[];
+      const target = fields.find((x) => x.id === c.targetFieldId);
+      const nums = linked.map((x) => numberOf(x, target)).filter((n): n is number => n !== null);
+      const fn = c.fn ?? "sum";
+      t.values[f.id] =
+        fn === "count" ? linked.length || null : !nums.length ? null : fn === "sum" ? nums.reduce((a, b) => a + b, 0) : fn === "avg" ? Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100 : fn === "min" ? Math.min(...nums) : Math.max(...nums);
+    }
+  return tasks;
+}
+
 /** Everything a space page needs. */
 export async function getSpacePage(actor: Actor, spaceId: string) {
   const { space, access } = await loadSpace(db, actor, spaceId);
@@ -1030,7 +1172,7 @@ export async function getSpacePage(actor: Actor, spaceId: string) {
     db.select().from(automations).where(and(eq(automations.spaceId, spaceId), isNull(automations.archivedAt))).orderBy(asc(automations.createdAt)),
   ]);
   const finished = new Set(statuses.filter((s) => isFinishedKind(s.kind)).map((s) => s.id));
-  const tasks = await taskViews(taskRows, finished);
+  const tasks = withComputed(await taskViews(taskRows, finished), fields);
   return { space, access, statuses, folders: folderRows, lists: listRows, fields, members: members.map((m) => ({ ...m, role: m.role as SpaceRole })), tasks, automations: autos };
 }
 

@@ -68,7 +68,7 @@ export function ClockButton({ taskId, running, ms }: { taskId: string; running: 
       <input type="hidden" name="taskId" value={taskId} />
       <button
         type="submit"
-        className={clsx("inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-[13.5px] font-semibold tabular-nums transition-[background,transform] active:scale-[0.97]", running ? "border-electric bg-electric text-white" : "border-line bg-white text-ink hover:border-line-strong")}
+        className={clsx("inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-[13.5px] font-semibold tabular-nums transition-[background,transform] active:scale-[0.97]", running ? "border-electric bg-electric text-white" : "border-line bg-surface text-ink hover:border-line-strong")}
         title={running ? "Pause my clock" : "Start my clock"}
       >
         {running ? <Pause className="size-4" /> : <Play className="size-4" />}

@@ -7,11 +7,16 @@ import { signOutEverywhereAction } from "@/app/actions";
 import { btn } from "@/components/ui";
 import { Download, LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { BirthdayForm } from "./birthday";
 
 export const metadata = { title: "My account" };
 
 export default async function AccountPage() {
   const me = await requireUser();
+  const [row] = await db.select({ birthday: users.birthday }).from(users).where(eq(users.id, me.id));
   return (
     <div className="space-y-4">
       <section className="card flex flex-wrap items-center gap-5 p-5">
@@ -29,6 +34,7 @@ export default async function AccountPage() {
           </div>
         </div>
       </section>
+      <BirthdayForm value={row?.birthday ?? null} />
       <ChangePasswordForm />
       <section className="card max-w-md space-y-3 p-5">
         <div className="flex items-center gap-2 font-display text-[15px] font-bold">

@@ -39,7 +39,7 @@ export function FilterBar({ filters }: { filters: FilterDef[] }) {
         );
       })}
       {active && (
-        <button type="button" onClick={() => router.push(pathname)} className="inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-[13px] text-muted hover:bg-white hover:text-ink">
+        <button type="button" onClick={() => router.push(pathname)} className="inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-[13px] text-muted hover:bg-surface hover:text-ink">
           <X className="size-3.5" /> Clear
         </button>
       )}

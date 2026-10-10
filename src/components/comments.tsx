@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { AtSign, Check, CornerDownRight, RotateCcw, Trash2 } from "lucide-react";
+import { AtSign, Check, CornerDownRight, FileText, Link2, Paperclip, RotateCcw, Trash2 } from "lucide-react";
+import { PendingAttachments } from "./attachments";
 import { commentAction, deleteCommentAction, resolveCommentAction } from "@/app/actions";
 import { formatDateTime, formatRelative } from "@/lib/dates";
 import { ActionForm, Submit } from "./client";
@@ -24,7 +25,32 @@ export type CommentView = {
  * Lightweight discussion: a comment can be addressed to one person, anyone can reply under it,
  * and it's marked done when the person answers (or someone closes it). Not a chat.
  */
-export function Comments({ itemId, comments, people, meId, isAdmin }: { itemId: string; comments: CommentView[]; people: { id: string; name: string }[]; meId: string; isAdmin: boolean }) {
+type FileChip = { id: string; kind: "file" | "link"; name: string; href: string; commentId: string | null };
+
+/** The files and links written with a comment. */
+function CommentFiles({ files }: { files: FileChip[] }) {
+  if (!files.length) return null;
+  return (
+    <ul className="mt-1.5 flex flex-wrap gap-1.5">
+      {files.map((f) => (
+        <li key={f.id}>
+          <a
+            href={f.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex max-w-[260px] items-center gap-1.5 rounded-lg border border-line bg-subtle px-2 py-1 text-[12.5px] font-medium text-ink-2 transition-colors hover:border-electric hover:text-electric"
+          >
+            {f.kind === "link" ? <Link2 className="size-3.5 shrink-0 text-electric" /> : <FileText className="size-3.5 shrink-0 text-muted" />}
+            <span className="truncate">{f.name}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function Comments({ itemId, comments, people, meId, isAdmin, files = [] }: { itemId: string; comments: CommentView[]; people: { id: string; name: string }[]; meId: string; isAdmin: boolean; files?: FileChip[] }) {
+  const filesOf = (id: string) => files.filter((f) => f.commentId === id);
   const threads = comments.filter((c) => !c.parentId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   const replies = (id: string) => comments.filter((c) => c.parentId === id).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   const nameOf = (id: string | null) => people.find((p) => p.id === id)?.name ?? null;
@@ -41,7 +67,7 @@ export function Comments({ itemId, comments, people, meId, isAdmin }: { itemId: 
             const waiting = !!t.mentionUserId && !t.resolvedAt;
             const canResolve = t.authorId === meId || t.mentionUserId === meId || isAdmin;
             return (
-              <li key={t.id} id={`c-${t.id}`} className={clsx("scroll-mt-24 rounded-xl border p-3", waiting && t.mentionUserId === meId ? "border-electric bg-electric-soft/40" : "border-line bg-white")}>
+              <li key={t.id} id={`c-${t.id}`} className={clsx("scroll-mt-24 rounded-xl border p-3", waiting && t.mentionUserId === meId ? "border-electric bg-electric-soft/40" : "border-line bg-surface")}>
                 <div className="flex items-start gap-2.5">
                   <Avatar name={t.authorName} size={26} />
                   <div className="min-w-0 flex-1">
@@ -64,7 +90,8 @@ export function Comments({ itemId, comments, people, meId, isAdmin }: { itemId: 
                       </div>
                     )}
                     <div className="mt-1 whitespace-pre-wrap text-[14px] text-ink">{t.body}</div>
-                    <ThreadFooter thread={t} waitingFor={waiting ? to : null} canResolve={canResolve} itemId={itemId} replies={replies(t.id)} />
+                    <CommentFiles files={filesOf(t.id)} />
+                    <ThreadFooter thread={t} waitingFor={waiting ? to : null} canResolve={canResolve} itemId={itemId} replies={replies(t.id)} filesOf={filesOf} />
                   </div>
                 </div>
               </li>
@@ -76,7 +103,21 @@ export function Comments({ itemId, comments, people, meId, isAdmin }: { itemId: 
   );
 }
 
-function ThreadFooter({ thread, waitingFor, canResolve, itemId, replies }: { thread: CommentView; waitingFor: string | null; canResolve: boolean; itemId: string; replies: CommentView[] }) {
+function ThreadFooter({
+  thread,
+  waitingFor,
+  canResolve,
+  itemId,
+  replies,
+  filesOf,
+}: {
+  thread: CommentView;
+  waitingFor: string | null;
+  canResolve: boolean;
+  itemId: string;
+  replies: CommentView[];
+  filesOf: (id: string) => FileChip[];
+}) {
   const [replying, setReplying] = useState(false);
   return (
     <>
@@ -90,6 +131,7 @@ function ThreadFooter({ thread, waitingFor, canResolve, itemId, replies }: { thr
                   <span className="font-semibold">{r.authorName}</span> <span className="text-faint">{formatRelative(r.createdAt)}</span>
                 </div>
                 <div className="whitespace-pre-wrap text-[13.5px]">{r.body}</div>
+                <CommentFiles files={filesOf(r.id)} />
               </div>
             </li>
           ))}
@@ -162,8 +204,19 @@ function DeleteComment({ id }: { id: string }) {
 }
 
 function NewComment({ itemId, people }: { itemId: string; people: { id: string; name: string }[] }) {
+  const [round, setRound] = useState(0);
+  const [attach, setAttach] = useState(false);
   return (
-    <ActionForm action={commentAction} resetOnSuccess toast={false} className="space-y-2">
+    <ActionForm
+      action={commentAction}
+      resetOnSuccess
+      toast={false}
+      onSuccess={() => {
+        setRound((r) => r + 1);
+        setAttach(false);
+      }}
+      className="space-y-2"
+    >
       <input type="hidden" name="itemId" value={itemId} />
       <textarea
         name="body"
@@ -175,11 +228,26 @@ function NewComment({ itemId, people }: { itemId: string; people: { id: string; 
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
         }}
       />
+      {attach && (
+        <div className="rounded-xl border border-dashed border-line-strong bg-subtle p-2.5">
+          <PendingAttachments key={round} />
+        </div>
+      )}
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setAttach((a) => !a)}
+          aria-pressed={attach}
+          title="Attach files or links (Word, PDF, Excel, images, a Google Doc…)"
+          className={clsx("grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg border transition-colors", attach ? "border-electric bg-electric-soft text-electric" : "border-line bg-surface text-muted hover:text-ink")}
+          aria-label="Attach files or links"
+        >
+          <Paperclip className="size-4" />
+        </button>
         <label className="sr-only" htmlFor={`to-${itemId}`}>
           Send to
         </label>
-        <select id={`to-${itemId}`} name="mentionUserId" defaultValue="" className="field field-sm h-9 flex-1">
+        <select id={`to-${itemId}`} name="mentionUserId" defaultValue="" className="field field-sm h-9 min-w-0 flex-1">
           <option value="">To: everyone</option>
           {people.map((p) => (
             <option key={p.id} value={p.id}>

@@ -181,7 +181,7 @@ export async function brandsReport(from: string, to: string, dueBy: string, opts
   const fromTs = startOfCairoDay(from);
   const toTs = startOfCairoDay(addDays(to, 1));
   const [bs, open, finishedItems, steps, acts] = await Promise.all([
-    db.select({ id: brands.id, name: brands.name, slug: brands.slug, color: brands.color, logoUrl: brandLogoSrc }).from(brands).where(eq(brands.isActive, true)).orderBy(asc(brands.name)),
+    db.select({ id: brands.id, name: brands.name, slug: brands.slug, color: brands.color, logoUrl: brandLogoSrc }).from(brands).where(and(eq(brands.isActive, true), isNull(brands.deletedAt))).orderBy(asc(brands.name)),
     opts.open ? Promise.resolve(opts.open) : getWorkItems({}),
     getWorkItems({ completedFrom: fromTs }),
     db

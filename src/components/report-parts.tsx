@@ -28,7 +28,7 @@ export function PersonReportBody({ r, single }: { r: PersonReport; single: boole
           <h4 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">Day by day</h4>
           <div className="overflow-hidden rounded-xl border border-line">
             <table className="w-full text-[13px]">
-              <thead className="bg-[#fafbfd] text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+              <thead className="bg-subtle text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
                 <tr>
                   <th className="px-3 py-2">Day</th>
                   <th className="px-3 py-2">From → to</th>
@@ -60,10 +60,10 @@ export function PersonReportBody({ r, single }: { r: PersonReport; single: boole
         {r.finished.length + r.tasksDone.length === 0 ? (
           <p className="text-[13px] text-faint">Nothing finished in this period.</p>
         ) : (
-          <ul className="divide-y divide-line rounded-xl border border-line bg-white">
+          <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
             {r.finished.map((f) => (
               <li key={f.id}>
-                <Link href={`/items/${f.itemId}`} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2 text-[13px] hover:bg-[#f8faff]">
+                <Link href={`/items/${f.itemId}`} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2 text-[13px] hover:bg-hover">
                   <TypeIcon type={f.type} />
                   <span className="min-w-0 flex-1 truncate font-medium">{f.title}</span>
                   {f.extra && <ExtraBadge />}
@@ -100,10 +100,10 @@ export function PersonReportBody({ r, single }: { r: PersonReport; single: boole
           <h4 className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
             <PlayCircle className="size-3.5 text-electric" /> Worked on ({formatDuration(r.workedMs)})
           </h4>
-          <ul className="divide-y divide-line rounded-xl border border-line bg-white">
+          <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
             {r.sessions.map((w) => (
               <li key={w.id}>
-                <Link href={`/items/${w.itemId}`} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2 text-[13px] hover:bg-[#f8faff]">
+                <Link href={`/items/${w.itemId}`} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2 text-[13px] hover:bg-hover">
                   <TypeIcon type={w.type} />
                   <span className="min-w-0 flex-1 truncate">{w.title}</span>
                   <span className="flex items-center gap-1 text-[12px] text-muted">
@@ -130,10 +130,10 @@ export function PersonReportBody({ r, single }: { r: PersonReport; single: boole
         {r.open.length === 0 ? (
           <p className="text-[13px] text-faint">Nothing open on them.</p>
         ) : (
-          <ul className="divide-y divide-line rounded-xl border border-line bg-white">
+          <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
             {r.open.map((i) => (
               <li key={i.id}>
-                <Link href={`/items/${i.id}`} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2 text-[13px] hover:bg-[#f8faff]">
+                <Link href={`/items/${i.id}`} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2 text-[13px] hover:bg-hover">
                   <TypeIcon type={i.type} />
                   <span className="min-w-0 flex-1 truncate">{i.title}</span>
                   {i.extra && <ExtraBadge />}

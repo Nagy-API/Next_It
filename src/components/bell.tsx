@@ -132,7 +132,7 @@ export function NotificationBell() {
         onClick={() => setOpen((o) => !o)}
         aria-label={count ? `Notifications, ${count} need attention` : "Notifications"}
         aria-expanded={open}
-        className="relative flex size-10 cursor-pointer items-center justify-center rounded-lg border border-line bg-white text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
+        className="relative flex size-10 cursor-pointer items-center justify-center rounded-xl border border-line bg-surface text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
       >
         {count ? <BellRing className="size-[18px]" /> : <Bell className="size-[18px]" />}
         {count > 0 && (
@@ -146,7 +146,7 @@ export function NotificationBell() {
       </span>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-[min(92vw,400px)] animate-in overflow-hidden rounded-2xl border border-line bg-white shadow-pop">
+        <div className="absolute right-0 z-50 mt-2 w-[min(92vw,400px)] animate-in overflow-hidden rounded-2xl border border-line bg-surface shadow-pop">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <span className="font-display text-[15px] font-bold">Notifications</span>
             {!!count && (
@@ -160,7 +160,7 @@ export function NotificationBell() {
               <div className="border-b border-line bg-[#fffaf5] py-1">
                 <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Needs attention</div>
                 {feed.alerts.map((a) => (
-                  <div key={a.id} className="flex items-start hover:bg-white">
+                  <div key={a.id} className="flex items-start hover:bg-surface">
                     <Link href={a.href ?? `/items/${a.itemId}`} onClick={() => setOpen(false)} className="flex min-w-0 flex-1 gap-3 py-2.5 pl-4">
                       <AlertTriangle className={clsx("mt-0.5 size-4 shrink-0", a.tone === "bad" ? "text-bad" : "text-warn")} />
                       <span className="min-w-0">
@@ -228,7 +228,7 @@ export function NotificationBell() {
 function ReadButton({ label, onClick, dot }: { label: string; onClick: () => void; dot?: boolean }) {
   return (
     <button type="button" onClick={onClick} title={label} aria-label={label} className="group/read flex size-11 shrink-0 cursor-pointer items-center justify-center">
-      <span className="flex size-6 items-center justify-center rounded-full border border-line bg-white text-faint transition-colors group-hover/read:border-ok group-hover/read:text-ok">
+      <span className="flex size-6 items-center justify-center rounded-full border border-line bg-surface text-faint transition-colors group-hover/read:border-ok group-hover/read:text-ok">
         {dot ? (
           <>
             <span className="size-2 rounded-full bg-electric group-hover/read:hidden" />

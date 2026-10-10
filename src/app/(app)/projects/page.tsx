@@ -44,7 +44,7 @@ export default async function ProjectsPage() {
               </div>
               <div className="divide-y divide-line">
                 {c.projects.map((p) => (
-                  <Link key={p.id} href={`/projects/${p.id}`} className="grid items-center gap-4 px-5 py-3 hover:bg-[#f8faff] md:grid-cols-[1fr_240px_120px]">
+                  <Link key={p.id} href={`/projects/${p.id}`} className="grid items-center gap-4 px-5 py-3 hover:bg-hover md:grid-cols-[1fr_240px_120px]">
                     <div>
                       <div className="font-medium">{p.name}</div>
                       <div className="flex items-center gap-1.5 text-[12.5px] text-muted">

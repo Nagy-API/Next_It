@@ -53,7 +53,7 @@ export default async function WorkspaceSettings() {
           <input type="hidden" name="modules" value="1" />
           <div className="grid gap-2 sm:grid-cols-2">
             {MODULE_KEYS.map((k) => (
-              <label key={k} className="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-white px-3.5 py-3 transition-colors hover:border-electric/50 has-[:checked]:border-electric/60 has-[:checked]:bg-electric-soft/40">
+              <label key={k} className="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-surface px-3.5 py-3 transition-colors hover:border-electric/50 has-[:checked]:border-electric/60 has-[:checked]:bg-electric-soft/40">
                 <input type="checkbox" name={`module_${k}`} defaultChecked={ws.modules[k]} className="mt-0.5 size-4 accent-[var(--color-electric)]" />
                 <span>
                   <span className="block text-[14px] font-semibold text-ink">{MODULES[k].label}</span>

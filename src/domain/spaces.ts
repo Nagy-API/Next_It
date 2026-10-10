@@ -5,6 +5,7 @@
  * A space (a department, a client, a team…) has its own statuses, columns (fields), folders and lists.
  * Tasks live in lists, can have subtasks, people, a priority, dates, files, comments and a clock.
  */
+import type { TemplateCategory } from "./pages";
 
 export const STATUS_KINDS = {
   open: { label: "Not started", hint: "Waiting to be picked up" },
@@ -26,21 +27,53 @@ export const PRIORITIES = {
 export type Priority = keyof typeof PRIORITIES;
 export const PRIORITY_LIST = Object.keys(PRIORITIES) as Priority[];
 
+/**
+ * Column types (the "+ Column" picker shows them by group, like ClickUp). Computed ones (formula, rollup,
+ * tasks, progress_auto, files) are worked out from the task and never typed in.
+ */
 export const FIELD_TYPES = {
-  text: { label: "Text", hint: "Any words" },
-  number: { label: "Number", hint: "Amounts, counts" },
-  money: { label: "Money", hint: "Budget, price (EGP)" },
-  date: { label: "Date", hint: "A day" },
-  dropdown: { label: "Dropdown", hint: "Pick one of your options" },
-  labels: { label: "Labels", hint: "Pick several of your options" },
-  checkbox: { label: "Checkbox", hint: "Yes / no" },
-  link: { label: "Link", hint: "A web address" },
-  email: { label: "Email", hint: "An email address" },
-  phone: { label: "Phone", hint: "A phone number" },
-  person: { label: "Person", hint: "Someone on the team" },
-  rating: { label: "Rating", hint: "1 to 5 stars" },
-  progress: { label: "Progress", hint: "0–100% bar" },
+  text: { label: "Text", hint: "A short line", group: "Basic" },
+  textarea: { label: "Text area", hint: "Long notes, a description", group: "Basic" },
+  number: { label: "Number", hint: "Amounts, counts", group: "Basic" },
+  money: { label: "Money", hint: "Budget, price (EGP)", group: "Basic" },
+  date: { label: "Date", hint: "A day", group: "Basic" },
+  checkbox: { label: "Checkbox", hint: "Yes / no", group: "Basic" },
+  dropdown: { label: "Dropdown", hint: "Pick one of your options", group: "Choice" },
+  labels: { label: "Labels", hint: "Pick several of your options", group: "Choice" },
+  rating: { label: "Rating", hint: "1 to 5 stars", group: "Choice" },
+  voting: { label: "Voting", hint: "Everyone votes; the count shows", group: "Choice" },
+  person: { label: "People", hint: "Someone on the team", group: "Contact" },
+  email: { label: "Email", hint: "An email address", group: "Contact" },
+  phone: { label: "Phone", hint: "A phone number", group: "Contact" },
+  link: { label: "Website", hint: "A web address", group: "Contact" },
+  location: { label: "Location", hint: "An address, opens in Maps", group: "Contact" },
+  progress: { label: "Progress (manual)", hint: "0–100% you set", group: "Progress" },
+  progress_auto: { label: "Progress (auto)", hint: "From the subtasks done", group: "Progress" },
+  tasks: { label: "Tasks", hint: "Subtasks done / total", group: "Progress" },
+  signature: { label: "Signature", hint: "Sign off with your name and time", group: "Progress" },
+  button: { label: "Button", hint: "One click: done, a status, or take it", group: "Smart" },
+  formula: { label: "Formula", hint: "Math on number columns, e.g. {Budget} * 1.14", group: "Smart" },
+  relationship: { label: "Relationship", hint: "Link to other tasks in this space", group: "Smart" },
+  rollup: { label: "Rollup", hint: "Sum / count a column of the linked tasks", group: "Smart" },
+  files: { label: "Files", hint: "How many files are attached", group: "Smart" },
 } as const;
+export const FIELD_GROUPS = ["Basic", "Choice", "Contact", "Progress", "Smart"] as const;
+/** Worked out by the system: nobody types a value. */
+export const COMPUTED_FIELDS = ["formula", "rollup", "tasks", "progress_auto", "files", "button"] as const;
+export const isComputedField = (t: string) => (COMPUTED_FIELDS as readonly string[]).includes(t);
+/** Extra settings some columns need (stored in space_fields.config). */
+export type FieldConfig = {
+  /** formula: e.g. "{Budget} * 1.14" — column names in braces, + - * / ( ) and numbers. */
+  formula?: string;
+  /** rollup: the relationship column, the number column on the linked tasks, and how to combine. */
+  relationFieldId?: string;
+  targetFieldId?: string;
+  fn?: "sum" | "avg" | "min" | "max" | "count";
+  /** button: what one click does. */
+  action?: "done" | "status" | "take";
+  statusId?: string;
+  buttonLabel?: string;
+};
 export type FieldType = keyof typeof FIELD_TYPES;
 export const FIELD_TYPE_LIST = Object.keys(FIELD_TYPES) as FieldType[];
 export type FieldOption = { id: string; label: string; color: string };
@@ -97,10 +130,12 @@ export type Action =
 /* ------------------------------------------------------------------ */
 
 type TStatus = { name: string; color: string; kind: StatusKind };
-type TField = { name: string; type: FieldType; options?: string[] };
+type TField = { name: string; type: FieldType; options?: string[]; config?: FieldConfig };
 type TAutomation = { name: string; trigger: { type: TriggerType; status?: string; priority?: Priority }; actions: ({ type: "set_status" | "parent_status"; status: string } | { type: "add_subtasks"; titles: string[] } | { type: "notify"; to: "assignees" | "creator"; message?: string } | { type: "set_priority"; priority: Priority } | { type: "set_due_in_days"; days: number } | { type: "add_comment"; text: string })[] };
 export type SpaceTemplate = {
   key: string;
+  /** The template library shelf. */
+  category?: TemplateCategory;
   name: string;
   icon: string;
   color: string;
@@ -122,6 +157,7 @@ const BASIC: TStatus[] = [
 export const SPACE_TEMPLATES: SpaceTemplate[] = [
   {
     key: "blank",
+    category: "Project management",
     name: "Simple board",
     icon: "✅",
     color: "#3B82F6",
@@ -134,6 +170,7 @@ export const SPACE_TEMPLATES: SpaceTemplate[] = [
   },
   {
     key: "marketing",
+    category: "Marketing",
     name: "Marketing campaigns",
     icon: "📣",
     color: "#E0569B",
@@ -162,6 +199,7 @@ export const SPACE_TEMPLATES: SpaceTemplate[] = [
   },
   {
     key: "hiring",
+    category: "HR",
     name: "Hiring (HR)",
     icon: "🧑‍💼",
     color: "#10B981",
@@ -191,6 +229,7 @@ export const SPACE_TEMPLATES: SpaceTemplate[] = [
   },
   {
     key: "sales",
+    category: "Sales & CRM",
     name: "Sales pipeline",
     icon: "💼",
     color: "#F59E0B",
@@ -216,6 +255,7 @@ export const SPACE_TEMPLATES: SpaceTemplate[] = [
   },
   {
     key: "events",
+    category: "Creative",
     name: "Events & shoots",
     icon: "🎬",
     color: "#8B5CF6",
@@ -240,6 +280,7 @@ export const SPACE_TEMPLATES: SpaceTemplate[] = [
   },
   {
     key: "support",
+    category: "Support",
     name: "Client requests",
     icon: "🎧",
     color: "#06B6D4",
@@ -264,6 +305,7 @@ export const SPACE_TEMPLATES: SpaceTemplate[] = [
   },
   {
     key: "sprint",
+    category: "IT & Engineering",
     name: "Product / IT sprints",
     icon: "🛠️",
     color: "#6366F1",

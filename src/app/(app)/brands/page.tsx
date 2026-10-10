@@ -36,7 +36,7 @@ export default async function BrandsPage() {
             const a = thisMonth.get(b.id) ?? [];
             const n = nextMonth.get(b.id) ?? [];
             return (
-              <Link key={b.id} href={`/brands/${b.slug}`} className="grid items-center gap-4 px-5 py-4 transition-colors hover:bg-[#f8faff] md:grid-cols-[1.3fr_1fr_1fr]">
+              <Link key={b.id} href={`/brands/${b.slug}`} className="grid items-center gap-4 px-5 py-4 transition-colors hover:bg-hover md:grid-cols-[1.3fr_1fr_1fr]">
                 <div className="flex items-center gap-3">
                   <BrandMark name={b.name} color={b.color} logoUrl={b.logoUrl} size={36} className="!rounded-xl" />
                   <div>

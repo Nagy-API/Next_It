@@ -36,7 +36,6 @@ import { isItemFinished } from "@/server/queries";
 import { reviewVersion, setShootDetails, submitVersion } from "@/server/workflow";
 import { addWorkSession, deleteWorkSession, editWorkSession } from "@/server/time";
 import { resetAccess, setPermission } from "@/server/access";
-import { clearAnnouncement, postAnnouncement } from "@/server/announcements";
 import { MODULE_KEYS, setWorkspaceImage, updateWorkspace, type ImageKey, type ModuleKey } from "@/server/settings";
 import { fromCairoLocal } from "@/lib/dates";
 import { assignStage, completeStage, handOff, setStageProgress, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
@@ -256,10 +255,14 @@ export async function cancelItemAction(_: ActionResult, fd: FormData): Promise<A
 
 export async function commentAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
-    await addComment(actor, str(fd, "itemId"), str(fd, "body"), {
+    const itemId = str(fd, "itemId");
+    const commentId = await addComment(actor, itemId, str(fd, "body"), {
       parentId: str(fd, "parentId") || null,
       mentionUserId: str(fd, "mentionUserId") || null,
     });
+    // Files and links written with the comment (a brief, a reference, a revised script…).
+    await linkPending(actor, fd.getAll("attachmentId").map(String), [{ itemId, commentId }]);
+    await attachLinks(actor, fd.getAll("attachLink").map(String), [{ itemId, commentId }]);
   });
 }
 
@@ -405,8 +408,12 @@ export async function shootAction(_: ActionResult, fd: FormData): Promise<Action
     await setShootDetails(actor, str(fd, "itemId"), {
       shootDate: opt(fd, "shootDate"),
       shootTime: opt(fd, "shootTime"),
+      shootEndTime: opt(fd, "shootEndTime"),
       shootDuration: opt(fd, "shootDuration"),
       shootLocation: opt(fd, "shootLocation"),
+      shootNotes: opt(fd, "shootNotes"),
+      // The crew picker sends `crew` (unticked people aren't sent).
+      shootCrewIds: fd.has("crew") ? fd.getAll("crewIds").map(String) : undefined,
       shootPeople: people === undefined ? undefined : people === null ? null : Number(people),
       shootRentals: opt(fd, "shootRentals"),
       shootRentalsReady: needs || fd.has("shootRentalsReady") ? fd.get("shootRentalsReady") === "on" : undefined,
@@ -414,22 +421,6 @@ export async function shootAction(_: ActionResult, fd: FormData): Promise<Action
       shootPurchasesReady: needs || fd.has("shootPurchasesReady") ? fd.get("shootPurchasesReady") === "on" : undefined,
     });
     return needs ? "Saved what the shoot needs." : "Shoot saved.";
-  });
-}
-
-/* -------------------------- Message of the day ------------------------- */
-
-export async function postAnnouncementAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
-  return run(async (actor) => {
-    await postAnnouncement(actor, { text: str(fd, "text"), emoji: opt(fd, "emoji"), color: opt(fd, "color"), hours: Number(str(fd, "hours") || 24) });
-    return { message: "Posted for everyone.", celebrate: "small" };
-  });
-}
-
-export async function clearAnnouncementAction(): Promise<ActionResult> {
-  return run(async (actor) => {
-    await clearAnnouncement(actor);
-    return "Cleared.";
   });
 }
 
@@ -530,6 +521,7 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
         step,
         type: ((CONTENT_TYPES as readonly string[]).includes(typeRaw) ? typeRaw : "reel") as ContentType,
         dueDate: opt(fd, "dueDate"),
+        priority: opt(fd, "priority"),
       });
       await linkPending(actor, fd.getAll("attachmentId").map(String), ids.map((itemId) => ({ itemId })));
       await attachLinks(actor, fd.getAll("attachLink").map(String), ids.map((itemId) => ({ itemId })));
@@ -544,6 +536,7 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
       dueDate: opt(fd, "dueDate"),
       dueTime: opt(fd, "dueTime"),
       recurrence: RECURRENCES.includes(r) ? r : "none",
+      priority: opt(fd, "priority"),
     });
     await linkPending(actor, fd.getAll("attachmentId").map(String), created.map((t) => ({ taskId: t.id })));
     await attachLinks(actor, fd.getAll("attachLink").map(String), created.map((t) => ({ taskId: t.id })));

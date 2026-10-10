@@ -75,7 +75,7 @@ async function assertTaskAccess(tx: Tx, actor: Actor, taskId: string) {
   assert(t.assigneeId === actor.id || t.createdById === actor.id || isManager(actor), "This task isn't yours.");
 }
 
-type Target = { itemId?: string | null; taskId?: string | null; workTaskId?: string | null };
+type Target = { itemId?: string | null; taskId?: string | null; workTaskId?: string | null; commentId?: string | null };
 
 async function checkTarget(tx: Tx, actor: Actor, target: Target) {
   if (target.itemId) {
@@ -129,7 +129,7 @@ export async function addLink(actor: Actor, input: { url: string; name?: string 
     const ctx = await checkTarget(tx, actor, input);
     const [a] = await tx
       .insert(attachments)
-      .values({ itemId: input.itemId || null, taskId: input.taskId || null, workTaskId: input.workTaskId || null, kind: "link", name: truncate(name, 120), url, createdById: actor.id })
+      .values({ itemId: input.itemId || null, taskId: input.taskId || null, workTaskId: input.workTaskId || null, commentId: input.commentId || null, kind: "link", name: truncate(name, 120), url, createdById: actor.id })
       .returning();
     if (ctx) await logActivity(tx, actor, { action: "attachment_added", itemId: ctx.item.id, brandId: ctx.brandId, projectId: ctx.projectId, clientId: ctx.clientId, summary: `${actor.name} attached a link: ${a.name}.` });
     return a;
@@ -146,7 +146,7 @@ export async function linkPendingTx(tx: Tx, actor: Actor, ids: string[], targets
     .where(and(inArray(attachments.id, clean), eq(attachments.createdById, actor.id), isNull(attachments.itemId), isNull(attachments.taskId), isNull(attachments.workTaskId), isNull(attachments.deletedAt)));
   for (const a of pending) {
     const [first, ...rest] = targets;
-    await tx.update(attachments).set({ itemId: first.itemId ?? null, taskId: first.taskId ?? null }).where(eq(attachments.id, a.id));
+    await tx.update(attachments).set({ itemId: first.itemId ?? null, taskId: first.taskId ?? null, commentId: first.commentId ?? null }).where(eq(attachments.id, a.id));
     // The same file for every person / item: one copy on disk, one row each.
     for (const t of rest) {
       await tx.insert(attachments).values({ itemId: t.itemId ?? null, taskId: t.taskId ?? null, kind: a.kind, name: a.name, url: a.url, mime: a.mime, size: a.size, storageKey: a.storageKey, createdById: actor.id, createdAt: a.createdAt });
@@ -183,7 +183,7 @@ export async function removeAttachment(actor: Actor, id: string) {
   });
 }
 
-export type AttachmentView = { id: string; kind: "file" | "link"; name: string; href: string; mime: string | null; size: number | null; createdAt: Date; createdById: string };
+export type AttachmentView = { id: string; kind: "file" | "link"; name: string; href: string; mime: string | null; size: number | null; createdAt: Date; createdById: string; commentId: string | null };
 
 function view(a: Attachment): AttachmentView {
   return {
@@ -195,6 +195,7 @@ function view(a: Attachment): AttachmentView {
     size: a.size,
     createdAt: a.createdAt,
     createdById: a.createdById,
+    commentId: a.commentId,
   };
 }
 

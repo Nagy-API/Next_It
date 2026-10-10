@@ -35,8 +35,8 @@ export function ColorsForm({ primary, dark }: { primary: string; dark: string })
               className={clsx("inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px] font-medium transition-colors", p === x.primary && d === x.dark ? "border-ink text-ink" : "border-line text-ink-2 hover:border-ink-2")}
             >
               <span className="flex">
-                <span className="size-3.5 rounded-full ring-2 ring-white" style={{ background: x.dark }} />
-                <span className="-ml-1 size-3.5 rounded-full ring-2 ring-white" style={{ background: x.primary }} />
+                <span className="size-3.5 rounded-full ring-2 ring-surface" style={{ background: x.dark }} />
+                <span className="-ml-1 size-3.5 rounded-full ring-2 ring-surface" style={{ background: x.primary }} />
               </span>
               {x.name}
             </button>
@@ -58,16 +58,16 @@ export function ColorsForm({ primary, dark }: { primary: string; dark: string })
           </div>
           <div className="flex-1 space-y-2 bg-canvas p-3">
             <div className="h-2.5 w-24 rounded" style={{ background: d }} />
-            <div className="h-2 w-32 rounded bg-[#d5dbe7]" />
+            <div className="h-2 w-32 rounded bg-track" />
             <div className="inline-flex rounded-md px-2.5 py-1 text-[11px] font-semibold text-white" style={{ background: p }}>
               Button
             </div>
-            <div className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: `color-mix(in srgb, ${p} 12%, white)`, color: p }}>
+            <div className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: `color-mix(in srgb, ${p} 12%, var(--color-surface))`, color: p }}>
               In progress
             </div>
           </div>
         </div>
-        <div className="border-t border-line bg-white px-3 py-1.5 text-[11.5px] text-muted">Preview</div>
+        <div className="border-t border-line bg-surface px-3 py-1.5 text-[11.5px] text-muted">Preview</div>
       </div>
     </ActionForm>
   );
@@ -80,7 +80,7 @@ function ColorField({ label, hint, name, value, onChange }: { label: string; hin
         {label} <span className="font-normal text-muted">· {hint}</span>
       </label>
       <div className="flex items-center gap-2">
-        <input type="color" aria-label={`${label} picker`} value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#000000"} onChange={(e) => onChange(e.target.value)} className="h-10 w-12 cursor-pointer rounded-lg border border-line bg-white p-1" />
+        <input type="color" aria-label={`${label} picker`} value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#000000"} onChange={(e) => onChange(e.target.value)} className="h-10 w-12 cursor-pointer rounded-lg border border-line bg-surface p-1" />
         <input id={`c-${name}`} name={name} value={value} onChange={(e) => onChange(e.target.value)} pattern="#[0-9a-fA-F]{6}" required className="field font-mono" />
       </div>
     </div>
@@ -129,13 +129,14 @@ export function ImageSlot({ k, label, hint, src, custom, dark, box }: { k: strin
       router.refresh();
     });
   return (
-    <div className="rounded-xl border border-line bg-white p-3">
-      <div className={clsx("grid h-24 place-items-center rounded-lg p-3", dark ? "bg-navy-900" : "bg-canvas")}>
+    <div className="rounded-xl border border-line bg-surface p-3">
+      {/* The picture is pinned inside its box (absolute + object-contain): any size or shape stays inside and never covers the text. */}
+      <div className={clsx("relative h-24 overflow-hidden rounded-lg ring-1 ring-inset ring-line", dark ? "bg-navy-900" : "bg-[#f4f6fb]")}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt="" className="h-full w-full object-contain" />
+        <img src={src} alt="" className="absolute inset-3 m-auto h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)] object-contain" />
       </div>
-      <div className="mt-2.5 flex items-start justify-between gap-2">
-        <div className="min-w-0">
+      <div className="mt-2.5 flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-[140px] flex-1">
           <div className="text-[13.5px] font-semibold text-ink">{label}</div>
           <div className="text-[12px] text-muted">{custom ? "Your upload" : "Built in"} · {hint}</div>
         </div>
@@ -178,7 +179,7 @@ export function WatermarkForm({ mode, opacity, src }: { mode: "logo" | "image" |
   return (
     <ActionForm action={updateWorkspaceAction} className="grid gap-4 md:grid-cols-[minmax(0,1fr)_200px]">
       <div className="space-y-3">
-        <div className="inline-flex rounded-xl border border-line bg-white p-0.5" role="radiogroup" aria-label="Watermark">
+        <div className="inline-flex rounded-xl border border-line bg-surface p-0.5" role="radiogroup" aria-label="Watermark">
           {(
             [
               ["logo", "Company symbol"],

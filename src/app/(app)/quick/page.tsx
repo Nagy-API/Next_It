@@ -63,7 +63,7 @@ export default async function QuickPage({ searchParams }: PageProps<"/quick">) {
             <Link
               key={s.kind}
               href={`/quick?step=${s.kind}`}
-              className={clsx("inline-flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-1.5 text-[13.5px] font-semibold transition-colors", on ? "border-transparent text-white" : "border-line bg-white text-ink-2 hover:border-line-strong")}
+              className={clsx("inline-flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-1.5 text-[13.5px] font-semibold transition-colors", on ? "border-transparent text-white" : "border-line bg-surface text-ink-2 hover:border-line-strong")}
               style={on ? { background: c.fg } : undefined}
             >
               {!on && <span className="size-2 rounded-full" style={{ background: c.fg }} />}

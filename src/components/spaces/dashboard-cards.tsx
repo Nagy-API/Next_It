@@ -62,7 +62,7 @@ function Summary({ s }: { s: DashboardData["summary"] }) {
             {s.pct}% <span className="font-normal text-muted">({s.done} of {s.total})</span>
           </span>
         </div>
-        <div className="h-2.5 overflow-hidden rounded-full bg-[#e8ecf3]">
+        <div className="h-2.5 overflow-hidden rounded-full bg-track">
           <div className="h-full rounded-full bg-ok" style={{ width: `${s.pct}%` }} />
         </div>
       </div>
@@ -79,7 +79,7 @@ function Bars({ rows, empty, note }: { rows: { label: string; value: number; col
       {rows.map((r) => (
         <div key={r.label} className="grid grid-cols-[110px_minmax(0,1fr)_56px] items-center gap-2" title={`${r.label}: ${r.text ?? r.value}`}>
           <span className="truncate text-[13px] text-ink-2">{r.label}</span>
-          <span className="h-2.5 overflow-hidden rounded-full bg-[#eef1f6]">
+          <span className="h-2.5 overflow-hidden rounded-full bg-sunken">
             <span className="block h-full rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: r.color }} />
           </span>
           <span className="text-right text-[12.5px] font-semibold tabular-nums">{r.text ?? r.value}</span>
@@ -158,7 +158,7 @@ function Lists({ rows }: { rows: DashboardData["perList"] }) {
                   {l.done}/{l.total}
                 </span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[#eef1f6]">
+              <div className="h-2 overflow-hidden rounded-full bg-sunken">
                 <div className="h-full rounded-full bg-ok" style={{ width: `${pct}%` }} />
               </div>
             </Link>

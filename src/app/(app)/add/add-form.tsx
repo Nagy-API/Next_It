@@ -116,7 +116,7 @@ export function AddForm({
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex rounded-lg border border-line p-0.5">
             {(["plan", "project"] as const).map((m) => (
-              <button key={m} type="button" onClick={() => setMode(m)} className={clsx("rounded-md px-3 py-1.5 text-[13px] font-medium", mode === m ? "bg-navy-900 text-white" : "text-muted hover:text-ink")}>
+              <button key={m} type="button" onClick={() => setMode(m)} className={clsx("rounded-md px-3 py-1.5 text-[13px] font-medium", mode === m ? "bg-strong text-white" : "text-muted hover:text-ink")}>
                 {m === "plan" ? "Monthly brand plan" : "One-off project"}
               </button>
             ))}
@@ -207,7 +207,7 @@ export function AddForm({
                   )}
                 </div>
               </div>
-              <div className="rounded-xl border border-line bg-white p-3.5 text-[12.5px] leading-relaxed text-ink-2">
+              <div className="rounded-xl border border-line bg-surface p-3.5 text-[12.5px] leading-relaxed text-ink-2">
                 <div className="mb-1.5 font-display text-[13.5px] font-bold text-ink">How to write it</div>
                 <p>
                   Write the <b>title</b>, then anything you know — in any order, separated by <b>|</b> (or copy the columns straight from Excel):
@@ -233,8 +233,8 @@ export function AddForm({
               </div>
             </div>
             {preview.length > 0 && (
-              <div className="mt-4 overflow-hidden rounded-xl border border-line bg-white">
-                <div className="bg-[#fafbfd] px-3 py-2 text-[12px] font-semibold text-muted">What we understood ({preview.length})</div>
+              <div className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
+                <div className="bg-subtle px-3 py-2 text-[12px] font-semibold text-muted">What we understood ({preview.length})</div>
                 <table className="w-full text-[12.5px]">
                   <tbody className="divide-y divide-line">
                     {preview.slice(0, 12).map((r, i) => (
@@ -255,7 +255,7 @@ export function AddForm({
           </div>
         )}
 
-        <div className="hidden grid-cols-[28px_minmax(0,1fr)_236px_150px_96px_minmax(0,0.8fr)_32px] gap-2 bg-[#fafbfd] px-5 py-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted md:grid">
+        <div className="hidden grid-cols-[28px_minmax(0,1fr)_236px_150px_96px_minmax(0,0.8fr)_32px] gap-2 bg-subtle px-5 py-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted md:grid">
           <span>#</span>
           <span>Title</span>
           <span>Type</span>
@@ -288,7 +288,7 @@ export function AddForm({
                     type="button"
                     title={TYPE_META[t].label}
                     onClick={() => update(r.key, { type: t })}
-                    className={clsx("flex flex-1 items-center justify-center gap-1 rounded px-1 py-1 text-[11.5px] font-medium", r.type === t ? "bg-navy-900 text-white [&_svg]:text-white" : "text-muted hover:bg-canvas")}
+                    className={clsx("flex flex-1 items-center justify-center gap-1 rounded px-1 py-1 text-[11.5px] font-medium", r.type === t ? "bg-strong text-white [&_svg]:text-white" : "text-muted hover:bg-canvas")}
                   >
                     <TypeIcon type={t} className="size-3.5" />
                     <span className="hidden xl:inline">{TYPE_META[t].label}</span>

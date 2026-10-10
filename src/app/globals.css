@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Dark mode follows the `dark` class on <html> (the toggle in the top bar; remembered per device in a cookie). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
  * NEXORA — internal operations UI.
  * Brand: deep navy + electric blue (nexoraaagency.com), Montserrat for display, Inter for UI text.
@@ -20,6 +23,12 @@
 
   --color-canvas: #f4f6fb;
   --color-surface: #ffffff;
+  /* Quiet backgrounds: table heads / list hovers / sunken wells / progress tracks; "strong" = selected chips. */
+  --color-subtle: #fafbfd;
+  --color-hover: #f5f8ff;
+  --color-sunken: #eef1f6;
+  --color-track: #e6eaf2;
+  --color-strong: #0b1639;
   --color-line: #e3e8f1;
   --color-line-strong: #cfd6e4;
   --color-ink: #0b1639;
@@ -28,15 +37,15 @@
   --color-faint: #9aa3b8;
 
   --color-ok: #0f9d6b;
-  --color-ok-soft: #e6f6ef;
+  --color-ok-soft: color-mix(in srgb, var(--color-ok) 11%, var(--color-surface));
   --color-warn: #c77700;
-  --color-warn-soft: #fff4de;
+  --color-warn-soft: color-mix(in srgb, var(--color-warn) 11%, var(--color-surface));
   --color-bad: #d63a3a;
-  --color-bad-soft: #fdecec;
+  --color-bad-soft: color-mix(in srgb, var(--color-bad) 11%, var(--color-surface));
   --color-back: #e0620f;
-  --color-back-soft: #fff0e5;
+  --color-back-soft: color-mix(in srgb, var(--color-back) 11%, var(--color-surface));
   --color-wait: #64748b;
-  --color-wait-soft: #eef1f6;
+  --color-wait-soft: color-mix(in srgb, var(--color-wait) 12%, var(--color-surface));
 
   --shadow-card: 0 1px 2px rgb(11 22 57 / 0.04), 0 1px 1px rgb(11 22 57 / 0.03);
   --shadow-pop: 0 12px 32px -8px rgb(11 22 57 / 0.22), 0 2px 6px rgb(11 22 57 / 0.08);
@@ -108,16 +117,61 @@
   }
 }
 
+/*
+ * Dark mode: the same identity (navy + electric blue), deeper. Every neutral is a token, so pages flip by themselves;
+ * the soft status colours and chips mix with the surface. Specificity beats the brand colours injected by brandCss().
+ */
+:root:root.dark {
+  color-scheme: dark;
+  --color-canvas: #0a1022;
+  --color-surface: #111a33;
+  --color-subtle: #141e3b;
+  --color-hover: #182446;
+  --color-sunken: #0d1530;
+  --color-track: #24325c;
+  --color-line: #223056;
+  --color-line-strong: #33447a;
+  --color-ink: #e9eef9;
+  --color-ink-2: #bcc6df;
+  --color-muted: #8e9aba;
+  --color-faint: #69769d;
+  --color-strong: color-mix(in srgb, var(--color-electric) 72%, #0b1639);
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-bad: #f87171;
+  --color-back: #fb923c;
+  --color-wait: #94a3b8;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(255 255 255 / 0.02);
+  --shadow-pop: 0 18px 40px -10px rgb(0 0 0 / 0.7), 0 2px 8px rgb(0 0 0 / 0.4);
+}
+
+/* A colour-tinted chip (steps, statuses, labels): set --tint inline; readable on light and dark. */
+.tint {
+  background-color: color-mix(in srgb, var(--tint) 13%, var(--color-surface));
+  color: var(--tint);
+}
+.dark .tint {
+  background-color: color-mix(in srgb, var(--tint) 24%, var(--color-surface));
+  color: color-mix(in srgb, var(--tint) 48%, white);
+}
+/* Text in a colour that must stay readable in dark mode. */
+.dark .tint-text {
+  color: color-mix(in srgb, var(--tint) 48%, white) !important;
+}
+
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
+  html.dark {
+    scrollbar-color: #33447a transparent;
+  }
   body {
     @apply bg-canvas text-ink font-sans text-[14px] leading-normal;
   }
   ::selection {
-    background: rgb(59 130 246 / 0.2);
+    background: rgb(59 130 246 / 0.25);
   }
   :focus-visible {
     outline: 2px solid var(--color-electric);
@@ -139,7 +193,7 @@
 
 @layer components {
   .field {
-    @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-[14px] text-ink placeholder:text-faint transition-colors;
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-ink placeholder:text-faint transition-colors;
     @apply hover:border-line-strong focus:border-electric focus:outline-none focus:ring-3 focus:ring-electric/15;
   }
   .field-sm {
@@ -203,4 +257,81 @@
     opacity: 0;
     transform: translate3d(var(--drift), 108vh, 0) rotate(var(--rot)) scale(1);
   }
+}
+
+/* Switching theme: everything cross-fades for a moment (added and removed by the theme toggle). */
+.theme-fade,
+.theme-fade *,
+.theme-fade *::before,
+.theme-fade *::after {
+  transition:
+    background-color 300ms ease,
+    border-color 300ms ease,
+    color 300ms ease,
+    fill 300ms ease !important;
+}
+
+/* Dark mode for the few colour-tinted classes written with exact colours. */
+.dark .text-\[\#6d28d9\] { color: #c4b5fd; }
+.dark .text-\[\#b45309\] { color: #fcd34d; }
+.dark .text-\[\#1d5fd1\] { color: #93c5fd; }
+.dark .text-\[\#1d6f42\] { color: #6ee7b7; }
+.dark .text-\[\#c2410c\] { color: #fdba74; }
+.dark .text-\[\#1a73e8\] { color: #93c5fd; }
+.dark .text-\[\#0f766e\] { color: #5eead4; }
+.dark .text-\[\#8a5a00\] { color: #fcd34d; }
+.dark .text-\[\#a1355f\] { color: #f9a8d4; }
+.dark .text-\[\#9a6b00\] { color: #fcd34d; }
+.dark .text-\[\#7d2ae8\] { color: #c4b5fd; }
+.dark .text-\[\#5b21b6\] { color: #c4b5fd; }
+.dark .text-\[\#0369a1\] { color: #7dd3fc; }
+.dark .bg-\[\#f1e8fd\], .dark .bg-\[\#f3ecfe\], .dark .bg-\[\#f6f1fe\] { background-color: color-mix(in srgb, #8b5cf6 20%, var(--color-surface)); }
+.dark .bg-\[\#fff1c2\], .dark .bg-\[\#fff6db\], .dark .bg-\[\#fff6d6\], .dark .bg-\[\#fffaeb\], .dark .bg-\[\#fef3e2\], .dark .bg-\[\#fff1dc\] { background-color: color-mix(in srgb, #f59e0b 20%, var(--color-surface)); }
+.dark .bg-\[\#e8f0fe\], .dark .bg-\[\#e0f2fe\], .dark .bg-\[\#dbeafe\] { background-color: color-mix(in srgb, #3b82f6 20%, var(--color-surface)); }
+.dark .bg-\[\#e3f5f3\] { background-color: color-mix(in srgb, #14b8a6 20%, var(--color-surface)); }
+.dark .bg-\[\#fffaf5\], .dark .bg-\[\#fffaf2\], .dark .bg-\[\#fff6ef\], .dark .bg-\[\#fff1e3\] { background-color: color-mix(in srgb, #f97316 20%, var(--color-surface)); }
+.dark .bg-\[\#fdf0f6\] { background-color: color-mix(in srgb, #ec4899 20%, var(--color-surface)); }
+.dark .border-\[\#fbd5bb\], .dark .border-\[\#f6d9ad\] { border-color: color-mix(in srgb, #f97316 35%, var(--color-surface)); }
+.dark .border-\[\#1d6f42\] { border-color: #34d399; }
+
+/* The sidebar: the brand's navy with a soft electric glow at the top (same in dark mode, a touch deeper). */
+.sidebar {
+  background:
+    radial-gradient(120% 40% at 0% 0%, color-mix(in srgb, var(--color-electric) 22%, transparent) 0%, transparent 60%),
+    linear-gradient(180deg, var(--color-navy-900) 0%, color-mix(in srgb, var(--color-navy-900) 88%, black) 100%);
+  box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.06);
+}
+.dark .sidebar {
+  background:
+    radial-gradient(120% 40% at 0% 0%, color-mix(in srgb, var(--color-electric) 16%, transparent) 0%, transparent 60%),
+    linear-gradient(180deg, #08102a 0%, #060b1e 100%);
+}
+/* A thin, quiet scrollbar that matches the navy. */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar { width: 8px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.14); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+.sidebar-scroll::-webkit-scrollbar-thumb:hover { background-color: rgb(255 255 255 / 0.28); }
+
+/* Team chat: a very soft pattern behind the messages, and the "typing" dots. */
+.chat-wall {
+  background-color: var(--color-surface);
+  background-image: radial-gradient(color-mix(in srgb, var(--color-electric) 9%, transparent) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-muted);
+  animation: typing-bounce 1s infinite ease-in-out;
+}
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typing-dot { animation: none; }
 }

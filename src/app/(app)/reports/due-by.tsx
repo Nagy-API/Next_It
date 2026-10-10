@@ -14,7 +14,7 @@ export function DueByPicker({ value, today, hrefFor }: { value: string; today: s
     <div className="flex flex-wrap items-center gap-2 text-[13px]">
       <span className="font-medium text-ink-2">Important: due by</span>
       {hrefFor.map(({ d, href }, i) => (
-        <Link key={d} href={href} className={clsx("rounded-full border px-3 py-1 font-medium", value === d ? "border-navy-900 bg-navy-900 text-white" : "border-line bg-white text-ink-2 hover:border-line-strong")}>
+        <Link key={d} href={href} className={clsx("rounded-full border px-3 py-1 font-medium", value === d ? "border-strong bg-strong text-white" : "border-line bg-surface text-ink-2 hover:border-line-strong")}>
           {i === 0 ? "Tomorrow" : i === 1 ? "3 days" : "A week"}
         </Link>
       ))}

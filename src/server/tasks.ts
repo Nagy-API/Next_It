@@ -11,6 +11,7 @@ import { addDays, addMonthsISO, formatDay, isValidISODate, isValidTime, todayISO
 import { logActivity, type Actor } from "./activity";
 import { assert } from "./errors";
 import { notify } from "./notify";
+import { TASK_PRIORITIES, cleanPriority } from "@/domain/priority";
 
 export const RECURRENCE_LABEL: Record<Recurrence, string> = { none: "Once", daily: "Every day", weekly: "Every week", monthly: "Every month" };
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = { todo: "Not started", in_progress: "In progress", scheduled: "Scheduled", waiting: "Waiting" };
@@ -23,6 +24,7 @@ export type TaskInput = {
   dueDate?: string | null;
   dueTime?: string | null;
   recurrence?: Recurrence;
+  priority?: string | null;
 };
 
 function nextDue(due: string, r: Recurrence) {
@@ -40,6 +42,7 @@ export async function createTasks(actor: Actor, input: TaskInput, opts: { now?: 
   if (dueDate) assert(isValidISODate(dueDate), "Invalid date.");
   if (input.dueTime) assert(isValidTime(input.dueTime), "Time must look like 14:30.");
   const now = opts.now ?? new Date();
+  const priority = cleanPriority(input.priority);
   return db.transaction(async (tx) => {
     const people = await tx.select({ id: users.id, name: users.name, isActive: users.isActive }).from(users);
     const created = [];
@@ -57,13 +60,14 @@ export async function createTasks(actor: Actor, input: TaskInput, opts: { now?: 
           dueDate,
           dueTime: input.dueTime || null,
           recurrence,
+          priority,
           createdAt: now,
         })
         .returning();
       await tx.update(tasks).set({ seriesId: t.id }).where(eq(tasks.id, t.id));
       await notify(tx, actor, [assigneeId], {
         kind: "task",
-        title: `New task from ${actor.name}: ${title}`,
+        title: `${priority ? `${TASK_PRIORITIES[priority].emoji} ${TASK_PRIORITIES[priority].label}: ` : ""}New task from ${actor.name}: ${title}`,
         body: [dueDate ? `Due ${formatDay(dueDate)}${input.dueTime ? ` ${input.dueTime}` : ""}` : null, recurrence !== "none" ? RECURRENCE_LABEL[recurrence] : null]
           .filter(Boolean)
           .join(" · ") || null,
@@ -111,6 +115,7 @@ export async function setTaskDone(actor: Actor, taskId: string, done: boolean, o
             dueDate: due,
             dueTime: t.dueTime,
             recurrence: t.recurrence,
+            priority: t.priority,
             seriesId: t.seriesId ?? t.id,
             createdAt: now,
           })
@@ -194,6 +199,7 @@ const taskCols = {
   dueDate: tasks.dueDate,
   dueTime: tasks.dueTime,
   recurrence: tasks.recurrence,
+  priority: tasks.priority,
   status: tasks.status,
   scheduledDate: tasks.scheduledDate,
   doneAt: tasks.doneAt,

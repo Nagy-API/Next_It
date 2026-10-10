@@ -53,10 +53,10 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
           <p className="mt-1 text-[14px] text-muted">Every brand, every team, every person — counted automatically from the work itself.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-        <a href={`/api/export/dashboard?m=${monthKey(sel.year, sel.month)}`} className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-white px-4 text-[14px] font-semibold text-ink shadow-card hover:border-[#1d6f42] hover:text-[#1d6f42]">
+        <a href={`/api/export/dashboard?m=${monthKey(sel.year, sel.month)}`} className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[14px] font-semibold text-ink shadow-card hover:border-[#1d6f42] hover:text-[#1d6f42]">
           <FileSpreadsheet className="size-4 text-[#1d6f42]" /> Export to Excel
         </a>
-        <div className="flex items-center rounded-xl border border-line bg-white p-1 shadow-card">
+        <div className="flex items-center rounded-xl border border-line bg-surface p-1 shadow-card">
           <Link href={`/stats?m=${monthKey(prev.year, prev.month)}`} className="cursor-pointer rounded-lg p-2 text-muted hover:bg-canvas hover:text-ink" aria-label="Previous month">
             <ChevronLeft className="size-4" />
           </Link>
@@ -110,7 +110,7 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
           <SectionTitle right={<Legend items={STAGE_LEGEND} />}>Brands in {d.label}</SectionTitle>
           <div className="divide-y divide-line">
             {d.rows.map((r) => (
-              <Link key={r.brand.id} href={`/brands/${r.brand.slug}?m=${monthKey(sel.year, sel.month)}`} className="grid items-center gap-x-4 gap-y-1.5 py-3 hover:bg-[#fafbfe] md:grid-cols-[180px_minmax(0,1fr)_150px]">
+              <Link key={r.brand.id} href={`/brands/${r.brand.slug}?m=${monthKey(sel.year, sel.month)}`} className="grid items-center gap-x-4 gap-y-1.5 py-3 hover:bg-subtle md:grid-cols-[180px_minmax(0,1fr)_150px]">
                 <span className="flex items-center gap-2 font-medium">
                   <BrandMark name={r.brand.name} color={r.brand.color} logoUrl={r.brand.logoUrl} size={22} /> {r.brand.name}
                 </span>
@@ -235,7 +235,7 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
           </thead>
           <tbody className="divide-y divide-line">
             {d.people.map((p) => (
-              <tr key={p.person.id} className="hover:bg-[#fafbfe]">
+              <tr key={p.person.id} className="hover:bg-subtle">
                 <td className="py-2.5 pr-4">
                   <Link href={`/team/${p.person.username}`} className="inline-flex items-center gap-2 font-medium hover:text-electric">
                     <Avatar name={p.person.name} size={24} /> {p.person.name}

@@ -34,7 +34,7 @@ export function DashboardForm({ scopes, widgets, initial }: { scopes: ScopeOptio
         <div className="label">Cards</div>
         <div className="grid gap-2 sm:grid-cols-3">
           {widgets.map((w) => (
-            <label key={w.key} className="flex cursor-pointer items-start gap-2 rounded-xl border border-line bg-white p-2.5 has-[:checked]:border-electric has-[:checked]:bg-electric-soft/40">
+            <label key={w.key} className="flex cursor-pointer items-start gap-2 rounded-xl border border-line bg-surface p-2.5 has-[:checked]:border-electric has-[:checked]:bg-electric-soft/40">
               <input type="checkbox" name="widgets" value={w.key} defaultChecked={initial ? initial.widgets.includes(w.key) : ["summary", "status", "people", "overdue"].includes(w.key)} className="mt-0.5 size-4 accent-[var(--color-electric)]" />
               <span>
                 <span className="block text-[13.5px] font-semibold">{w.label}</span>

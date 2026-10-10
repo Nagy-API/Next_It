@@ -44,7 +44,7 @@ export function MonthColumns({ points, highlight, height = 150, unit = "items" }
               {/* direct label only on the highlighted column; others on hover */}
               <span className={clsx("mb-1 text-[12px] font-semibold tabular-nums", hl ? "text-ink" : "text-transparent group-hover:text-ink-2")}>{p.value}</span>
               <div className="w-6 rounded-t-[4px] transition-opacity duration-150 group-hover:opacity-80" style={{ height: Math.max(h, p.value ? 3 : 0), background: hl ? "#0B1639" : "#3B82F6" }} />
-              <span className="pointer-events-none absolute -top-8 z-10 hidden whitespace-nowrap rounded-md bg-navy-900 px-2 py-1 text-[11.5px] font-medium text-white shadow-pop group-hover:block">
+              <span className="pointer-events-none absolute -top-8 z-10 hidden whitespace-nowrap rounded-md bg-strong px-2 py-1 text-[11.5px] font-medium text-white shadow-pop group-hover:block">
                 {p.label}: {p.value} {unit}
               </span>
             </div>
@@ -65,14 +65,14 @@ export function MonthColumns({ points, highlight, height = 150, unit = "items" }
 /** One horizontal part-to-whole bar (stacked), 2px surface gaps between segments, hover shows each value. */
 export function StackedBar({ segments, total, className }: { segments: { label: string; value: number; color: string }[]; total?: number; className?: string }) {
   const sum = total ?? segments.reduce((a, s) => a + s.value, 0);
-  if (!sum) return <div className={clsx("h-3 rounded-full bg-[#eef2f8]", className)} />;
+  if (!sum) return <div className={clsx("h-3 rounded-full bg-sunken", className)} />;
   return (
-    <div className={clsx("flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-[#eef2f8]", className)}>
+    <div className={clsx("flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-sunken", className)}>
       {segments
         .filter((s) => s.value > 0)
         .map((s) => (
           <div key={s.label} className="group relative h-full first:rounded-l-full last:rounded-r-full" style={{ width: `${(s.value / sum) * 100}%`, background: s.color }}>
-            <span className="pointer-events-none absolute bottom-5 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-navy-900 px-2 py-1 text-[11.5px] font-medium text-white shadow-pop group-hover:block">
+            <span className="pointer-events-none absolute bottom-5 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-strong px-2 py-1 text-[11.5px] font-medium text-white shadow-pop group-hover:block">
               {s.label}: {s.value}
             </span>
           </div>

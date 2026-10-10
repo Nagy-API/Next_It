@@ -39,7 +39,7 @@ export async function validateSession(token: string): Promise<{ user: SessionUse
   const [row] = await db
     .select({
       expiresAt: sessions.expiresAt,
-      user: { id: users.id, username: users.username, name: users.name, title: users.title, teams: users.teams, isAdmin: users.isAdmin, isManager: users.isManager, roleLabel: users.roleLabel, isActive: users.isActive, avatarUpdatedAt: users.avatarUpdatedAt, mustChangePassword: users.mustChangePassword },
+      user: { id: users.id, username: users.username, name: users.name, title: users.title, teams: users.teams, isAdmin: users.isAdmin, isManager: users.isManager, roleLabel: users.roleLabel, isActive: users.isActive, avatarUpdatedAt: users.avatarUpdatedAt, mustChangePassword: users.mustChangePassword, lastSeenAt: users.lastSeenAt },
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
@@ -51,6 +51,8 @@ export async function validateSession(token: string): Promise<{ user: SessionUse
     await db.update(sessions).set({ expiresAt: renewedExpiry }).where(eq(sessions.id, id));
   }
   const u = row.user;
+  // "Online" in chat and on the team list: remembered at most once a minute.
+  if (!u.lastSeenAt || Date.now() - u.lastSeenAt.getTime() > 60_000) await db.update(users).set({ lastSeenAt: new Date() }).where(eq(users.id, u.id));
   const perms = await permsOf(u.id);
   return { user: { id: u.id, username: u.username, name: u.name, title: u.title, teams: u.teams, isAdmin: u.isAdmin, isManager: u.isManager, roleLabel: u.roleLabel, mustChangePassword: u.mustChangePassword, hasAvatar: !!u.avatarUpdatedAt, perms }, renewedExpiry };
 }

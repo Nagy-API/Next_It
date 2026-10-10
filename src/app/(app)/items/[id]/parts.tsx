@@ -254,7 +254,7 @@ export function PlatformRow({
       </div>
     );
   return (
-    <div className={clsx("grid grid-cols-[150px_150px_1fr] items-center gap-3 px-4 py-2.5 max-md:grid-cols-[1fr_150px]", !planned && "bg-[#fbfcfe]")}>
+    <div className={clsx("grid grid-cols-[150px_150px_1fr] items-center gap-3 px-4 py-2.5 max-md:grid-cols-[1fr_150px]", !planned && "bg-subtle")}>
       <div className={clsx("flex items-center gap-2 font-medium", !planned && "text-muted")}>
         <PlatformIcon name={platform.name} size={22} muted={!planned || status === "cancelled"} />
         {platform.name}
