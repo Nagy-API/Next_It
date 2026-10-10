@@ -1,7 +1,7 @@
 import { requireUser } from "@/server/auth";
 import { Avatar, ManagerChip } from "@/components/ui";
 import { PhotoPicker } from "@/components/photo";
-import { isManager } from "@/domain/permissions";
+import { can, isManager } from "@/domain/permissions";
 import { ChangePasswordForm } from "../forms";
 import { signOutEverywhereAction } from "@/app/actions";
 import { btn } from "@/components/ui";
@@ -40,7 +40,7 @@ export default async function AccountPage() {
             <LogOut className="size-3.5" /> Sign out on all devices
           </button>
         </form>
-        {me.isAdmin && (
+        {can.downloadBackup(me) && (
           <div className="border-t border-line pt-3">
             <p className="mb-2 text-[13px] text-muted">Admins: download a full backup of everything (keep it somewhere safe — it contains all the company&rsquo;s data).</p>
             <a href="/api/backup" className={btn("secondary", "sm")}>

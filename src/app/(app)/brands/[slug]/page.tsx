@@ -105,7 +105,7 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
           </div>
         </div>
         <div className="flex gap-2">
-          {me.isAdmin && (
+          {can.manageBrands(me) && (
             <ButtonLink href={`/settings/brands#${brand.slug}`} variant="ghost" size="md">
               <Settings2 className="size-4" /> Brand settings
             </ButtonLink>

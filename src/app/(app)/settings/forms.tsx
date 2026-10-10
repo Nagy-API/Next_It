@@ -160,7 +160,7 @@ function TeamChecks({ value }: { value: string[] }) {
   );
 }
 
-export function NewUserForm() {
+export function NewUserForm({ roles }: { roles: boolean }) {
   const [open, setOpen] = useState(false);
   if (!open)
     return (
@@ -194,12 +194,18 @@ export function NewUserForm() {
         <div className="label">Teams (someone can be in more than one)</div>
         <TeamChecks value={[]} />
       </div>
-      <label className="flex items-center gap-2 text-[13.5px]">
-        <input type="checkbox" name="isManager" value="1" className="size-4 accent-[var(--color-electric)]" /> Manager (gives tasks, sets deadlines, sees the dashboard & activity log)
-      </label>
-      <label className="flex items-center gap-2 text-[13.5px]">
-        <input type="checkbox" name="isAdmin" value="1" className="size-4 accent-[var(--color-electric)]" /> Can manage accounts (CEO / IT)
-      </label>
+      {roles && (
+        <>
+          <input type="hidden" name="roles" value="1" />
+          <label className="flex items-center gap-2 text-[13.5px]">
+            <input type="checkbox" name="isManager" value="1" className="size-4 accent-[var(--color-electric)]" /> Manager (gives tasks, sets deadlines, sees the dashboard & activity log)
+          </label>
+          <label className="flex items-center gap-2 text-[13.5px]">
+            <input type="checkbox" name="isAdmin" value="1" className="size-4 accent-[var(--color-electric)]" /> Admin: full access (CEO / IT)
+          </label>
+          <p className="text-[12px] text-muted">Fine-tune exactly what anyone can do in Settings → Access.</p>
+        </>
+      )}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={() => setOpen(false)} className={btn("ghost")}>
           Cancel
@@ -210,7 +216,7 @@ export function NewUserForm() {
   );
 }
 
-export function EditUser({ u }: { u: { id: string; name: string; title: string | null; teams: string[]; isAdmin: boolean; isManager: boolean } }) {
+export function EditUser({ u, roles }: { u: { id: string; name: string; title: string | null; teams: string[]; isAdmin: boolean; isManager: boolean; roleLabel: string | null }; roles: boolean }) {
   return (
     <Popover align="right" width={380} triggerClassName={btn("ghost", "sm")} trigger={<><Pencil className="size-3.5" /> Edit</>}>
       {(close) => (
@@ -230,12 +236,21 @@ export function EditUser({ u }: { u: { id: string; name: string; title: string |
             <div className="label">Teams</div>
             <TeamChecks value={u.teams} />
           </div>
-          <label className="flex items-center gap-2 text-[13.5px]">
-            <input type="checkbox" name="isManager" value="1" defaultChecked={u.isManager} className="size-4 accent-[var(--color-electric)]" /> Manager
-          </label>
-          <label className="flex items-center gap-2 text-[13.5px]">
-            <input type="checkbox" name="isAdmin" value="1" defaultChecked={u.isAdmin} className="size-4 accent-[var(--color-electric)]" /> Can manage accounts
-          </label>
+          {roles && (
+            <>
+              <input type="hidden" name="roles" value="1" />
+              <label className="flex items-center gap-2 text-[13.5px]">
+                <input type="checkbox" name="isManager" value="1" defaultChecked={u.isManager} className="size-4 accent-[var(--color-electric)]" /> Manager
+              </label>
+              <label className="flex items-center gap-2 text-[13.5px]">
+                <input type="checkbox" name="isAdmin" value="1" defaultChecked={u.isAdmin} className="size-4 accent-[var(--color-electric)]" /> Admin: full access
+              </label>
+              <div>
+                <label className="label">Role label <span className="font-normal text-muted">(optional, shown instead of &ldquo;Manager&rdquo;)</span></label>
+                <input name="roleLabel" defaultValue={u.roleLabel ?? ""} maxLength={20} placeholder="e.g. IT, CEO, Team lead" className="field" />
+              </div>
+            </>
+          )}
           <Submit className="w-full">Save</Submit>
         </ActionForm>
       )}

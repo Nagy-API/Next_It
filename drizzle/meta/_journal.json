@@ -78,6 +78,20 @@
       "when": 1791538752449,
       "tag": "0010_needy_lady_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791635306057,
+      "tag": "0011_silent_red_wolf",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791636610113,
+      "tag": "0012_panoramic_old_lace",
+      "breakpoints": true
     }
   ]
 }

@@ -19,7 +19,7 @@ export const metadata = { title: "Reports" };
 /** People: what each person did, finished and still has. Brands: what happened, finished, open, and what's due. */
 export default async function ReportsPage({ searchParams }: PageProps<"/reports">) {
   const me = await requireUser();
-  if (!can.seeDashboard(me)) redirect(`/team/${me.username}`);
+  if (!can.seeReports(me)) redirect(`/team/${me.username}`);
   const sp = await searchParams;
   const view = sp.view === "brands" ? "brands" : "people";
   const range = resolveRange({ range: "today", ...sp });

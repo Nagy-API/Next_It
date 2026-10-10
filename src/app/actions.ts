@@ -34,6 +34,11 @@ import { LOCK, clientIp, isLockedOut, recordAttempt, safeNext } from "@/server/s
 import { dismissAlerts, markNotificationsRead } from "@/server/stats";
 import { isItemFinished } from "@/server/queries";
 import { reviewVersion, setShootDetails, submitVersion } from "@/server/workflow";
+import { addWorkSession, deleteWorkSession, editWorkSession } from "@/server/time";
+import { resetAccess, setPermission } from "@/server/access";
+import { clearAnnouncement, postAnnouncement } from "@/server/announcements";
+import { MODULE_KEYS, setWorkspaceImage, updateWorkspace, type ImageKey, type ModuleKey } from "@/server/settings";
+import { fromCairoLocal } from "@/lib/dates";
 import { assignStage, completeStage, handOff, setStageProgress, returnToStage, setLateException, setPlatformState, setStageDeadline } from "@/server/workflow";
 
 /** `celebrate`: the person just finished something — the page shows a short emoji shower (small, or big for a finished item). */
@@ -146,6 +151,8 @@ export async function progressAction(_: ActionResult, fd: FormData): Promise<Act
     await setStageProgress(actor, str(fd, "stageId"), p, { scheduledFor: opt(fd, "scheduledFor") });
     if (p === "adjusting" && str(fd, "ack") === "1") return "On it — the clock is running.";
     if (p === "scheduled") return "Scheduled.";
+    if (p === "waiting_approval") return { message: "Sent for approval.", celebrate: "small" };
+    if (p === "paused") return "Paused. The clock stopped; press In progress to continue.";
   });
 }
 
@@ -377,7 +384,7 @@ export async function submitVersionAction(_: ActionResult, fd: FormData): Promis
   return run(async (actor) => {
     const alt = fd.getAll("altUrl").map(String).filter((u) => u.trim());
     const v = await submitVersion(actor, str(fd, "stageId"), { url: str(fd, "url"), altUrls: alt, note: opt(fd, "note") });
-    return alt.length ? `v${v.number} sent with ${alt.length + 1} options.` : `v${v.number} sent for approval.`;
+    return { message: alt.length ? `v${v.number} sent with ${alt.length + 1} options.` : `v${v.number} sent for approval.`, celebrate: "small" };
   });
 }
 
@@ -392,13 +399,115 @@ export async function reviewVersionAction(_: ActionResult, fd: FormData): Promis
 
 export async function shootAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
+    // The "what the shoot needs" form sends `needs` (unticked boxes aren't sent at all).
+    const needs = fd.has("needs");
+    const people = opt(fd, "shootPeople");
     await setShootDetails(actor, str(fd, "itemId"), {
       shootDate: opt(fd, "shootDate"),
       shootTime: opt(fd, "shootTime"),
       shootDuration: opt(fd, "shootDuration"),
       shootLocation: opt(fd, "shootLocation"),
+      shootPeople: people === undefined ? undefined : people === null ? null : Number(people),
+      shootRentals: opt(fd, "shootRentals"),
+      shootRentalsReady: needs || fd.has("shootRentalsReady") ? fd.get("shootRentalsReady") === "on" : undefined,
+      shootPurchases: opt(fd, "shootPurchases"),
+      shootPurchasesReady: needs || fd.has("shootPurchasesReady") ? fd.get("shootPurchasesReady") === "on" : undefined,
     });
-    return "Shoot saved.";
+    return needs ? "Saved what the shoot needs." : "Shoot saved.";
+  });
+}
+
+/* -------------------------- Message of the day ------------------------- */
+
+export async function postAnnouncementAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await postAnnouncement(actor, { text: str(fd, "text"), emoji: opt(fd, "emoji"), color: opt(fd, "color"), hours: Number(str(fd, "hours") || 24) });
+    return { message: "Posted for everyone.", celebrate: "small" };
+  });
+}
+
+export async function clearAnnouncementAction(): Promise<ActionResult> {
+  return run(async (actor) => {
+    await clearAnnouncement(actor);
+    return "Cleared.";
+  });
+}
+
+/* ----------------------------- Workspace ----------------------------- */
+
+export async function updateWorkspaceAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const has = (k: string) => fd.has(k);
+    await updateWorkspace(actor, {
+      name: has("name") ? str(fd, "name") : undefined,
+      appName: has("appName") ? str(fd, "appName") : undefined,
+      tagline: has("tagline") ? str(fd, "tagline") : undefined,
+      adminContact: has("adminContact") ? str(fd, "adminContact") : undefined,
+      primary: has("primary") ? str(fd, "primary") : undefined,
+      dark: has("dark") ? str(fd, "dark") : undefined,
+      watermark: has("watermark") ? (str(fd, "watermark") as "logo" | "image" | "none") : undefined,
+      watermarkOpacity: has("watermarkOpacity") ? Number(str(fd, "watermarkOpacity")) : undefined,
+      autoPauseAt: has("autoPauseAt") ? (fd.get("autoPauseOn") === "on" ? str(fd, "autoPauseAt") : "") : undefined,
+      // The modules form sends `modules` (unticked boxes aren't sent).
+      modules: has("modules") ? (Object.fromEntries(MODULE_KEYS.map((k) => [k, fd.get(`module_${k}`) === "on"])) as Record<ModuleKey, boolean>) : undefined,
+    });
+    return "Workspace saved.";
+  });
+}
+
+export async function setWorkspaceImageAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const data = str(fd, "data");
+    await setWorkspaceImage(actor, str(fd, "key") as ImageKey, data || null);
+    return data ? "Image saved." : "Back to the built-in image.";
+  });
+}
+
+/* ------------------------------- Access ------------------------------ */
+
+export async function setPermissionAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const value = str(fd, "value") as "allow" | "deny" | "default";
+    const changed = await setPermission(actor, str(fd, "userId"), str(fd, "key"), value);
+    return changed === false ? "Saved." : "Access updated.";
+  });
+}
+
+export async function resetAccessAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await resetAccess(actor, str(fd, "userId"));
+    return "Back to the defaults.";
+  });
+}
+
+/* ---------------------------- Worked time ---------------------------- */
+
+export async function editTimeAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const startedAt = fromCairoLocal(str(fd, "startedAt"));
+    if (!startedAt) throw new UserError("Pick when it started.");
+    const end = str(fd, "endedAt");
+    const endedAt = end ? fromCairoLocal(end) : null;
+    if (end && !endedAt) throw new UserError("Pick when it ended.");
+    const changed = await editWorkSession(actor, str(fd, "sessionId"), { startedAt, endedAt });
+    return changed ? "Time corrected." : "Nothing changed.";
+  });
+}
+
+export async function addTimeAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const startedAt = fromCairoLocal(str(fd, "startedAt"));
+    const endedAt = fromCairoLocal(str(fd, "endedAt"));
+    if (!startedAt || !endedAt) throw new UserError("Pick when it started and ended.");
+    await addWorkSession(actor, str(fd, "stageId"), { userId: str(fd, "userId"), startedAt, endedAt });
+    return "Time added.";
+  });
+}
+
+export async function deleteTimeAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    await deleteWorkSession(actor, str(fd, "sessionId"));
+    return "Time removed.";
   });
 }
 
@@ -471,7 +580,7 @@ export async function deleteTaskAction(_: ActionResult, fd: FormData): Promise<A
 
 export async function addLinkAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
-    await addLink(actor, { url: str(fd, "url"), name: opt(fd, "name"), itemId: opt(fd, "itemId"), taskId: opt(fd, "taskId") });
+    await addLink(actor, { url: str(fd, "url"), name: opt(fd, "name"), itemId: opt(fd, "itemId"), taskId: opt(fd, "taskId"), workTaskId: opt(fd, "workTaskId") });
     return "Link attached.";
   });
 }
@@ -581,8 +690,8 @@ export async function createUserAction(_: ActionResult, fd: FormData): Promise<A
       name: str(fd, "name"),
       title: opt(fd, "title"),
       teams: fd.getAll("teams").map(String),
-      isAdmin: str(fd, "isAdmin") === "1",
-      isManager: str(fd, "isManager") === "1",
+      isAdmin: fd.has("roles") && str(fd, "isAdmin") === "1",
+      isManager: fd.has("roles") && str(fd, "isManager") === "1",
       password: str(fd, "password"),
     });
     return `Account created for ${u.name}. Username: ${u.username}`;
@@ -595,8 +704,10 @@ export async function updateUserAction(_: ActionResult, fd: FormData): Promise<A
       name: str(fd, "name"),
       title: opt(fd, "title"),
       teams: fd.getAll("teams").map(String),
-      isAdmin: str(fd, "isAdmin") === "1",
-      isManager: str(fd, "isManager") === "1",
+      // Only sent by people who manage access (Settings → People shows the boxes to them only).
+      isAdmin: fd.has("roles") ? str(fd, "isAdmin") === "1" : undefined,
+      isManager: fd.has("roles") ? str(fd, "isManager") === "1" : undefined,
+      roleLabel: fd.has("roles") ? opt(fd, "roleLabel") : undefined,
     });
     return "Saved.";
   }, true);

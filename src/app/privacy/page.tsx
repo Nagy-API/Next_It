@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { ArrowLeft, Lock } from "lucide-react";
-import { BRAND } from "@/config/brand";
+import { getWorkspace } from "@/server/settings";
 
 export const metadata = { title: "Privacy & security" };
 
 /** Public: what the system stores, who sees it, and how it's protected. Plain language on purpose. */
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const BRAND = await getWorkspace();
   return (
     <div className="min-h-dvh bg-canvas px-4 py-10">
       <article className="mx-auto max-w-[760px] space-y-8 text-[15px] leading-relaxed text-ink-2">

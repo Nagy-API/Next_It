@@ -5,12 +5,13 @@ import { platforms } from "@/db/schema";
 import { Badge } from "@/components/ui";
 import { requireUser } from "@/server/auth";
 import { NewPlatformForm, PlatformControls } from "../forms";
+import { can } from "@/domain/permissions";
 
 export const metadata = { title: "Platforms · Settings" };
 
 export default async function PlatformSettings() {
   const me = await requireUser();
-  if (!me.isAdmin) redirect("/settings/account");
+  if (!can.managePlatforms(me)) redirect("/settings/account");
   const rows = await db.select().from(platforms).orderBy(asc(platforms.sortOrder));
   return (
     <div className="max-w-2xl space-y-4">

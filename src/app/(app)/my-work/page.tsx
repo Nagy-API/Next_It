@@ -13,7 +13,10 @@ import { getActivePeople, getAllBrands, getOpenItems } from "@/server/cached";
 import { getActivePlatforms, getMyMessages, getPersonCompletions, getPersonWork, myBrandIds, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
 import { getTasksFor, getTasksGivenBy } from "@/server/tasks";
 import { attachmentsFor } from "@/server/attachments";
-import { BRAND } from "@/config/brand";
+import { getWorkspace } from "@/server/settings";
+import { mySpaceTasks } from "@/server/spaces";
+import { MySpaceTasks } from "@/components/spaces/my-space-tasks";
+import { Fold } from "@/components/fold";
 import { dailyLine, teamEmoji } from "@/lib/cheer";
 
 export const metadata = { title: "My tasks" };
@@ -35,10 +38,11 @@ function greeting() {
 
 export default async function MyTasksPage({ searchParams }: PageProps<"/my-work">) {
   const user = await requireUser();
+  const BRAND = await getWorkspace();
   const sp = await searchParams;
   const today = todayISO();
   const manager = isManager(user);
-  const [{ next }, recent, open, people, messages, myTasks, given, brands, platforms] = await Promise.all([
+  const [{ next }, recent, open, people, messages, myTasks, given, brands, platforms, spaceTasks] = await Promise.all([
     getPersonWork(user.id, today),
     getPersonCompletions(user.id, addDays(today, -13), today),
     getOpenItems(),
@@ -48,6 +52,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
     manager ? getTasksGivenBy(user.id, today) : Promise.resolve([]),
     getAllBrands(),
     getActivePlatforms(),
+    BRAND.modules.spaces ? mySpaceTasks(user) : Promise.resolve([]),
   ]);
   const pick = people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }));
   const rights = { deadline: can.setDeadline(user), assign: can.assign(user), review: can.review(user) };
@@ -91,12 +96,12 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const otherGroups = ordered.filter((g) => !g.mine);
   const files = await attachmentsFor({ itemIds: [...items, ...reviews].map((i) => i.id), taskIds: [...myTasks, ...given].map((t) => t.id) });
   const tasksShown = myTasks.filter((t) => t.doneAt || inPeriod(t.dueDate));
-  const lateCount = allItems.filter((i) => i.current?.health === "overdue").length + openTasks.filter((t) => t.dueDate && t.dueDate < today).length;
+  const lateCount = allItems.filter((i) => i.current?.health === "overdue").length + openTasks.filter((t) => t.dueDate && t.dueDate < today).length + spaceTasks.filter((t) => t.dueDate && t.dueDate < today).length;
   const hotCount = allItems.filter((i) => i.hot).length;
   const months = await personPerMonth(user.id, Number(today.slice(0, 4)), Number(today.slice(5, 7)), 2);
   const [lastMonth, thisMonth] = months;
   // Everything on this person right now: their steps, versions waiting for their approval, and managers' to-dos.
-  const total = allItems.length + reviews.length + openTasks.length;
+  const total = allItems.length + reviews.length + openTasks.length + spaceTasks.length;
   const q = (patch: Record<string, string>) => {
     const p = new URLSearchParams();
     const merged = { when: period, ...patch };
@@ -109,7 +114,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
       <header className="relative overflow-hidden rounded-2xl bg-navy-900 px-4 py-4 text-white sm:px-6 sm:py-6">
         <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_200px_at_85%_0%,rgba(59,130,246,0.35),transparent_70%)]" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={BRAND.logos.markOnDark} alt="" aria-hidden className="pointer-events-none absolute -right-10 -top-12 size-56 object-contain opacity-[0.08] drop-shadow-[0_10px_25px_rgba(96,165,250,0.6)]" />
+        <img src={BRAND.logos.mark} alt="" aria-hidden className="pointer-events-none absolute -right-10 -top-12 size-56 object-contain opacity-[0.08] drop-shadow-[0_10px_25px_rgba(96,165,250,0.6)]" />
         <div className="relative">
           <div className="flex items-center gap-3">
             <Avatar name={user.name} size={46} ring />
@@ -205,7 +210,9 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
         </section>
       )}
 
-      {items.length === 0 && reviews.length === 0 && tasksShown.length === 0 && (
+      <MySpaceTasks tasks={spaceTasks.filter((t) => inPeriod(t.dueDate))} />
+
+      {items.length === 0 && reviews.length === 0 && tasksShown.length === 0 && !spaceTasks.some((t) => inPeriod(t.dueDate)) && (
         <div className="card flex flex-col items-center px-6 py-12 text-center">
           <Coffee className="mb-3 size-8 text-electric" />
           <div className="font-display text-[16px] font-bold">{period ? "Nothing due in this period" : "You’re all caught up"}</div>
@@ -354,23 +361,30 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
 function BrandGroup({ g, render }: { g: { key: string; label: string; color: string | null; logoUrl: string | null; items: WorkItem[] }; render: (i: WorkItem) => React.ReactNode }) {
   return (
     <div id={`b-${g.key}`} className="scroll-mt-24">
-      <div className="mb-2.5 flex items-center gap-2.5">
-        {g.color ? <BrandMark name={g.label} color={g.color} logoUrl={g.logoUrl} size={26} /> : <span className="grid size-[26px] place-items-center rounded-md bg-canvas text-[12px]">◆</span>}
-        <h3 className="font-display text-[16px] font-bold">{g.label}</h3>
-        <span className="rounded-full bg-white px-2 py-0.5 text-[12px] font-semibold text-muted ring-1 ring-line">{g.items.length}</span>
-      </div>
-      <div className="space-y-3 border-l-2 pl-3 sm:pl-4" style={{ borderColor: g.color ? `${g.color}40` : "var(--color-line)" }}>
-        {g.items.map((i, n) => {
-          const day = dayOf(i);
-          const head = n === 0 || day !== dayOf(g.items[n - 1]);
-          return (
-            <div key={i.id} className="space-y-2">
-              {head && <div className="pt-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">{day ? formatDay(day, { weekday: true }) : "No date"}</div>}
-              {render(i)}
-            </div>
-          );
-        })}
-      </div>
+      <Fold
+        storageKey={`my-work:${g.key}`}
+        count={g.items.length}
+        header={
+          <>
+            {g.color ? <BrandMark name={g.label} color={g.color} logoUrl={g.logoUrl} size={26} /> : <span className="grid size-[26px] place-items-center rounded-md bg-canvas text-[12px]">◆</span>}
+            <span className="font-display text-[16px] font-bold text-ink">{g.label}</span>
+            <span className="rounded-full bg-white px-2 py-0.5 text-[12px] font-semibold text-muted ring-1 ring-line">{g.items.length}</span>
+          </>
+        }
+      >
+        <div className="space-y-3 border-l-2 pl-3 sm:pl-4" style={{ borderColor: g.color ? `${g.color}40` : "var(--color-line)" }}>
+          {g.items.map((i, n) => {
+            const day = dayOf(i);
+            const head = n === 0 || day !== dayOf(g.items[n - 1]);
+            return (
+              <div key={i.id} className="space-y-2">
+                {head && <div className="pt-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">{day ? formatDay(day, { weekday: true }) : "No date"}</div>}
+                {render(i)}
+              </div>
+            );
+          })}
+        </div>
+      </Fold>
     </div>
   );
 }

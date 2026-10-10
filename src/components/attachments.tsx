@@ -32,12 +32,13 @@ function sizeText(n: number | null) {
   return n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-async function upload(file: File, target: { itemId?: string; taskId?: string }) {
+async function upload(file: File, target: { itemId?: string; taskId?: string; workTaskId?: string }) {
   if (file.size > MAX) throw new Error(`${file.name} is bigger than 25 MB. Put it on Google Drive and attach the link instead.`);
   const fd = new FormData();
   fd.set("file", file);
   if (target.itemId) fd.set("itemId", target.itemId);
   if (target.taskId) fd.set("taskId", target.taskId);
+  if (target.workTaskId) fd.set("workTaskId", target.workTaskId);
   const res = await fetch("/api/files", { method: "POST", body: fd });
   const json = (await res.json().catch(() => ({}))) as { id?: string; name?: string; size?: number; mime?: string; error?: string };
   if (!res.ok || !json.id) throw new Error(json.error ?? "The upload didn't work. Please try again.");
@@ -49,6 +50,7 @@ export function Attachments({
   items,
   itemId,
   taskId,
+  workTaskId,
   meId,
   manager,
   canAdd = true,
@@ -57,6 +59,7 @@ export function Attachments({
   items: AttachmentItem[];
   itemId?: string;
   taskId?: string;
+  workTaskId?: string;
   meId: string;
   manager?: boolean;
   canAdd?: boolean;
@@ -72,7 +75,7 @@ export function Attachments({
     if (!files?.length) return;
     setBusy(true);
     try {
-      for (const f of Array.from(files)) await upload(f, { itemId, taskId });
+      for (const f of Array.from(files)) await upload(f, { itemId, taskId, workTaskId });
       push({ kind: "ok", text: files.length > 1 ? `${files.length} files attached.` : "File attached." });
       router.refresh();
     } catch (e) {
@@ -124,6 +127,7 @@ export function Attachments({
             <ActionForm action={addLinkAction} resetOnSuccess onSuccess={() => setLinking(false)} className="flex min-w-[240px] flex-1 items-center gap-1.5">
               {itemId && <input type="hidden" name="itemId" value={itemId} />}
               {taskId && <input type="hidden" name="taskId" value={taskId} />}
+              {workTaskId && <input type="hidden" name="workTaskId" value={workTaskId} />}
               <input name="url" required autoFocus placeholder="Paste a Google Doc, Drive, Canva… link" className="field field-sm h-8 min-w-0 flex-1" />
               <Submit size="sm" variant="dark">
                 Add

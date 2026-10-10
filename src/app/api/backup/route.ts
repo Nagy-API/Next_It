@@ -2,6 +2,7 @@ import { getCurrentUser } from "@/server/auth";
 import { databaseMode, localClient } from "@/db";
 import { logActivity } from "@/server/activity";
 import { db } from "@/db";
+import { can } from "@/domain/permissions";
 
 /**
  * Admins: download a full backup of the built-in database (a .tar.gz of its data folder).
@@ -10,7 +11,7 @@ import { db } from "@/db";
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return new Response("Sign in first.", { status: 401 });
-  if (!user.isAdmin) return new Response("Only admins can download backups.", { status: 403 });
+  if (!can.downloadBackup(user)) return new Response("Only admins can download backups.", { status: 403 });
   if (databaseMode().kind !== "local") return new Response("This install uses a PostgreSQL server — back it up with pg_dump.", { status: 400 });
   const client = localClient()!;
   const file = await client.dumpDataDir("gzip");

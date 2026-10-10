@@ -77,10 +77,11 @@ export const PROGRESS_META: Record<StageProgress, { label: string; fg: string; b
   changes_requested: { label: "Changes requested", fg: "#c2410c", bg: "#fff0e6", dot: "#f97316" },
   scheduled: { label: "Scheduled", fg: "#6d28d9", bg: "#f3ecfe", dot: "#8b5cf6" },
   waiting_approval: { label: "Waiting approval", fg: "#0f766e", bg: "#e3f5f3", dot: "#14b8a6" },
+  paused: { label: "Paused", fg: "#475569", bg: "#eef1f6", dot: "#94a3b8" },
 };
 
 /** Statuses a person picks themselves ("Changes requested" is set by the reviewer). */
-export const PICKABLE_PROGRESS: StageProgress[] = ["not_started", "processing", "adjusting", "scheduled", "waiting_approval"];
+export const PICKABLE_PROGRESS: StageProgress[] = ["not_started", "processing", "paused", "adjusting", "scheduled", "waiting_approval"];
 
 /** Statuses whose time counts as worked time. */
 export const TIMED_PROGRESS: StageProgress[] = ["processing", "adjusting"];

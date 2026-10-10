@@ -1,7 +1,10 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { AlertTriangle, ArrowRight, CalendarDays, Check, CircleUserRound, ClipboardCheck, CornerUpLeft, Flame, Hourglass, Sparkles } from "lucide-react";
-import { isManager } from "@/domain/permissions";
+import { can, isManager } from "@/domain/permissions";
+import { getWorkspace } from "@/server/settings";
+import { currentAnnouncement } from "@/server/announcements";
+import { PostButton } from "@/components/announcement";
 import { getTasksFor } from "@/server/tasks";
 import { HotBadge } from "@/components/handoff";
 import { STAGE_COLOR, STAGE_META } from "@/domain/workflow";
@@ -24,7 +27,7 @@ export default async function HomePage() {
   const user = await requireUser();
   const today = todayISO();
   const manager = isManager(user);
-  const [open, home, myTasks, notes, brands] = await Promise.all([getOpenItems(), getHomeData(today), getTasksFor(user.id, today), activeNotes(), getAllBrands()]);
+  const [open, home, myTasks, notes, brands, ws, motd] = await Promise.all([getOpenItems(), getHomeData(today), getTasksFor(user.id, today), activeNotes(), getAllBrands(), getWorkspace(), currentAnnouncement()]);
   const logoOf = new Map(brands.map((b) => [b.id, b.logoUrl]));
   const mine = tasksFor(open, user).filter((i) => !(i.current?.progress === "waiting_approval" && i.current.assignee?.id === user.id));
   const moveNow = mine.filter((i) => i.hot || i.current?.health === "overdue").sort((a, b) => (a.postingDate ?? a.current?.deadline ?? "9").localeCompare(b.postingDate ?? b.current?.deadline ?? "9"));
@@ -49,14 +52,17 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8">
-      <NotesBar notes={notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString(), expiresAt: n.expiresAt.toISOString() }))} meId={user.id} meName={user.name} now={now} />
+      {ws.modules.notes && <NotesBar notes={notes.map((n) => ({ ...n, createdAt: n.createdAt.toISOString(), expiresAt: n.expiresAt.toISOString() }))} meId={user.id} meName={user.name} now={now} />}
 
       <header className="space-y-4">
-        <div>
-          <div className="text-[13px] text-muted">{new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Africa/Cairo" }).format(new Date())}</div>
-          <h1 className="mt-0.5 font-display text-[26px] font-bold tracking-[-0.01em] sm:text-[28px]">
-            {greeting}, {user.name} <span className="inline-block origin-bottom-right animate-wave">{teamEmoji(user.teams)}</span>
-          </h1>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-[13px] text-muted">{new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Africa/Cairo" }).format(new Date())}</div>
+            <h1 className="mt-0.5 font-display text-[26px] font-bold tracking-[-0.01em] sm:text-[28px]">
+              {greeting}, {user.name} <span className="inline-block origin-bottom-right animate-wave">{teamEmoji(user.teams)}</span>
+            </h1>
+          </div>
+          {!motd && can.announce(user) && <PostButton />}
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Tile href="/my-work" label="On you now" value={mine.length + myTasks.filter((t) => !t.doneAt).length} hint={moveNow.length ? `${moveNow.length} must move in 48h` : "Nothing urgent"} tone={moveNow.length ? "warn" : undefined} />

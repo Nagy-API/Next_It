@@ -7,7 +7,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { brands, RECURRENCES, TASK_STATUSES, tasks, users, type Recurrence, type TaskStatus } from "@/db/schema";
 import { can, isManager } from "@/domain/permissions";
-import { addDays, addMonthsISO, cairoDate, formatDay, isValidISODate, isValidTime, todayISO } from "@/lib/dates";
+import { addDays, addMonthsISO, formatDay, isValidISODate, isValidTime, todayISO } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
 import { assert } from "./errors";
 import { notify } from "./notify";
@@ -232,23 +232,4 @@ export async function getTasksGivenBy(userId: string, today = todayISO()) {
     .leftJoin(brands, eq(brands.id, tasks.brandId))
     .where(and(eq(tasks.createdById, userId), isNull(tasks.deletedAt), or(isNull(tasks.doneAt), gte(tasks.doneAt, since))))
     .orderBy(asc(tasks.doneAt), asc(tasks.dueDate), desc(tasks.createdAt));
-}
-
-/**
- * Day tasks: to-dos that aren't for a brand, by day (the day they're due, else the day they were given).
- * Open ones from earlier days stay visible on today. Managers see everyone's; others see their own.
- */
-export async function getDayTasks(from: string, to: string, userId: string | null) {
-  const rows = await db
-    .select(taskCols)
-    .from(tasks)
-    .innerJoin(giver, eq(giver.id, tasks.createdById))
-    .innerJoin(assignee, eq(assignee.id, tasks.assigneeId))
-    .leftJoin(brands, eq(brands.id, tasks.brandId))
-    .where(and(isNull(tasks.deletedAt), isNull(tasks.brandId), userId ? eq(tasks.assigneeId, userId) : undefined))
-    .orderBy(asc(tasks.dueDate), asc(tasks.createdAt));
-  const dayOf = (t: (typeof rows)[number]) => t.scheduledDate ?? t.dueDate ?? cairoDate(t.createdAt);
-  return rows
-    .map((t) => ({ ...t, day: dayOf(t) }))
-    .filter((t) => (t.day >= from && t.day <= to) || (!t.doneAt && t.day < from && to >= todayISO()));
 }

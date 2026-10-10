@@ -5,7 +5,7 @@ import { ArrowLeft, CalendarClock, CheckCircle2, ExternalLink, FolderOpen, Info,
 import { FlowStepper, healthBadge } from "@/components/flow";
 import { Avatar, Badge, BrandDot, ExternalLink as ExtA, ExtraBadge, ProgressChip, TimeSpent, TypeTag, btn } from "@/components/ui";
 import { PLATFORM_STATUS_META, STAGE_COLOR, STAGE_META, finalLabel } from "@/domain/workflow";
-import { cairoDate, diffDays, formatDateTime, formatDay, formatDuration, formatRelative, formatTime, monthLabel, plural, todayISO } from "@/lib/dates";
+import { cairoDate, diffDays, formatDateTime, formatDay, formatDuration, formatRelative, formatTime, monthLabel, plural, toCairoLocal, todayISO } from "@/lib/dates";
 import { openLabel } from "@/lib/links";
 import { requireUser } from "@/server/auth";
 import { getActivePeople } from "@/server/cached";
@@ -19,6 +19,7 @@ import { can, isManager } from "@/domain/permissions";
 import { AssignSelect, CancelToggle, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, ExtraToggle, PlatformRow } from "./parts";
 import { ChangesBanner, DeliverButton, DeliveryTimes, HandOffPanel, HotBadge, LinkGlyph, ProgressPicker, ShootSummary, SocialPanel, TakeButton, VersionPanel } from "@/components/handoff";
 import { isReviewed } from "@/domain/workflow";
+import { AddSession, EditSession } from "./time-edit";
 
 export async function generateMetadata({ params }: PageProps<"/items/[id]">) {
   const d = await getItemDetail((await params).id);
@@ -38,6 +39,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
   const open = !item.cancelledAt;
   const backTargets = backTargetsOf(item, cur);
   const manager = isManager(me);
+  const canEditTime = can.editTime(me);
   const canChangeType = item.stages.every((s) => s.kind === "content" || s.status === "waiting");
   const back = item.brand && item.plan ? { href: `/brands/${item.brand.slug}?m=${item.plan.year}-${String(item.plan.month).padStart(2, "0")}`, label: `${item.brand.name} · ${monthLabel(item.plan.year, item.plan.month)}` } : item.project ? { href: `/projects/${item.project.id}`, label: `${item.project.clientName} · ${item.project.name}` } : { href: "/", label: "Home" };
   const social = item.stages.find((s) => s.kind === "social");
@@ -96,7 +98,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
               {item.slideNumber && !item.canvaUrl ? ` · slide ${item.slideNumber}` : ""} <ExternalLink className="size-3.5 text-faint" />
             </ExtA>
           )}
-          {manager && item.context === "plan" && open && <ExtraToggle itemId={item.id} extra={!!item.extra} />}
+          {can.markExtra(me) && item.context === "plan" && open && <ExtraToggle itemId={item.id} extra={!!item.extra} />}
           {item.driveUrl && (
             <ExtA href={item.driveUrl} className={btn("secondary")}>
               <FolderOpen className="size-4 text-[#1a73e8]" /> Drive file <ExternalLink className="size-3.5 text-faint" />
@@ -281,15 +283,15 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
           </section>
 
           {/* ---------------- Time on each step ---------------- */}
-          {sessions.length > 0 && (
+          {(sessions.length > 0 || canEditTime) && item.stages.some((s) => s.status !== "waiting") && (
             <section className="card p-5">
-              <h2 className="mb-3 flex items-center gap-2 font-display text-[15px] font-bold">
+              <h2 className="mb-3 flex flex-wrap items-center gap-2 font-display text-[15px] font-bold">
                 <Timer className="size-4 text-electric" /> Time on each step
-                <span className="text-[12.5px] font-normal text-muted">from In progress until sent</span>
+                <span className="text-[12.5px] font-normal text-muted">from In progress until sent{canEditTime ? " · you can correct it" : ""}</span>
               </h2>
               <ul className="space-y-2">
                 {item.stages
-                  .filter((s) => sessions.some((w) => w.stageId === s.id))
+                  .filter((s) => sessions.some((w) => w.stageId === s.id) || (canEditTime && s.status !== "waiting"))
                   .map((s) => (
                     <li key={s.id} className="rounded-xl border border-line px-3 py-2.5">
                       <div className="flex flex-wrap items-center gap-2">
@@ -304,9 +306,13 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                             <li key={w.id} className="tabular-nums">
                               <span className="font-medium text-ink-2">{w.userName}</span> · {w.kind === "adjusting" ? "Adjusting" : "In progress"} · {formatDay(cairoDate(w.startedAt))} {formatTime(w.startedAt)} → {w.endedAt ? `${cairoDate(w.endedAt) === cairoDate(w.startedAt) ? "" : `${formatDay(cairoDate(w.endedAt))} `}${formatTime(w.endedAt)}` : "now"} ·{" "}
                               {formatDuration((w.endedAt?.getTime() ?? Date.now()) - w.startedAt.getTime())}
+                              {w.endReason === "auto_paused" && <span className="ml-1.5 rounded bg-canvas px-1 text-[11px]">paused automatically</span>}
+                              {w.editedAt && <span className="ml-1.5 rounded bg-canvas px-1 text-[11px]">corrected</span>}
+                              {canEditTime && <EditSession id={w.id} start={toCairoLocal(w.startedAt)} end={w.endedAt ? toCairoLocal(w.endedAt) : null} running={!w.endedAt} />}
                             </li>
                           ))}
                       </ul>
+                      {canEditTime && <AddSession stageId={s.id} people={pickPeople} defaultUserId={s.assignee?.id ?? null} day={today} />}
                     </li>
                   ))}
               </ul>
@@ -325,7 +331,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
             </summary>
             <div className="divide-y divide-line border-t border-line">
               {item.stages.map((s) => (
-                <StageLine key={s.id} s={s} people={pickPeople} disabled={!open} today={today} isAdmin={me.isAdmin} canAssign={can.assign(me, s)} canDeadline={may.deadline} canExcuse={may.excuse} />
+                <StageLine key={s.id} s={s} people={pickPeople} disabled={!open} today={today} isAdmin={may.changeDeadline} canAssign={can.assign(me, s)} canDeadline={may.deadline} canExcuse={may.excuse} />
               ))}
             </div>
           </details>

@@ -3,12 +3,13 @@ import { getActivePeople } from "@/server/cached";
 import { getChatMessages, markChatRead } from "@/server/chat";
 import { isManager } from "@/domain/permissions";
 import { ChatRoom } from "./room";
-import { BRAND } from "@/config/brand";
+import { getWorkspace } from "@/server/settings";
 
 export const metadata = { title: "Team chat" };
 
 export default async function ChatPage() {
   const me = await requireUser();
+  const BRAND = await getWorkspace();
   const [messages, people] = await Promise.all([getChatMessages({ limit: 120 }), getActivePeople()]);
   await markChatRead(me.id);
   return (

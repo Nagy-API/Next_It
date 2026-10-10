@@ -10,7 +10,7 @@
  */
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { activityLog, brands, contentItems, contentPlans, platforms, stages, users, workSessions, type Team } from "@/db/schema";
+import { activityLog, brands, contentItems, contentPlans, permissionOverrides, platforms, stages, users, workSessions, type Team } from "@/db/schema";
 import { createItems, followPostingMonthTx, type NewItemRow } from "./items";
 import { verify } from "@node-rs/argon2";
 import { hashPassword, slugify } from "./admin";
@@ -21,14 +21,16 @@ import { importTracker } from "./tracker-import";
 const PASSWORD = process.env.SEED_DEFAULT_PASSWORD || "Nexora@2026";
 
 /** Managers: Shahenda (CEO), Ammar, Ayman and Assem. Gannah (design) and Jana (editing) are in the Media Production department. */
-const MANAGERS = ["shahenda", "ammar", "ayman", "assem", "king"];
+const MANAGERS = ["shahenda", "ammar", "ayman", "assem", "king", "kemo"];
+/** Accounts labelled IT: full access (admin + manager), same position. */
+const IT = ["king", "kemo"];
 const TEAM: { username: string; name: string; title: string; teams: Team[]; isAdmin?: boolean }[] = [
   { username: "shahenda", name: "Shahenda", title: "CEO", teams: ["leadership", "social"], isAdmin: true },
   { username: "assem", name: "Assem", title: "Account Manager", teams: ["account"] },
   { username: "ammar", name: "Ammar", title: "Content Lead", teams: ["content"] },
   // King is also IT: full access (admin + manager), same position.
   { username: "king", name: "King", title: "Content Creator", teams: ["content"], isAdmin: true },
-  { username: "kemo", name: "Kemo", title: "Content Creator", teams: ["content"] },
+  { username: "kemo", name: "Kemo", title: "Content Creator", teams: ["content"], isAdmin: true },
   { username: "ayman", name: "Ayman", title: "Media Production Lead", teams: ["media"] },
   { username: "jana", name: "Jana", title: "Video Editor · Media Production", teams: ["media"] },
   { username: "gannah", name: "Gannah", title: "Graphic Designer · Media Production", teams: ["design"] },
@@ -128,6 +130,24 @@ async function kingFullAccess() {
   await db.update(users).set({ isAdmin: true, isManager: true }).where(eq(users.id, king.id));
   await logActivity(db, null, { action: "king_full_access", subjectUserId: king.id, summary: "King (IT) now has full access: admin and manager." });
   console.log("✓ King has full access (admin + manager)");
+}
+
+/** Kemo gets the same account as King (IT label, admin + manager). Once only. */
+async function itAccess() {
+  const [done] = await db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.action, "it_access")).limit(1);
+  if (done) return;
+  const [kemo] = await db.select({ id: users.id }).from(users).where(eq(users.username, "kemo"));
+  if (kemo) await db.update(users).set({ roleLabel: "IT", isAdmin: true, isManager: true }).where(eq(users.id, kemo.id));
+  await logActivity(db, null, { action: "it_access", summary: "Account access updated." });
+}
+
+/** Assem (account manager) can correct worked time, like Shahenda and King. Once only; changeable in Settings → Access. */
+async function timeEditors() {
+  const [done] = await db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.action, "time_editors")).limit(1);
+  if (done) return;
+  const [assem] = await db.select({ id: users.id }).from(users).where(eq(users.username, "assem"));
+  if (assem) await db.insert(permissionOverrides).values({ userId: assem.id, key: "time.edit", allow: true }).onConflictDoNothing();
+  await logActivity(db, null, { action: "time_editors", subjectUserId: assem?.id ?? null, summary: "Assem can edit worked time (Settings → Access)." });
 }
 
 /** Account labels (shown instead of "Manager"): King → IT, with full access. Once only. */
@@ -237,6 +257,8 @@ export async function seed() {
       await managersAndMediaDefaults();
       await kingFullAccess();
       await accountLabels();
+      await itAccess();
+      await timeEditors();
       if (process.env.SEED_TRACKER !== "0") await importTracker();
     }
     await plansFollowPostingDate();
@@ -253,7 +275,7 @@ export async function seed() {
         ...u,
         isAdmin: !!u.isAdmin,
         isManager: MANAGERS.includes(u.username),
-        roleLabel: u.username === "king" ? "IT" : null,
+        roleLabel: IT.includes(u.username) ? "IT" : null,
         passwordHash,
         mustChangePassword: process.env.SEED_FORCE_PASSWORD_CHANGE !== "0",
         createdAt: new Date("2026-09-01T07:00:00Z"),
@@ -309,6 +331,8 @@ export async function seed() {
   await logActivity(db, null, { action: "managers_media_defaults", summary: "Managers: Shahenda, Ammar, Ayman, Assem. Shooting → Ayman, Editing → Jana." });
   await logActivity(db, null, { action: "king_full_access", summary: "King (IT) has full access: admin and manager." });
   await logActivity(db, null, { action: "account_labels", summary: "Account labels updated." });
+  await itAccess();
+  await timeEditors();
   // Every brand's plan from the Excel tracker, each item at its real step (once; SEED_TRACKER=0 skips it).
   if (process.env.SEED_TRACKER !== "0") await importTracker();
 }

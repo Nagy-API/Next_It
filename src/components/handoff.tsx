@@ -24,8 +24,11 @@ import {
   PenTool,
   Plus,
   Send,
+  ShoppingBag,
   ThumbsUp,
   Truck,
+  Users,
+  Warehouse,
   X,
 } from "lucide-react";
 import { assignAction, completeStageAction, handOffAction, platformAction, progressAction, reviewVersionAction, shootAction, submitVersionAction } from "@/app/actions";
@@ -305,11 +308,12 @@ function ShootForm({ item, compact }: { item: HandItem; compact?: boolean }) {
 }
 
 export function ShootSummary({ shoot, className }: { shoot: WorkItem["shoot"]; className?: string }) {
-  if (!shoot.date) return null;
+  const needs = !!(shoot.people || shoot.rentals || shoot.purchases);
+  if (!shoot.date && !needs) return null;
   return (
     <span className={clsx("inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg bg-[#fdf0f6] px-2.5 py-1 text-[12.5px] font-medium text-[#a1355f]", className)}>
-      <Camera className="size-3.5" /> Shoot {formatDay(shoot.date)}
-      {shoot.time && ` · ${shoot.time}`}
+      <Camera className="size-3.5" /> {shoot.date ? `Shoot ${formatDay(shoot.date)}` : "Shoot"}
+      {shoot.date && shoot.time && ` · ${shoot.time}`}
       {shoot.duration && (
         <span className="inline-flex items-center gap-1">
           <Clock className="size-3" /> {shoot.duration}
@@ -320,7 +324,80 @@ export function ShootSummary({ shoot, className }: { shoot: WorkItem["shoot"]; c
           <MapPin className="size-3" /> {shoot.location}
         </span>
       )}
+      {!!shoot.people && (
+        <span className="inline-flex items-center gap-1">
+          <Users className="size-3" /> {shoot.people}
+        </span>
+      )}
+      {shoot.rentals && <NeedChip icon={Warehouse} label="Rent" text={shoot.rentals} ready={shoot.rentalsReady} />}
+      {shoot.purchases && <NeedChip icon={ShoppingBag} label="Buy" text={shoot.purchases} ready={shoot.purchasesReady} />}
     </span>
+  );
+}
+
+function NeedChip({ icon: Icon, label, text, ready }: { icon: typeof Users; label: string; text: string; ready: boolean }) {
+  return (
+    <span title={`${label}: ${text}${ready ? " (ready)" : " (not ready yet)"}`} className={clsx("inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5", ready ? "bg-ok-soft text-ok" : "bg-white/70")}>
+      <Icon className="size-3 shrink-0" />
+      <span className="truncate">
+        {label}: {text}
+      </span>
+      {ready ? <Check className="size-3 shrink-0" strokeWidth={3} /> : <Clock className="size-3 shrink-0 opacity-70" />}
+    </span>
+  );
+}
+
+/** What the shoot needs: people on camera, things to rent and to buy (all optional), each ticked when it's ready. */
+function ShootNeeds({ item }: { item: HandItem }) {
+  const s = item.shoot;
+  const [open, setOpen] = useState(!!(s.people || s.rentals || s.purchases));
+  const missing = [s.rentals && !s.rentalsReady, s.purchases && !s.purchasesReady].filter(Boolean).length;
+  if (!open)
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="inline-flex cursor-pointer items-center gap-1.5 text-[12.5px] font-medium text-electric">
+        <Plus className="size-3.5" /> People, things to rent or buy <span className="font-normal text-muted">(optional)</span>
+      </button>
+    );
+  return (
+    <ActionForm action={shootAction} className="rounded-xl border border-line bg-canvas/60 p-3">
+      <input type="hidden" name="itemId" value={item.id} />
+      <input type="hidden" name="needs" value="1" />
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[12.5px] font-semibold text-ink">What the shoot needs</span>
+        {missing > 0 ? (
+          <span className="rounded-full bg-warn-soft px-2 text-[11.5px] font-semibold leading-5 text-warn">{missing} not ready yet</span>
+        ) : (s.rentals || s.purchases) ? (
+          <span className="rounded-full bg-ok-soft px-2 text-[11.5px] font-semibold leading-5 text-ok">All ready ✓</span>
+        ) : null}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[120px_1fr_1fr]">
+        <div>
+          <label className="label" htmlFor={`sp-${item.id}`}>
+            People on camera
+          </label>
+          <input id={`sp-${item.id}`} type="number" min={0} max={999} name="shootPeople" defaultValue={s.people ?? ""} placeholder="0" className="field" />
+        </div>
+        <NeedField id={`sr-${item.id}`} name="shootRentals" label="To rent" placeholder="Lights, a lens, a location…" value={s.rentals} ready={s.rentalsReady} />
+        <NeedField id={`sb-${item.id}`} name="shootPurchases" label="To buy" placeholder="Props, flowers, snacks…" value={s.purchases} ready={s.purchasesReady} />
+      </div>
+      <div className="mt-2 flex justify-end">
+        <Submit variant="secondary">Save</Submit>
+      </div>
+    </ActionForm>
+  );
+}
+
+function NeedField({ id, name, label, placeholder, value, ready }: { id: string; name: string; label: string; placeholder: string; value: string | null; ready: boolean }) {
+  return (
+    <div>
+      <label className="label" htmlFor={id}>
+        {label}
+      </label>
+      <input id={id} name={name} defaultValue={value ?? ""} placeholder={placeholder} className="field" />
+      <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 text-[12.5px] text-ink-2">
+        <input type="checkbox" name={`${name}Ready`} defaultChecked={ready} className="size-4 accent-[var(--color-ok)]" /> Got it / ready
+      </label>
+    </div>
   );
 }
 
@@ -335,6 +412,7 @@ function ShootPanel({ item, stageId, people, rights, meId, compact }: { item: Ha
   return (
     <div className="space-y-3">
       <ShootForm item={item} compact={compact} />
+      <ShootNeeds item={item} />
       <ActionForm action={handOffAction} className="space-y-3 border-t border-dashed border-line pt-3">
         <input type="hidden" name="stageId" value={stageId} />
         <input type="hidden" name="target" value={target} />
@@ -856,6 +934,40 @@ function SocialRow({ itemId, p, canPublish }: { itemId: string; p: WorkItem["pla
 /* Task card (My tasks): everything needed to finish, in one place        */
 /* ------------------------------------------------------------------ */
 
+/** One plain line on every card: what to do now. */
+function NextStep({ kind, progress, unclaimed, scheduledFor }: { kind: StageKind; progress: StageView["progress"]; unclaimed: boolean; scheduledFor: string | null }) {
+  const reviewed = kind === "media" || kind === "design";
+  const text = unclaimed
+    ? "Take it, then press In progress when you start."
+    : progress === "not_started"
+      ? "Press In progress when you start. The clock starts with it."
+      : progress === "paused"
+        ? "Paused. Press In progress to continue."
+        : progress === "changes_requested"
+          ? "Read the note, then press “OK, I'm on it”."
+          : progress === "scheduled"
+            ? `You planned it for ${scheduledFor ? formatDay(scheduledFor) : "later"}. Press In progress when you start.`
+            : progress === "waiting_approval"
+              ? "With the reviewer now. You'll be told when it's approved."
+              : reviewed
+                ? "When it's ready, paste the Drive link and send it for approval."
+                : kind === "content"
+                  ? "Add the content link (optional) and send it on."
+                  : kind === "shooting"
+                    ? "Plan the shoot, then press Shooting done."
+                    : kind === "social"
+                      ? "Schedule it or paste the live links. It finishes by itself."
+                      : "Finish it and send it on.";
+  return (
+    <p className="mt-1.5 flex items-start gap-1.5 text-[12.5px] font-medium text-electric">
+      <ArrowRight className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        <span className="font-semibold">Next:</span> {text}
+      </span>
+    </p>
+  );
+}
+
 export function TaskCard({
   item,
   meId,
@@ -932,6 +1044,7 @@ export function TaskCard({
             <ProgressChip progress={cur.progress} scheduledFor={cur.scheduledFor} running={cur.time.running} hideNotStarted />
             <TimeSpent ms={cur.time.ms} running={cur.time.running} />
           </div>
+          {mode === "do" && <NextStep kind={cur.kind} progress={cur.progress} unclaimed={unclaimed} scheduledFor={cur.scheduledFor} />}
         </div>
         {cur.deadline && (
           <span className={clsx("whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] font-semibold", late ? "bg-bad text-white" : "bg-canvas text-ink-2")}>
