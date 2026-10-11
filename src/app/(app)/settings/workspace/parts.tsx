@@ -172,46 +172,61 @@ export function ImageSlot({ k, label, hint, src, custom, dark, box }: { k: strin
   );
 }
 
-/** Watermark: the company symbol, its own picture, or none — and how visible it is. */
-export function WatermarkForm({ mode, opacity, src }: { mode: "logo" | "image" | "none"; opacity: number; src: string }) {
-  const [m, setM] = useState(mode);
-  const [o, setO] = useState(opacity);
+type WmMode = "logo" | "image" | "none";
+
+/** Watermark: one for light mode and one for dark mode (a navy mark vanishes on dark, a white one on light). */
+export function WatermarkForm({ light, dark }: { light: { mode: WmMode; opacity: number; logo: string; image: string }; dark: { mode: WmMode; opacity: number; logo: string; image: string } }) {
   return (
-    <ActionForm action={updateWorkspaceAction} className="grid gap-4 md:grid-cols-[minmax(0,1fr)_200px]">
-      <div className="space-y-3">
-        <div className="inline-flex rounded-xl border border-line bg-surface p-0.5" role="radiogroup" aria-label="Watermark">
-          {(
-            [
-              ["logo", "Company symbol"],
-              ["image", "Its own picture"],
-              ["none", "No watermark"],
-            ] as const
-          ).map(([v, l]) => (
-            <label key={v} className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", m === v ? "bg-electric-soft text-electric" : "text-muted hover:text-ink")}>
-              <input type="radio" name="watermark" value={v} checked={m === v} onChange={() => setM(v)} className="sr-only" />
-              {l}
-            </label>
-          ))}
-        </div>
-        {m !== "none" && (
-          <div>
-            <label className="label" htmlFor="wm-o">
-              How visible: {o}%
-            </label>
-            <input id="wm-o" type="range" name="watermarkOpacity" min={1} max={30} value={o} onChange={(e) => setO(Number(e.target.value))} className="w-full max-w-[320px] accent-[var(--color-electric)]" />
-            <p className="text-[12px] text-muted">Shown faintly behind every page on big screens. 4–8% is subtle.</p>
-          </div>
-        )}
-        {m === "image" && <p className="text-[12.5px] text-ink-2">Upload the picture in &ldquo;Watermark image&rdquo; above.</p>}
-        <Submit>Save watermark</Submit>
+    <ActionForm action={updateWorkspaceAction} className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <WatermarkSide title="Light mode" name="watermark" opName="watermarkOpacity" upload="Watermark image" {...light} canvas="#f4f6fb" />
+        <WatermarkSide title="Dark mode" name="watermarkDark" opName="watermarkDarkOpacity" upload="Watermark image (dark mode)" {...dark} canvas="#0a1022" />
       </div>
-      <div aria-hidden className="relative grid h-[130px] place-items-center overflow-hidden rounded-xl border border-line bg-canvas">
+      <p className="text-[12px] text-muted">Shown faintly behind every page on big screens. 3 to 8% is subtle. Each person sees the one for the theme they picked.</p>
+      <Submit>Save watermark</Submit>
+    </ActionForm>
+  );
+}
+
+function WatermarkSide({ title, name, opName, upload, mode, opacity, logo, image, canvas }: { title: string; name: string; opName: string; upload: string; mode: WmMode; opacity: number; logo: string; image: string; canvas: string }) {
+  const [m, setM] = useState(mode);
+  const [o, setO] = useState(opacity || 5);
+  const src = m === "image" ? image : logo;
+  return (
+    <div className="space-y-3 rounded-xl border border-line p-3.5">
+      <div className="text-[13.5px] font-semibold text-ink">{title}</div>
+      <div className="inline-flex flex-wrap rounded-xl border border-line bg-surface p-0.5" role="radiogroup" aria-label={`Watermark, ${title}`}>
+        {(
+          [
+            ["logo", "Company symbol"],
+            ["image", "Its own picture"],
+            ["none", "None"],
+          ] as const
+        ).map(([v, l]) => (
+          <label key={v} className={clsx("cursor-pointer rounded-[9px] px-3 py-1.5 text-[13px] font-medium", m === v ? "bg-electric-soft text-electric" : "text-muted hover:text-ink")}>
+            <input type="radio" name={name} value={v} checked={m === v} onChange={() => setM(v)} className="sr-only" />
+            {l}
+          </label>
+        ))}
+      </div>
+      {m !== "none" && (
+        <div>
+          <label className="label" htmlFor={`${name}-o`}>
+            How visible: {o}%
+          </label>
+          <input id={`${name}-o`} type="range" name={opName} min={1} max={30} value={o} onChange={(e) => setO(Number(e.target.value))} className="w-full accent-[var(--color-electric)]" />
+        </div>
+      )}
+      {m === "image" && <p className="text-[12.5px] text-ink-2">Upload the picture in &ldquo;{upload}&rdquo; above.</p>}
+      <div aria-hidden className="relative grid h-[120px] place-items-center overflow-hidden rounded-lg border border-line" style={{ background: canvas }}>
         {m !== "none" && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt="" className="absolute -right-6 top-2 size-[140px] object-contain" style={{ opacity: o / 100 }} />
+          <img src={src} alt="" className="absolute -right-6 top-2 size-[130px] object-contain" style={{ opacity: o / 100 }} />
         )}
-        <span className="relative text-[11.5px] text-muted">Preview</span>
+        <span className="relative text-[11.5px]" style={{ color: canvas === "#0a1022" ? "#94a3b8" : "#64748b" }}>
+          Preview
+        </span>
       </div>
-    </ActionForm>
+    </div>
   );
 }

@@ -32,6 +32,7 @@ export const IMAGE_KEYS = {
   mark: "Square symbol (on dark)",
   markLight: "Square symbol (on light)",
   watermark: "Watermark image",
+  watermarkDark: "Watermark image (dark mode)",
 } as const;
 export type ImageKey = keyof typeof IMAGE_KEYS;
 export const IMAGE_KEY_LIST = Object.keys(IMAGE_KEYS) as ImageKey[];
@@ -47,6 +48,9 @@ export type Workspace = {
   watermark: "logo" | "image" | "none";
   /** 0–30 (%). */
   watermarkOpacity: number;
+  /** Dark mode has its own watermark: logo = the symbol for dark backgrounds, image = its own picture. */
+  watermarkDark: "logo" | "image" | "none";
+  watermarkDarkOpacity: number;
   modules: Record<ModuleKey, boolean>;
   /** "HH:MM" (Cairo): running clocks pause themselves at this time. "" = off. */
   autoPauseAt: string;
@@ -56,7 +60,7 @@ export type Workspace = {
 
 export type WorkspaceView = Workspace & {
   /** URLs to show (uploaded image, or the built-in file). */
-  logos: { wordmark: string; mark: string; markLight: string; watermark: string };
+  logos: { wordmark: string; mark: string; markLight: string; watermark: string; watermarkDark: string };
   /** Which images were uploaded (vs the built-in ones). */
   custom: Record<ImageKey, boolean>;
 };
@@ -70,6 +74,8 @@ export const DEFAULT_WORKSPACE: Workspace = {
   dark: BRAND.colors.dark,
   watermark: "logo",
   watermarkOpacity: 5,
+  watermarkDark: "logo",
+  watermarkDarkOpacity: 3,
   modules: { content: true, projects: true, spaces: true, quick: true, chat: true, notes: true, fun: true },
   autoPauseAt: "21:00",
   dailyMessages: [],
@@ -80,6 +86,7 @@ const BUILT_IN: Record<ImageKey, string> = {
   mark: BRAND.logos.markOnDark,
   markLight: BRAND.logos.markOnLight,
   watermark: BRAND.logos.markOnLight,
+  watermarkDark: BRAND.logos.markOnDark,
 };
 
 type Img = { data: string; hash: string };
@@ -106,11 +113,11 @@ export async function getWorkspace(): Promise<WorkspaceView> {
     const img = (k: ImageKey) => rows.find((r) => r.key === imgKey(k))?.value as Img | undefined;
     const custom = Object.fromEntries(IMAGE_KEY_LIST.map((k) => [k, !!img(k)])) as Record<ImageKey, boolean>;
     const url = (k: ImageKey) => (img(k) ? `/api/workspace-asset/${k}?v=${img(k)!.hash}` : BUILT_IN[k]);
-    const view: WorkspaceView = { ...ws, custom, logos: { wordmark: url("wordmark"), mark: url("mark"), markLight: url("markLight"), watermark: img("watermark") ? url("watermark") : url("markLight") } };
+    const view: WorkspaceView = { ...ws, custom, logos: { wordmark: url("wordmark"), mark: url("mark"), markLight: url("markLight"), watermark: img("watermark") ? url("watermark") : url("markLight"), watermarkDark: img("watermarkDark") ? url("watermarkDark") : url("mark") } };
     cache = { at: Date.now(), view };
     return view;
   } catch {
-    return { ...DEFAULT_WORKSPACE, custom: { wordmark: false, mark: false, markLight: false, watermark: false }, logos: { wordmark: BUILT_IN.wordmark, mark: BUILT_IN.mark, markLight: BUILT_IN.markLight, watermark: BUILT_IN.watermark } };
+    return { ...DEFAULT_WORKSPACE, custom: { wordmark: false, mark: false, markLight: false, watermark: false, watermarkDark: false }, logos: { ...BUILT_IN } };
   }
 }
 
@@ -150,6 +157,11 @@ export async function updateWorkspace(actor: Actor, input: Partial<Workspace>) {
     next.watermark = input.watermark;
   }
   if (input.watermarkOpacity !== undefined) next.watermarkOpacity = Math.max(0, Math.min(30, Math.round(Number(input.watermarkOpacity) || 0)));
+  if (input.watermarkDark !== undefined) {
+    assert(["logo", "image", "none"].includes(input.watermarkDark), "Pick a watermark.");
+    next.watermarkDark = input.watermarkDark;
+  }
+  if (input.watermarkDarkOpacity !== undefined) next.watermarkDarkOpacity = Math.max(0, Math.min(30, Math.round(Number(input.watermarkDarkOpacity) || 0)));
   if (input.modules) for (const k of MODULE_KEYS) if (typeof input.modules[k] === "boolean") next.modules[k] = input.modules[k];
   if (input.dailyMessages !== undefined)
     next.dailyMessages = input.dailyMessages

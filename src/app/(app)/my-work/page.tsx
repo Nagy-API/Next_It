@@ -1,12 +1,13 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { AlarmClock, Clapperboard, ClipboardCheck, Coffee, Flame, Hourglass, Inbox, MessageSquareText, Send, Star, ThumbsUp, Trophy, type LucideIcon } from "lucide-react";
+import { AlarmClock, CircleCheckBig, Clapperboard, ClipboardCheck, Coffee, Flame, Hourglass, Inbox, MapPin, MessageSquareText, Send, Star, StickyNote, ThumbsUp, Timer, Trophy, type LucideIcon } from "lucide-react";
 import { TaskCard } from "@/components/handoff";
 import { TaskRow } from "@/components/tasks";
 import { Avatar, Badge, BrandDot, BrandMark, ProgressChip, SectionTitle, StageChip, TimeSpent, TypeIcon } from "@/components/ui";
 import { can, isManager } from "@/domain/permissions";
 import { STAGE_META, isNewTask } from "@/domain/workflow";
-import { addDays, formatDateTime, formatDay, formatRelative, monthName, monthRange, todayISO, weekRange } from "@/lib/dates";
+import { addDays, formatDateTime, formatDay, formatDuration, formatRelative, monthName, monthRange, todayISO, weekRange } from "@/lib/dates";
+import { myDay } from "@/server/fun";
 import { personPerMonth } from "@/server/stats";
 import { requireUser } from "@/server/auth";
 import { getActivePeople, getAllBrands, getOpenItems } from "@/server/cached";
@@ -17,7 +18,6 @@ import { getWorkspace } from "@/server/settings";
 import { mySpaceTasks } from "@/server/spaces";
 import { MySpaceTasks } from "@/components/spaces/my-space-tasks";
 import { Fold } from "@/components/fold";
-import { teamEmoji } from "@/lib/cheer";
 import { applyOrder, getOrder } from "@/server/order";
 import { shootsFor, type ShootEntry } from "@/server/shoots";
 import { priorityRank } from "@/domain/priority";
@@ -108,7 +108,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const tasksShown = myTasks.filter((t) => t.doneAt || inPeriod(t.dueDate));
   const lateCount = allItems.filter((i) => i.current?.health === "overdue").length + openTasks.filter((t) => t.dueDate && t.dueDate < today).length + spaceTasks.filter((t) => t.dueDate && t.dueDate < today).length;
   const hotCount = allItems.filter((i) => i.hot).length;
-  const months = await personPerMonth(user.id, Number(today.slice(0, 4)), Number(today.slice(5, 7)), 2);
+  const [months, day] = await Promise.all([personPerMonth(user.id, Number(today.slice(0, 4)), Number(today.slice(5, 7)), 2), myDay(user.id)]);
   const [lastMonth, thisMonth] = months;
   // Everything on this person right now: their steps, versions waiting for their approval, and managers' to-dos.
   const total = allItems.length + reviews.length + openTasks.length + spaceTasks.length;
@@ -122,18 +122,17 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   return (
     <div className="mx-auto max-w-[980px] space-y-8">
       <header className="relative overflow-hidden rounded-2xl bg-navy-900 px-4 py-4 text-white sm:px-6 sm:py-6">
-        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_200px_at_85%_0%,rgba(59,130,246,0.35),transparent_70%)]" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={BRAND.logos.mark} alt="" aria-hidden className="pointer-events-none absolute -right-10 -top-12 size-56 object-contain opacity-[0.08] drop-shadow-[0_10px_25px_rgba(96,165,250,0.6)]" />
+        <img src={BRAND.logos.mark} alt="" aria-hidden className="pointer-events-none absolute -right-10 -top-12 size-56 object-contain opacity-[0.06]" />
         <div className="relative">
           <div className="flex items-center gap-3">
             <Avatar name={user.name} size={46} ring />
             <div>
               <h1 className="font-display text-[21px] font-bold leading-tight tracking-[-0.01em] sm:text-[26px]">
-                {user.name.split(" ")[0]}&rsquo;s tasks <span className="inline-block origin-bottom-right animate-wave">{teamEmoji(user.teams)}</span>
+                {user.name.split(" ")[0]}&rsquo;s tasks
               </h1>
               <p className="text-[14px] text-white/65">
-                {total ? (hotCount ? `${hotCount} thing${hotCount > 1 ? "s" : ""} must move in the next 48 hours — they're at the top.` : "Here's everything on you, from every brand.") : "Nothing waiting for you right now — enjoy it ☕"}
+                {total ? (hotCount ? `${hotCount} thing${hotCount > 1 ? "s" : ""} must move in the next 48 hours — they're at the top.` : "Here's everything on you, from every brand.") : "Nothing waiting for you right now. Enjoy it."}
               </p>
             </div>
           </div>
@@ -143,9 +142,33 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
             <HeroStat icon={Flame} label="Within 48 hours" value={hotCount} tone={hotCount ? "warn" : undefined} />
             <HeroStat icon={Trophy} label={`Done in ${monthName(thisMonth.month)}`} value={thisMonth.value} hint={deltaText(thisMonth.value, lastMonth.value, monthName(lastMonth.month, true))} />
           </div>
-          <Link href={`/team/${user.username}`} className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-electric-bright hover:underline">
-            My stats month by month →
-          </Link>
+          {/* Your day: what you finished today and your streak, in one calm line. */}
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-white/75">
+            <span className="inline-flex items-center gap-1.5">
+              <CircleCheckBig className="size-4 text-emerald-300" />
+              {day.steps || day.todos ? (
+                <>
+                  Today you finished <b className="text-white">{day.steps + day.todos}</b> {day.steps + day.todos === 1 ? "thing" : "things"}
+                  {day.steps > 0 && day.onTime === day.steps ? ", all on time" : ""}
+                </>
+              ) : (
+                "Nothing finished yet today. The first one is the best one."
+              )}
+            </span>
+            {day.workedMs > 60_000 && (
+              <span className="inline-flex items-center gap-1.5">
+                <Timer className="size-4 text-sky-300" /> <b className="text-white">{formatDuration(day.workedMs)}</b> on the clock
+              </span>
+            )}
+            {day.streak >= 2 && (
+              <span className="inline-flex items-center gap-1.5" title="Working days in a row with at least one finished step (Fridays don't break it)">
+                <Flame className="size-4 text-amber-300" /> <b className="text-white">{day.streak} days</b> in a row
+              </span>
+            )}
+            <Link href={`/team/${user.username}`} className="inline-flex items-center gap-1 font-semibold text-electric-bright hover:underline sm:ml-auto">
+              My stats month by month →
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -205,9 +228,18 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
                   <div className="truncate font-semibold">{s.title}</div>
                   <div className="truncate text-[12.5px] text-muted">
                     {s.brand?.name ?? "No brand"}
-                    {s.location ? ` · 📍 ${s.location}` : ""}
+                    {s.location && (
+                      <>
+                        {" · "}
+                        <MapPin className="inline size-3 -translate-y-px" /> {s.location}
+                      </>
+                    )}
                   </div>
-                  {s.notes && <div className="mt-1 line-clamp-2 text-[12.5px] text-ink-2">📝 {s.notes}</div>}
+                  {s.notes && (
+                    <div className="mt-1 flex gap-1 text-[12.5px] text-ink-2">
+                      <StickyNote className="mt-0.5 size-3 shrink-0 text-muted" /> <span className="line-clamp-2">{s.notes}</span>
+                    </div>
+                  )}
                 </div>
               </Link>
             ))}

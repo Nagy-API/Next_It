@@ -104,7 +104,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.goto("/my-work");
     await card(page, "The Ampoule").getByPlaceholder(/Instagram link/).fill("https://www.instagram.com/p/ampoule");
     await card(page, "The Ampoule").getByRole("button", { name: "Live" }).first().click();
-    await toast(page, "Published! ✨");
+    await toast(page, "Published!");
     await card(page, "The Ampoule").getByPlaceholder(/TikTok link/).fill("https://www.tiktok.com/@vr/video/1");
     await card(page, "The Ampoule").getByRole("button", { name: "Live" }).click();
     await toast(page, /Published everywhere/);
@@ -241,7 +241,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await login(page, "assem");
     await page.goto("/my-work");
     await card(page, "Reel 1").getByRole("button", { name: /Mark as delivered/ }).click();
-    await toast(page, /Done — nice work/);
+    await toast(page, /Done. Nice work/);
 
     await login(page, "ammar");
     await page.goto("/projects");
@@ -526,7 +526,7 @@ test.describe.serial("NEXORA acceptance", () => {
     await page.getByRole("button", { name: "Add 2" }).click();
     await toast(page, "2 tasks added.");
     await page.getByRole("button", { name: /Mark Fix the office Wi-Fi Done/ }).click();
-    await toast(page, "Done! 🎉");
+    await toast(page, "Done!");
     await page.getByRole("button", { name: "Filter and group" }).click();
     await page.getByLabel(/Show finished/).check();
     await page.keyboard.press("Escape");

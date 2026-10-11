@@ -3,7 +3,7 @@
 /** Big updates, daily messages, reactions, kudos, moods, birthdays, and deleting / restoring a brand. */
 import type { ActionResult } from "@/app/actions";
 import { deleteBrand, restoreBrand } from "@/server/admin";
-import { giveKudos, pinUpdate, postUpdate, removeKudos, removeUpdate, setBirthday, setMood, toggleReaction } from "@/server/fun";
+import { giveKudos, pinUpdate, postUpdate, removeKudos, removeUpdate, setBirthday, setMood, thankFor, toggleReaction } from "@/server/fun";
 import { setDailyMessages } from "@/server/settings";
 import { resetOrder, saveOrder } from "@/server/order";
 import { opt, run, str } from "./run";
@@ -11,7 +11,14 @@ import { opt, run, str } from "./run";
 export async function postUpdateAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
     await postUpdate(actor, { title: opt(fd, "title"), text: str(fd, "text"), emoji: opt(fd, "emoji"), color: opt(fd, "color"), pinned: fd.get("pinned") === "on", days: Number(str(fd, "days") || 3) });
-    return { message: "Posted for everyone. 📣", celebrate: "small" };
+    return { message: "Posted for everyone.", celebrate: "small" };
+  });
+}
+
+export async function thankAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const r = await thankFor(actor, { itemId: str(fd, "itemId"), toId: str(fd, "toId") });
+    return r.again ? `You already thanked ${r.name.split(" ")[0]} today.` : { message: `Thanks sent to ${r.name.split(" ")[0]}.`, celebrate: "small" };
   });
 }
 
@@ -37,7 +44,7 @@ export async function reactAction(kind: "announcement" | "chat" | "kudos", id: s
 export async function kudosAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
     await giveKudos(actor, { toId: str(fd, "toId"), emoji: str(fd, "emoji") || "🌟", text: str(fd, "text") });
-    return { message: "Kudos sent! 🌟", celebrate: "small" };
+    return { message: "Kudos sent!", celebrate: "small" };
   });
 }
 
@@ -59,7 +66,7 @@ export async function birthdayAction(_: ActionResult, fd: FormData): Promise<Act
     const m = str(fd, "month");
     const d = str(fd, "day");
     await setBirthday(actor, m && d ? `${m.padStart(2, "0")}-${d.padStart(2, "0")}` : null);
-    return m && d ? "Birthday saved 🎂" : "Birthday removed.";
+    return m && d ? "Birthday saved." : "Birthday removed.";
   });
 }
 

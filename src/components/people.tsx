@@ -2,7 +2,32 @@
 
 import { useOptimistic, useState, useTransition } from "react";
 import clsx from "clsx";
-import { Megaphone, Pin, PinOff, Plus, SmilePlus, Trash2 } from "lucide-react";
+import {
+  Annoyed,
+  BatteryLow,
+  CalendarDays,
+  Coffee,
+  Flame,
+  HandHeart,
+  Heart,
+  Laugh,
+  Megaphone,
+  Meh,
+  PartyPopper,
+  Pin,
+  PinOff,
+  Plus,
+  Rocket,
+  Smile,
+  SmilePlus,
+  Star,
+  Thermometer,
+  ThumbsUp,
+  Trash2,
+  TriangleAlert,
+  Trophy,
+  type LucideIcon,
+} from "lucide-react";
 import { kudosAction, moodAction, pinUpdateAction, postUpdateAction, reactAction, removeKudosAction, removeUpdateAction } from "@/app/people-actions";
 import { formatRelative } from "@/lib/dates";
 import { ActionForm, Modal, Popover, Submit, useToast } from "./client";
@@ -93,7 +118,24 @@ export function Reactions({ kind, id, initial, me, light, className }: { kind: "
 
 export type UpdateView = { id: string; title: string | null; text: string; emoji: string | null; color: string; pinned: boolean; createdAt: string; by: string; reactions: ReactionView[] };
 
-const UPDATE_EMOJIS = ["📣", "🎉", "🙏", "❤️", "🔥", "⭐", "📅", "☕", "⚠️", "💪", "🚀", "🏆"];
+/** A Big update's icon (stored as a short key; older updates stored an emoji, mapped here too). */
+const UPDATE_ICONS: { key: string; icon: LucideIcon; label: string; old: string }[] = [
+  { key: "news", icon: Megaphone, label: "News", old: "📣" },
+  { key: "meeting", icon: CalendarDays, label: "Meeting", old: "📅" },
+  { key: "party", icon: PartyPopper, label: "Celebration", old: "🎉" },
+  { key: "thanks", icon: HandHeart, label: "Thank you", old: "🙏" },
+  { key: "love", icon: Heart, label: "Love", old: "❤️" },
+  { key: "hot", icon: Flame, label: "Hot", old: "🔥" },
+  { key: "star", icon: Star, label: "Star", old: "⭐" },
+  { key: "coffee", icon: Coffee, label: "Break", old: "☕" },
+  { key: "alert", icon: TriangleAlert, label: "Heads up", old: "⚠️" },
+  { key: "strong", icon: ThumbsUp, label: "Well done", old: "💪" },
+  { key: "launch", icon: Rocket, label: "Launch", old: "🚀" },
+  { key: "win", icon: Trophy, label: "Win", old: "🏆" },
+];
+function updateIcon(v: string | null) {
+  return UPDATE_ICONS.find((x) => x.key === v || x.old === v) ?? UPDATE_ICONS[0];
+}
 const UPDATE_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#e0569b", "#ef4444", "#0b1639"];
 
 export function UpdatesBoard({ updates, canPost, me }: { updates: UpdateView[]; canPost: boolean; me: string }) {
@@ -130,13 +172,11 @@ export function UpdatesBoard({ updates, canPost, me }: { updates: UpdateView[]; 
 function UpdateCard({ u, canPost, me, big }: { u: UpdateView; canPost: boolean; me: string; big?: boolean }) {
   return (
     <article
-      className={clsx("relative overflow-hidden rounded-2xl text-white shadow-[0_18px_40px_-24px_rgb(11_22_57/0.7)]", big ? "p-6 sm:p-7" : "p-5")}
-      style={{ background: `linear-gradient(125deg, ${u.color} 0%, color-mix(in srgb, ${u.color} 62%, #0b1639) 100%)` }}
+      className={clsx("relative overflow-hidden rounded-2xl text-white", big ? "p-5 sm:p-6" : "p-5")}
+      style={{ background: `color-mix(in srgb, ${u.color} 88%, #0b1639)` }}
     >
-      <span aria-hidden className="pointer-events-none absolute -right-10 -top-14 size-48 rounded-full bg-white/10" />
-      <span aria-hidden className="pointer-events-none absolute -bottom-16 right-24 size-32 rounded-full bg-white/[0.06]" />
       <div className="relative flex items-start gap-4">
-        <span className={clsx("grid shrink-0 place-items-center rounded-2xl bg-white/15 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.2)]", big ? "size-14 text-[30px]" : "size-11 text-[22px]")}>{u.emoji || "📣"}</span>
+        <UpdateIcon v={u.emoji} big={big} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-white/75">
             {u.pinned && (
@@ -176,9 +216,18 @@ function UpdateCard({ u, canPost, me, big }: { u: UpdateView; canPost: boolean; 
   );
 }
 
+function UpdateIcon({ v, big }: { v: string | null; big?: boolean }) {
+  const u = updateIcon(v);
+  return (
+    <span className={clsx("grid shrink-0 place-items-center rounded-xl border border-white/25", big ? "size-12" : "size-10")}>
+      <u.icon className={big ? "size-6" : "size-5"} strokeWidth={1.8} />
+    </span>
+  );
+}
+
 export function PostUpdateButton({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
-  const [emoji, setEmoji] = useState("📣");
+  const [emoji, setEmoji] = useState("news");
   const [color, setColor] = useState(UPDATE_COLORS[0]);
   return (
     <>
@@ -190,9 +239,9 @@ export function PostUpdateButton({ className }: { className?: string }) {
           <input type="hidden" name="emoji" value={emoji} />
           <input type="hidden" name="color" value={color} />
           <div className="mb-3 flex flex-wrap gap-1.5">
-            {UPDATE_EMOJIS.map((e) => (
-              <button key={e} type="button" onClick={() => setEmoji(e)} aria-pressed={emoji === e} className={clsx("grid size-10 cursor-pointer place-items-center rounded-xl border text-[20px] transition", emoji === e ? "border-electric bg-electric-soft" : "border-line hover:bg-hover")}>
-                {e}
+            {UPDATE_ICONS.map(({ key, icon: Icon, label }) => (
+              <button key={key} type="button" onClick={() => setEmoji(key)} aria-pressed={emoji === key} title={label} aria-label={label} className={clsx("grid size-10 cursor-pointer place-items-center rounded-xl border transition", emoji === key ? "border-electric bg-electric-soft text-electric" : "border-line text-ink-2 hover:bg-hover")}>
+                <Icon className="size-[18px]" strokeWidth={1.8} />
               </button>
             ))}
           </div>
@@ -227,8 +276,8 @@ export function PostUpdateButton({ className }: { className?: string }) {
               <input type="checkbox" name="pinned" className="size-4 accent-[var(--color-electric)]" /> Pin to the top
             </label>
           </div>
-          <div className="mt-4 rounded-xl p-4 text-white" style={{ background: `linear-gradient(125deg, ${color} 0%, color-mix(in srgb, ${color} 62%, #0b1639) 100%)` }}>
-            <span className="text-[22px]">{emoji}</span> <span className="text-[13px] text-white/80">This is how it looks on the Overview. Everyone gets a notification.</span>
+          <div className="mt-4 flex items-center gap-3 rounded-xl p-4 text-white" style={{ background: `color-mix(in srgb, ${color} 88%, #0b1639)` }}>
+            <UpdateIcon v={emoji} /> <span className="text-[13px] text-white/85">This is how it looks on the Overview. Everyone gets a notification.</span>
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <button type="button" onClick={() => setOpen(false)} className={btn("secondary")}>
@@ -246,7 +295,17 @@ export function PostUpdateButton({ className }: { className?: string }) {
 /* Mood                                                                 */
 /* ------------------------------------------------------------------ */
 
-const MOOD_LABEL: Record<string, string> = { "🤩": "Amazing", "😄": "Happy", "🙂": "Good", "😐": "Okay", "😴": "Tired", "🤯": "Busy", "🤒": "Not well" };
+/** Moods are stored as the same values as before (MOODS in fun.ts) and shown as drawn faces with a word. */
+const MOOD: Record<string, { label: string; icon: LucideIcon; color: string }> = {
+  "🤩": { label: "Amazing", icon: Laugh, color: "#059669" },
+  "😄": { label: "Happy", icon: Smile, color: "#10b981" },
+  "🙂": { label: "Good", icon: ThumbsUp, color: "#3b82f6" },
+  "😐": { label: "Okay", icon: Meh, color: "#64748b" },
+  "😴": { label: "Tired", icon: BatteryLow, color: "#8b5cf6" },
+  "🤯": { label: "Busy", icon: Annoyed, color: "#d97706" },
+  "🤒": { label: "Not well", icon: Thermometer, color: "#e11d48" },
+};
+const MOOD_LABEL = Object.fromEntries(Object.entries(MOOD).map(([k, v]) => [k, v.label]));
 
 export function MoodCheck({ mine, team }: { mine: string | null; team: { userId: string; emoji: string; name: string }[] }) {
   const [cur, setCur] = useOptimistic(mine, (_: string | null, next: string | null) => next);
@@ -256,7 +315,9 @@ export function MoodCheck({ mine, team }: { mine: string | null; team: { userId:
       <div className="font-display text-[15px] font-bold">How are you today?</div>
       <div className="mt-0.5 text-[12.5px] text-muted">One tap. The team sees it for today only.</div>
       <div className="mt-3 flex flex-wrap gap-1.5">
-        {Object.keys(MOOD_LABEL).map((e) => (
+        {Object.keys(MOOD).map((e) => {
+          const M = MOOD[e];
+          return (
           <button
             key={e}
             type="button"
@@ -270,17 +331,19 @@ export function MoodCheck({ mine, team }: { mine: string | null; team: { userId:
                 await moodAction(next);
               })
             }
-            className={clsx("grid size-11 cursor-pointer place-items-center rounded-xl border text-[22px] transition hover:-translate-y-0.5", cur === e ? "border-electric bg-electric-soft shadow-[0_6px_16px_-8px_rgb(59_130_246/0.7)]" : "border-line bg-surface hover:bg-hover")}
+            className={clsx("flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-[12.5px] font-medium transition", cur === e ? "border-current" : "border-line bg-surface text-ink-2 hover:bg-hover")}
+            style={cur === e ? { color: M.color, background: `color-mix(in srgb, ${M.color} 10%, transparent)` } : undefined}
           >
-            {e}
+            <M.icon className="size-4" style={{ color: M.color }} strokeWidth={1.9} /> {M.label}
           </button>
-        ))}
+          );
+        })}
       </div>
       {team.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5 border-t border-line pt-3">
           {team.map((m) => (
             <span key={m.userId} className="inline-flex items-center gap-1.5 rounded-full bg-sunken py-0.5 pl-0.5 pr-2 text-[12.5px]" title={MOOD_LABEL[m.emoji]}>
-              <Avatar name={m.name} size={20} /> {m.name.split(" ")[0]} <span className="text-[15px]">{m.emoji}</span>
+              <Avatar name={m.name} size={20} /> {m.name.split(" ")[0]} <MoodMark v={m.emoji} />
             </span>
           ))}
         </div>
@@ -289,16 +352,20 @@ export function MoodCheck({ mine, team }: { mine: string | null; team: { userId:
   );
 }
 
+function MoodMark({ v }: { v: string }) {
+  const M = MOOD[v];
+  if (!M) return null;
+  return <M.icon className="size-3.5" style={{ color: M.color }} strokeWidth={2} aria-label={M.label} />;
+}
+
 /* ------------------------------------------------------------------ */
 /* Kudos                                                                */
 /* ------------------------------------------------------------------ */
 
 export type KudosView = { id: string; emoji: string; text: string; createdAt: string; fromId: string; toId: string; from: string; to: string; reactions: ReactionView[] };
-const KUDOS_EMOJIS = ["🌟", "🙌", "💙", "🏆", "🔥", "🎯", "🧠", "☕"];
 
 export function KudosWall({ kudos, people, meId, me, canModerate }: { kudos: KudosView[]; people: { id: string; name: string }[]; meId: string; me: string; canModerate: boolean }) {
   const [open, setOpen] = useState(false);
-  const [emoji, setEmoji] = useState(KUDOS_EMOJIS[0]);
   return (
     <div id="kudos" className="card scroll-mt-24 p-4">
       <div className="flex items-center justify-between gap-2">
@@ -307,17 +374,19 @@ export function KudosWall({ kudos, people, meId, me, canModerate }: { kudos: Kud
           <div className="text-[12.5px] text-muted">Say thank you where everyone can see it.</div>
         </div>
         <button type="button" onClick={() => setOpen(true)} className={btn("secondary", "sm")}>
-          <span className="text-[15px]">🌟</span> Give kudos
+          <HandHeart className="size-4" /> Give kudos
         </button>
       </div>
       {kudos.length === 0 ? (
-        <p className="mt-4 rounded-xl bg-sunken p-4 text-center text-[13px] text-muted">No kudos yet this week. Be the first to thank someone 💙</p>
+        <p className="mt-4 rounded-xl bg-sunken p-4 text-center text-[13px] text-muted">No kudos yet this week. Be the first to thank someone.</p>
       ) : (
         <ul className="mt-3 space-y-2.5">
           {kudos.slice(0, 6).map((k) => (
             <li key={k.id} className="rounded-xl border border-line bg-subtle p-3">
               <div className="flex items-start gap-2.5">
-                <span className="text-[22px] leading-none">{k.emoji}</span>
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#e0569b]/12 text-[#e0569b]">
+                  <HandHeart className="size-4" />
+                </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px]">
                     <b>{k.from}</b> <span className="text-muted">thanked</span> <b>{k.to}</b> <span className="text-[12px] text-faint">· {formatRelative(new Date(k.createdAt))}</span>
@@ -342,7 +411,6 @@ export function KudosWall({ kudos, people, meId, me, canModerate }: { kudos: Kud
       )}
       <Modal open={open} onClose={() => setOpen(false)} title="Give kudos" width={460}>
         <ActionForm action={kudosAction} onSuccess={() => setOpen(false)} resetOnSuccess>
-          <input type="hidden" name="emoji" value={emoji} />
           <label className="block text-[13px] font-medium text-ink-2">
             To
             <select name="toId" required className="field mt-1 w-full" defaultValue="">
@@ -358,13 +426,6 @@ export function KudosWall({ kudos, people, meId, me, canModerate }: { kudos: Kud
                 ))}
             </select>
           </label>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {KUDOS_EMOJIS.map((e) => (
-              <button key={e} type="button" onClick={() => setEmoji(e)} aria-pressed={emoji === e} className={clsx("grid size-10 cursor-pointer place-items-center rounded-xl border text-[20px]", emoji === e ? "border-electric bg-electric-soft" : "border-line hover:bg-hover")}>
-                {e}
-              </button>
-            ))}
-          </div>
           <label className="mt-3 block text-[13px] font-medium text-ink-2">
             For what?
             <textarea name="text" required rows={3} maxLength={280} className="field mt-1 w-full resize-y py-2" placeholder="Thank you for staying late on the Blissify reel!" />

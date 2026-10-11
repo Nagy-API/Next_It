@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import clsx from "clsx";
-import { ChevronRight, CircleCheck, MessageSquare, Paperclip, Timer, Zap } from "lucide-react";
+import { ChevronRight, CircleCheck, MessageSquare, Paperclip, Timer, Workflow } from "lucide-react";
 import { Attachments } from "@/components/attachments";
 import { Avatar } from "@/components/avatar";
 import { AssigneePicker, DuePicker, FieldContext, FieldEditor, PriorityPicker, QuickAdd, StatusPicker } from "@/components/spaces/controls";
@@ -191,9 +191,9 @@ export default async function TaskPage({ params }: PageProps<"/spaces/[id]/t/[ta
               {[...page.comments].reverse().map((c) =>
                 c.system ? (
                   <li key={c.id} className="flex gap-2 text-[12.5px] text-muted">
-                    {c.body.startsWith("⚡") ? <Zap className="mt-0.5 size-3.5 shrink-0 text-amber-500" /> : <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-line-strong" />}
+                    {/^(⚡|Automation “)/.test(c.body) ? <Workflow className="mt-0.5 size-3.5 shrink-0 text-muted" /> : <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-line-strong" />}
                     <span>
-                      {c.body} <span className="whitespace-nowrap text-faint">· {formatRelative(c.createdAt)}</span>
+                      {c.body.replace(/^⚡\s*/, "")} <span className="whitespace-nowrap text-faint">· {formatRelative(c.createdAt)}</span>
                     </span>
                   </li>
                 ) : (

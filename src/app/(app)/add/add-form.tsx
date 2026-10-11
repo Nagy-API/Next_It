@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import { ClipboardPaste, Plus, Trash2, Wand2 } from "lucide-react";
+import { Ban, CalendarDays, Clapperboard, ClipboardPaste, Clock, Link2, ListPlus, Plus, Trash2 } from "lucide-react";
 import { createItemsAction } from "@/app/actions";
 import { ActionForm, Submit } from "@/components/client";
 import { TypeIcon, btn } from "@/components/ui";
@@ -195,7 +195,7 @@ export function AddForm({
                 />
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <button type="button" onClick={applyPaste} disabled={!preview.length} className={btn("primary", "sm")}>
-                    <Wand2 className="size-4" /> Add {preview.length} item{preview.length === 1 ? "" : "s"} to the list below
+                    <ListPlus className="size-4" /> Add {preview.length} item{preview.length === 1 ? "" : "s"} to the list below
                   </button>
                   <button type="button" onClick={() => setPasteText(example)} className={btn("secondary", "sm")}>
                     Try the example
@@ -214,19 +214,19 @@ export function AddForm({
                 </p>
                 <ul className="mt-1.5 space-y-1">
                   <li>
-                    📅 <b>Date</b>: <code className="rounded bg-canvas px-1">11/10</code>, <code className="rounded bg-canvas px-1">11 Oct</code> (day first)
+                    <CalendarDays className="mr-1 inline size-3.5 -translate-y-px text-muted" /> <b>Date</b>: <code className="rounded bg-canvas px-1">11/10</code>, <code className="rounded bg-canvas px-1">11 Oct</code> (day first)
                   </li>
                   <li>
-                    ⏰ <b>Time</b>: <code className="rounded bg-canvas px-1">19:00</code> or <code className="rounded bg-canvas px-1">7pm</code>
+                    <Clock className="mr-1 inline size-3.5 -translate-y-px text-muted" /> <b>Time</b>: <code className="rounded bg-canvas px-1">19:00</code> or <code className="rounded bg-canvas px-1">7pm</code>
                   </li>
                   <li>
-                    🔗 <b>Link</b> (Canva, Google Doc, Drive…): paste it anywhere on the line
+                    <Link2 className="mr-1 inline size-3.5 -translate-y-px text-muted" /> <b>Link</b> (Canva, Google Doc, Drive…): paste it anywhere on the line
                   </li>
                   <li>
-                    🎬 <b>Type</b>: the words Reel, Post, Carousel or Story
+                    <Clapperboard className="mr-1 inline size-3.5 -translate-y-px text-muted" /> <b>Type</b>: the words Reel, Post, Carousel or Story
                   </li>
                   <li>
-                    🚫 Lines that say <code className="rounded bg-canvas px-1">OFF</code> are skipped
+                    <Ban className="mr-1 inline size-3.5 -translate-y-px text-muted" /> Lines that say <code className="rounded bg-canvas px-1">OFF</code> are skipped
                   </li>
                 </ul>
                 <p className="mt-1.5 text-muted">You&rsquo;ll see exactly what was understood before anything is saved.</p>

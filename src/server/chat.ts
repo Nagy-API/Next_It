@@ -1,9 +1,10 @@
 /** Team chat: one shared room, @mentions notify people. */
 import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { chatMessages, contentItems, users } from "@/db/schema";
+import { attachments, chatMessages, contentItems, users } from "@/db/schema";
 import { isManager } from "@/domain/permissions";
 import type { Actor } from "./activity";
+import { attachmentsFor, linkPendingTx, type AttachmentView } from "./attachments";
 import { assert } from "./errors";
 import { notify } from "./notify";
 
@@ -27,9 +28,10 @@ export function findMentions(body: string, people: { id: string; name: string }[
   return [...hits];
 }
 
-export async function postChatMessage(actor: Actor, input: { body: string; itemId?: string | null; now?: Date }) {
+export async function postChatMessage(actor: Actor, input: { body: string; itemId?: string | null; attachmentIds?: string[]; now?: Date }) {
   const body = input.body.trim();
-  assert(body, "Write a message.");
+  const fileIds = (input.attachmentIds ?? []).slice(0, 10);
+  assert(body || fileIds.length, "Write a message.");
   assert(body.length <= 4000, "That message is too long.");
   const now = input.now ?? new Date();
   typing.delete(actor.id);
@@ -37,12 +39,14 @@ export async function postChatMessage(actor: Actor, input: { body: string; itemI
     const people = await tx.select({ id: users.id, name: users.name }).from(users).where(eq(users.isActive, true));
     const mentions = findMentions(body, people).filter((id) => id !== actor.id);
     const [m] = await tx.insert(chatMessages).values({ authorId: actor.id, body, mentions, itemId: input.itemId || null, createdAt: now }).returning();
+    // Files picked in the composer were uploaded first (waiting, only visible to their owner); now they belong to the message.
+    if (fileIds.length) await linkPendingTx(tx, actor, fileIds, [{ chatMessageId: m.id }]);
     await tx.update(users).set({ chatReadAt: now }).where(eq(users.id, actor.id));
     if (mentions.length) {
       await notify(tx, actor, mentions, {
         kind: "mention",
         title: `${actor.name} mentioned you in Team chat`,
-        body: body.length > 140 ? `${body.slice(0, 139)}…` : body,
+        body: body ? (body.length > 140 ? `${body.slice(0, 139)}…` : body) : "Sent a file",
         href: `/chat#m-${m.id}`,
         at: now,
       });
@@ -55,8 +59,15 @@ export async function deleteChatMessage(actor: Actor, messageId: string) {
   const [m] = await db.select().from(chatMessages).where(eq(chatMessages.id, messageId));
   assert(m && !m.deletedAt, "Message not found.");
   assert(m.authorId === actor.id || isManager(actor), "You can only delete your own messages.");
-  await db.update(chatMessages).set({ deletedAt: new Date() }).where(eq(chatMessages.id, messageId));
+  const at = new Date();
+  await db.transaction(async (tx) => {
+    await tx.update(chatMessages).set({ deletedAt: at }).where(eq(chatMessages.id, messageId));
+    // Its files go with it (they stop opening for everyone).
+    await tx.update(attachments).set({ deletedAt: at }).where(and(eq(attachments.chatMessageId, messageId), isNull(attachments.deletedAt)));
+  });
 }
+
+export type ChatFile = Omit<AttachmentView, "createdAt">;
 
 export async function getChatMessages(opts: { after?: Date; before?: Date; limit?: number } = {}) {
   const rows = await db
@@ -82,7 +93,9 @@ export async function getChatMessages(opts: { after?: Date; before?: Date; limit
     )
     .orderBy(desc(chatMessages.createdAt))
     .limit(opts.limit ?? 80);
-  return rows.reverse();
+  const files = await attachmentsFor({ chatMessageIds: rows.map((r) => r.id) });
+  const clean = (f: AttachmentView): ChatFile => ({ id: f.id, kind: f.kind, name: f.name, href: f.href, mime: f.mime, size: f.size, createdById: f.createdById, commentId: f.commentId });
+  return rows.reverse().map((r) => ({ ...r, files: (files.get(r.id) ?? []).map(clean) }));
 }
 
 export async function markChatRead(userId: string) {

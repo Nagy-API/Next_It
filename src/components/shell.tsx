@@ -16,11 +16,13 @@ import {
   Home,
   KeyRound,
   LayoutGrid,
+  ListChecks,
   Lock,
   LogOut,
   Menu,
   MessagesSquare,
   MoreHorizontal,
+  NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
   PenLine,
@@ -28,13 +30,15 @@ import {
   Presentation,
   Search,
   Settings,
-  Sparkles,
+  Sun,
+  Sunset,
+  CloudSun,
+  Moon,
   Tags,
   Trash2,
   UserRound,
   Users,
   X,
-  Zap,
 } from "lucide-react";
 import { GiveTaskButton } from "./tasks";
 import { ManagerChip } from "./avatar";
@@ -47,6 +51,7 @@ import { NavTrail } from "./back-link";
 import { ThemeToggle } from "./theme-toggle";
 import { TypedDelete } from "./danger";
 import { Popover } from "./client";
+import { NotebookHost, openNotebook } from "./notebook";
 import { Avatar, BrandMark } from "./ui";
 import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, type SidebarPref } from "@/lib/sidebar";
 
@@ -65,7 +70,8 @@ export type NavFlags = {
   exportPlans: boolean;
   modules: { content: boolean; projects: boolean; spaces: boolean; quick: boolean; chat: boolean };
 };
-export type ShellLook = { name: string; logos: { wordmark: string; mark: string; watermark: string }; watermark: "logo" | "image" | "none"; watermarkOpacity: number; customWordmark: boolean };
+type Watermark = { src: string; opacity: number } | null;
+export type ShellLook = { name: string; logos: { wordmark: string; mark: string }; customWordmark: boolean; light: Watermark; dark: Watermark };
 const PAGE_ICON = { doc: FileText, whiteboard: Presentation, sheet: FileSpreadsheet } as const;
 
 export function Shell({
@@ -85,7 +91,7 @@ export function Shell({
   sidebar,
   children,
 }: {
-  user: { name: string; title: string | null; isAdmin: boolean; username: string; manager: boolean; roleLabel: string | null; emoji: string };
+  user: { name: string; title: string | null; isAdmin: boolean; username: string; manager: boolean; roleLabel: string | null };
   brands: NavBrand[];
   spaces: NavSpace[];
   nav: NavFlags;
@@ -198,7 +204,17 @@ export function Shell({
             <NavItem href="/my-work" icon={UserRound} label="My tasks" active={pathname.startsWith("/my-work")} count={myCount} />
             <NavItem href="/overview" icon={Home} label="Overview" active={pathname.startsWith("/overview") || pathname.startsWith("/work")} />
             {nav.modules.content && <NavItem href="/shoots" icon={Camera} label="Shoot schedule" active={pathname.startsWith("/shoots")} count={shootsToday} hint="shoots today" />}
-            {nav.modules.content && nav.modules.quick && <NavItem href="/quick" icon={Zap} label="Quick update" active={pathname.startsWith("/quick")} />}
+            {nav.modules.content && nav.modules.quick && <NavItem href="/quick" icon={ListChecks} label="Quick update" active={pathname.startsWith("/quick")} />}
+            <button
+              type="button"
+              onClick={openNotebook}
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-[7px] text-left text-[14px] font-medium text-white/80 transition-colors hover:bg-white/[0.06] hover:text-white"
+              title="Only you can see it (shortcut N)"
+            >
+              <NotebookPen className="size-[18px] shrink-0" strokeWidth={1.9} />
+              <span className="flex-1 truncate">My notebook</span>
+              <Lock className="size-3.5 text-white/35" />
+            </button>
             {nav.modules.chat && <NavItem href="/chat" icon={MessagesSquare} label="Team chat" active={pathname.startsWith("/chat")} count={pathname.startsWith("/chat") ? 0 : chatUnread} highlight />}
           </div>
           {(nav.dashboard || nav.reports || nav.activity) && (
@@ -246,7 +262,7 @@ export function Shell({
               )}
               {!spaces.length && (
                 <Link href="/spaces/new" className="block rounded-lg border border-dashed border-white/15 px-3 py-2 text-[12.5px] text-white/55 hover:border-white/30 hover:text-white">
-                  <Sparkles className="mr-1 inline size-3.5" /> Build your first space →
+                  <Plus className="mr-1 inline size-3.5 -translate-y-px" /> Build your first space
                 </Link>
               )}
             </>
@@ -322,10 +338,10 @@ export function Shell({
           )}
           <div className="min-w-0 flex-1">
             <div className="truncate font-display text-[15.5px] font-bold leading-tight text-ink sm:text-[17px]">
-              {greeting}, {user.name.split(" ")[0]} <span aria-hidden>{user.emoji}</span>
+              <DayIcon greeting={greeting} />
+              {greeting}, {user.name.split(" ")[0]}
             </div>
             <div className="hidden truncate text-[13px] leading-snug text-muted sm:block" title={dailyLine}>
-              <Sparkles className="mr-1 inline size-3.5 -translate-y-px text-electric" aria-hidden />
               {dailyLine}
             </div>
           </div>
@@ -339,12 +355,19 @@ export function Shell({
       </header>
 
       {/* The company's mark, very faint, with a soft shadow — brand presence without noise (Settings → Workspace). */}
-      {look.watermark !== "none" && look.watermarkOpacity > 0 && (
-        <div aria-hidden className="pointer-events-none fixed -right-24 top-24 -z-0 hidden size-[420px] lg:block" style={{ opacity: look.watermarkOpacity / 100 }}>
+      {look.light && (
+        <div aria-hidden className="pointer-events-none fixed -right-24 top-24 -z-0 hidden size-[420px] lg:block dark:lg:hidden" style={{ opacity: look.light.opacity / 100 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={look.logos.watermark} alt="" className="size-full object-contain drop-shadow-[0_18px_30px_rgba(11,22,57,0.5)]" />
+          <img src={look.light.src} alt="" className="size-full object-contain drop-shadow-[0_18px_30px_rgba(11,22,57,0.5)]" />
         </div>
       )}
+      {look.dark && (
+        <div aria-hidden className="pointer-events-none fixed -right-24 top-24 -z-0 hidden size-[420px] dark:lg:block" style={{ opacity: look.dark.opacity / 100 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={look.dark.src} alt="" className="size-full object-contain" />
+        </div>
+      )}
+      <NotebookHost />
       <main className={clsx("relative z-[1] mx-auto overflow-x-clip px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-16", collapsed ? "max-w-[1560px]" : "max-w-[1320px]")}>{children}</main>
 
       {del && (
@@ -634,6 +657,12 @@ function NavItem({ href, icon: Icon, label, active, count, highlight, hint }: { 
   );
 }
 
+/** A small sun, sunset or moon next to the greeting (Cairo time, from the greeting itself). */
+function DayIcon({ greeting }: { greeting: string }) {
+  const [Icon, color] = /morning/i.test(greeting) ? [Sun, "text-amber-500"] : /afternoon/i.test(greeting) ? [CloudSun, "text-amber-500"] : /evening/i.test(greeting) ? [Sunset, "text-orange-500"] : [Moon, "text-indigo-400"];
+  return <Icon className={clsx("mr-1.5 inline size-[18px] -translate-y-px", color)} strokeWidth={2} aria-hidden />;
+}
+
 function UserMenu({ user }: { user: { name: string; title: string | null; username: string; manager: boolean; roleLabel: string | null } }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -659,6 +688,9 @@ function UserMenu({ user }: { user: { name: string; title: string | null; userna
               <ManagerChip role={user.roleLabel} />
             </div>
           )}
+          <button type="button" onClick={() => (setOpen(false), openNotebook())} className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[14px] hover:bg-hover">
+            <NotebookPen className="size-4 text-muted" /> My notebook
+          </button>
           <Link href="/settings/account" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 py-2 text-[14px] hover:bg-hover">
             <Camera className="size-4 text-muted" /> My photo & birthday
           </Link>

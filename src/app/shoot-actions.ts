@@ -34,7 +34,7 @@ export async function saveShootAction(_: ActionResult, fd: FormData): Promise<Ac
       return "Shoot updated.";
     }
     await createShoot(actor, slot(fd));
-    return { message: "Shoot added to the schedule. 🎬", celebrate: "small" };
+    return { message: "Shoot added to the schedule.", celebrate: "small" };
   });
 }
 

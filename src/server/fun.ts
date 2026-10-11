@@ -4,7 +4,7 @@
  */
 import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { announcements, kudos, moods, reactions, stageCompletions, users } from "@/db/schema";
+import { announcements, contentItems, kudos, moods, notifications, reactions, stageCompletions, tasks, users, workSessions } from "@/db/schema";
 import { can } from "@/domain/permissions";
 import { dailyLine } from "@/lib/cheer";
 import { addDays, cairoDate, startOfCairoDay, todayISO, weekRange } from "@/lib/dates";
@@ -42,7 +42,7 @@ export async function postUpdate(actor: Actor, input: { title?: string | null; t
       .values({
         title: input.title?.trim().slice(0, 120) || null,
         text,
-        emoji: input.emoji?.trim().slice(0, 8) || null,
+        emoji: input.emoji?.trim().slice(0, 12) || null,
         color: input.color && HEX.test(input.color) ? input.color : "#3b82f6",
         pinned: !!input.pinned,
         createdById: actor.id,
@@ -51,7 +51,7 @@ export async function postUpdate(actor: Actor, input: { title?: string | null; t
       })
       .returning();
     const everyone = await tx.select({ id: users.id }).from(users).where(eq(users.isActive, true));
-    await notify(tx, actor, everyone.map((u) => u.id), { kind: "task", title: `${a.emoji ?? "📣"} ${a.title ?? "Big update"}`, body: text.slice(0, 140), href: "/overview#updates", at: now });
+    await notify(tx, actor, everyone.map((u) => u.id), { kind: "task", title: a.title ?? "Big update", body: text.slice(0, 140), href: "/overview#updates", at: now });
     await logActivity(tx, actor, { action: "update_posted", summary: `${actor.name} posted a Big update: “${a.title ?? text.slice(0, 80)}”.` });
     return a;
   });
@@ -124,12 +124,12 @@ export async function toggleReaction(actor: Actor, kind: Kind, targetId: string,
 export async function giveKudos(actor: Actor, input: { toId: string; emoji: string; text: string }) {
   const text = input.text.trim().slice(0, 280);
   assert(text, "Say what you're thankful for.");
-  assert(input.toId !== actor.id, "Kudos are for someone else 😊");
+  assert(input.toId !== actor.id, "Kudos are for someone else.");
   return db.transaction(async (tx) => {
     const [to] = await tx.select({ id: users.id, name: users.name }).from(users).where(and(eq(users.id, input.toId), eq(users.isActive, true)));
     assert(to, "Pick a teammate.");
     const [k] = await tx.insert(kudos).values({ fromId: actor.id, toId: to.id, emoji: input.emoji?.slice(0, 8) || "🌟", text }).returning();
-    await notify(tx, actor, [to.id], { kind: "mention", title: `${k.emoji} ${actor.name} thanked you`, body: text, href: "/overview#kudos" });
+    await notify(tx, actor, [to.id], { kind: "mention", title: `${actor.name} thanked you`, body: text, href: "/overview#kudos" });
     return k;
   });
 }
@@ -206,6 +206,67 @@ export async function starsOfTheWeek(today = todayISO()) {
     .filter((r) => r.active && r.onTime > 0)
     .sort((a, b) => b.onTime - a.onTime || b.done - a.done)
     .slice(0, 3);
+}
+
+/* ------------------------------ Thank you ----------------------------- */
+
+/** "Thanks!" to the person who handed me the work: a private notification (once per item, person and day). */
+export async function thankFor(actor: Actor, input: { itemId: string; toId: string }, now = new Date()) {
+  assert(/^[0-9a-f-]{36}$/i.test(input.itemId) && /^[0-9a-f-]{36}$/i.test(input.toId), "Not found.");
+  assert(input.toId !== actor.id, "That's you!");
+  return db.transaction(async (tx) => {
+    const [to] = await tx.select({ id: users.id, name: users.name }).from(users).where(and(eq(users.id, input.toId), eq(users.isActive, true)));
+    const [item] = await tx.select({ id: contentItems.id, title: contentItems.title }).from(contentItems).where(eq(contentItems.id, input.itemId));
+    assert(to && item, "Not found.");
+    const title = `${actor.name} says thank you`;
+    const [already] = await tx
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(and(eq(notifications.userId, to.id), eq(notifications.itemId, item.id), eq(notifications.title, title), gte(notifications.createdAt, startOfCairoDay(todayISO(now)))));
+    if (already) return { name: to.name, again: true };
+    await notify(tx, actor, [to.id], { kind: "mention", title, body: `For handing over “${item.title}”.`, itemId: item.id, at: now });
+    await logActivity(tx, actor, { action: "thanked", itemId: item.id, summary: `${actor.name} thanked ${to.name} for “${item.title}”.` });
+    return { name: to.name, again: false };
+  });
+}
+
+/* ------------------------------ My day ----------------------------- */
+
+/** Today for one person: steps finished, to-dos done, time on the clock, and how many working days in a row they finished something. */
+export async function myDay(userId: string, now = new Date()) {
+  const today = todayISO(now);
+  const start = startOfCairoDay(today);
+  const [steps] = await db
+    .select({ n: sql<number>`count(*)::int`, onTime: sql<number>`count(*) filter (where ${stageCompletions.lateDays} <= 0 or ${stageCompletions.excused})::int`, first: sql<Date | null>`min(${stageCompletions.completedAt})` })
+    .from(stageCompletions)
+    .where(and(eq(stageCompletions.creditedUserId, userId), gte(stageCompletions.completedAt, start)));
+  const [todos] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(tasks)
+    .where(and(eq(tasks.assigneeId, userId), isNull(tasks.deletedAt), gte(tasks.doneAt, start)));
+  const sessions = await db
+    .select({ startedAt: workSessions.startedAt, endedAt: workSessions.endedAt })
+    .from(workSessions)
+    .where(and(eq(workSessions.userId, userId), or(isNull(workSessions.endedAt), gt(workSessions.endedAt, start))));
+  const workedMs = sessions.reduce((sum, w) => sum + Math.max(0, Math.min((w.endedAt ?? now).getTime(), now.getTime()) - Math.max(w.startedAt.getTime(), start.getTime())), 0);
+  // The streak: working days (Friday is the weekend) with at least one finished step, counting back from today.
+  const since = startOfCairoDay(addDays(today, -90));
+  const days = new Set(
+    (
+      await db
+        .select({ day: sql<string>`to_char(${stageCompletions.completedAt} at time zone 'Africa/Cairo', 'YYYY-MM-DD')` })
+        .from(stageCompletions)
+        .where(and(eq(stageCompletions.creditedUserId, userId), gte(stageCompletions.completedAt, since)))
+    ).map((r) => r.day),
+  );
+  let streak = 0;
+  let d = days.has(today) ? today : addDays(today, -1);
+  for (let i = 0; i < 90; i++, d = addDays(d, -1)) {
+    if (new Date(`${d}T12:00:00Z`).getUTCDay() === 5) continue;
+    if (!days.has(d)) break;
+    streak++;
+  }
+  return { steps: steps?.n ?? 0, onTime: steps?.onTime ?? 0, todos: todos?.n ?? 0, workedMs, streak };
 }
 
 export function cairoToday(now = new Date()) {

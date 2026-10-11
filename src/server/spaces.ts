@@ -959,8 +959,8 @@ async function fire(tx: Tx, actor: Actor, space: Space, ev: Event, now: Date, de
     const [fresh] = await tx.select().from(workTasks).where(eq(workTasks.id, ev.task.id));
     if (!fresh || fresh.archivedAt) continue;
     let task = fresh;
-    const by = `⚡ ${r.name}`;
-    await sysNote(tx, task.id, `⚡ Automation “${r.name}” ran.`, null, now);
+    const by = `Automation “${r.name}”`;
+    await sysNote(tx, task.id, `Automation “${r.name}” ran.`, null, now);
     for (const a of r.actions as Action[]) task = await runAction(tx, actor, space, task, a, now, depth + 1, by);
     await tx.update(automations).set({ runs: sql`${automations.runs} + 1`, lastRunAt: now }).where(eq(automations.id, r.id));
   }

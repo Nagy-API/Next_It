@@ -39,6 +39,8 @@ export type Person = {
   avatarUpdatedAt: Date | null;
   /** Shown instead of "Manager" (e.g. "IT"). */
   roleLabel: string | null;
+  /** "MM-DD" or null. */
+  birthday: string | null;
 };
 
 export async function getPeople(opts: { includeInactive?: boolean } = {}): Promise<Person[]> {
@@ -54,6 +56,7 @@ export async function getPeople(opts: { includeInactive?: boolean } = {}): Promi
       isAdmin: users.isAdmin,
       avatarUpdatedAt: users.avatarUpdatedAt,
       roleLabel: users.roleLabel,
+      birthday: users.birthday,
     })
     .from(users)
     .where(opts.includeInactive ? undefined : eq(users.isActive, true))

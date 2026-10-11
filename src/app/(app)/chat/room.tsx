@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { AtSign, MessagesSquare, SendHorizontal, Smile, SmilePlus, Trash2 } from "lucide-react";
+import { AtSign, Loader2, MessagesSquare, Paperclip, SendHorizontal, Smile, SmilePlus, Trash2, X } from "lucide-react";
 import { chatDeleteAction, chatPostAction } from "@/app/actions";
 import { reactAction } from "@/app/people-actions";
+import { ACCEPT, iconFor, sizeText, upload } from "@/components/attachments";
 import { Avatar } from "@/components/avatar";
 import { Popover, useToast } from "@/components/client";
 import { REACTION_SET, applyReaction, type ReactionView } from "@/components/people";
@@ -19,18 +20,62 @@ type Msg = {
   mentions: string[];
   itemId: string | null;
   itemTitle: string | null;
+  files?: ChatFile[];
 };
-type P = { id: string; name: string; title: string | null; seenAt: string | null };
+type ChatFile = {
+  id: string;
+  kind: "file" | "link";
+  name: string;
+  href: string;
+  mime: string | null;
+  size: number | null;
+};
+type Picked = {
+  key: string;
+  name: string;
+  size: number;
+  mime: string;
+  id?: string;
+  preview?: string;
+  failed?: boolean;
+};
+type P = {
+  id: string;
+  name: string;
+  title: string | null;
+  seenAt: string | null;
+};
 
-const dayFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", weekday: "long", day: "numeric", month: "long" });
-const timeFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "2-digit", minute: "2-digit" });
+const dayFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Africa/Cairo",
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+const timeFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Africa/Cairo",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 /** The emoji button: the faces and signs a team actually uses, in a few groups. */
 const EMOJI_GROUPS: { label: string; list: string[] }[] = [
-  { label: "Faces", list: ["😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘", "😎", "🤩", "🥳", "😇", "🙂", "😉", "😅", "😬", "🤔", "🤨", "😐", "😴", "😮", "😱", "😭", "😢", "😡", "🤯", "🤒", "🫡", "🤗", "🙈"] },
-  { label: "Hands", list: ["👍", "👎", "👏", "🙌", "🙏", "💪", "👌", "✌️", "🤞", "👋", "🤝", "✋", "👀", "🫶"] },
-  { label: "Hearts", list: ["❤️", "💙", "💜", "💚", "💛", "🧡", "🖤", "🤍", "💔", "💯"] },
-  { label: "Work", list: ["🔥", "⭐", "✨", "🎉", "🎊", "🚀", "✅", "❌", "⚠️", "⏰", "📅", "📌", "📣", "💡", "🎬", "📸", "🎨", "✍️", "📱", "☕", "🍕", "🏆", "🎯", "💰"] },
+  {
+    label: "Faces",
+    list: ["😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘", "😎", "🤩", "🥳", "😇", "🙂", "😉", "😅", "😬", "🤔", "🤨", "😐", "😴", "😮", "😱", "😭", "😢", "😡", "🤯", "🤒", "🫡", "🤗", "🙈"],
+  },
+  {
+    label: "Hands",
+    list: ["👍", "👎", "👏", "🙌", "🙏", "💪", "👌", "✌️", "🤞", "👋", "🤝", "✋", "👀", "🫶"],
+  },
+  {
+    label: "Hearts",
+    list: ["❤️", "💙", "💜", "💚", "💛", "🧡", "🖤", "🤍", "💔", "💯"],
+  },
+  {
+    label: "Work",
+    list: ["🔥", "⭐", "✨", "🎉", "🎊", "🚀", "✅", "❌", "⚠️", "⏰", "📅", "📌", "📣", "💡", "🎬", "📸", "🎨", "✍️", "📱", "☕", "🍕", "🏆", "🎯", "💰"],
+  },
 ];
 
 function seenText(iso: string | null) {
@@ -41,6 +86,40 @@ function seenText(iso: string | null) {
   if (h < 24) return `seen ${h} h ago`;
   const d = Math.round(h / 24);
   return `seen ${d} day${d > 1 ? "s" : ""} ago`;
+}
+
+/** Pictures show in the message; other files are a chip that opens or downloads. */
+function Files({ files, mine }: { files: ChatFile[]; mine: boolean }) {
+  const pics = files.filter((f) => f.kind === "file" && f.mime?.startsWith("image/") && !/heic/.test(f.mime));
+  const rest = files.filter((f) => !pics.includes(f));
+  return (
+    <div className={clsx("flex flex-col gap-1.5", mine ? "items-end" : "items-start")}>
+      {pics.length > 0 && (
+        <div className={clsx("grid gap-1.5", pics.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+          {pics.map((f) => (
+            <a key={f.id} href={f.href} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl border border-line bg-subtle">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={f.href} alt={f.name} loading="lazy" className={clsx("block object-cover", pics.length > 1 ? "size-36 sm:size-40" : "max-h-72 w-auto max-w-[min(320px,70vw)]")} />
+            </a>
+          ))}
+        </div>
+      )}
+      {rest.map((f) => {
+        const Icon = iconFor(f);
+        return (
+          <a key={f.id} href={f.href} target="_blank" rel="noopener noreferrer" className="flex max-w-[300px] items-center gap-2.5 rounded-xl border border-line bg-surface px-3 py-2 text-left hover:border-line-strong">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-subtle text-muted">
+              <Icon className="size-[18px]" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-[13px] font-medium text-ink">{f.name}</span>
+              <span className="block text-[11.5px] text-faint">{f.kind === "link" ? "Link" : sizeText(f.size) || "File"}</span>
+            </span>
+          </a>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Highlight @mentions and turn links into links. */
@@ -104,15 +183,35 @@ export function ChatRoom({
   const stick = useRef(true);
   const lastTyping = useRef(0);
   const pending = useRef(new Set<string>());
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [picked, setPicked] = useState<Picked[]>([]);
   const toast = useToast();
+  const uploading = picked.some((p) => !p.id && !p.failed);
 
   const poll = useCallback(async () => {
     const last = msgs.at(-1)?.createdAt;
     try {
       const r = await fetch(`/api/chat${last ? `?after=${encodeURIComponent(last)}` : ""}`, { cache: "no-store" });
       if (!r.ok) return;
-      const data = (await r.json()) as { messages: Msg[]; online: string[]; typing: string[]; reactions: Record<string, ReactionView[]> };
-      if (data.messages.length) setMsgs((m) => [...m, ...data.messages.filter((x) => !m.some((y) => y.id === x.id))]);
+      const data = (await r.json()) as {
+        messages: Msg[];
+        online: string[];
+        typing: string[];
+        reactions: Record<string, ReactionView[]>;
+        recent?: { since: string | null; ids: string[] };
+      };
+      setMsgs((m) => {
+        let next = data.messages.length ? [...m, ...data.messages.filter((x) => !m.some((y) => y.id === x.id))] : m;
+        // Messages someone deleted disappear here too.
+        const rec = data.recent;
+        if (rec) {
+          const keep = new Set([...rec.ids, ...data.messages.map((x) => x.id)]);
+          // No recent messages at all = everything was deleted.
+          const since = rec.since ? new Date(rec.since).getTime() : -Infinity;
+          if (next.some((x) => new Date(x.createdAt).getTime() >= since && !keep.has(x.id))) next = next.filter((x) => new Date(x.createdAt).getTime() < since || keep.has(x.id));
+        }
+        return next;
+      });
       setOnline(data.online);
       setTyping(data.typing);
       // Don't overwrite a reaction I just tapped while the server is still saving it.
@@ -142,7 +241,15 @@ export function ChatRoom({
   const candidates = useMemo(() => {
     if (!mention) return [];
     const q = mention.q.toLowerCase();
-    const list = [{ id: "everyone", name: "everyone", title: "Everyone in the team", seenAt: null }, ...people.filter((p) => p.id !== me.id)];
+    const list = [
+      {
+        id: "everyone",
+        name: "everyone",
+        title: "Everyone in the team",
+        seenAt: null,
+      },
+      ...people.filter((p) => p.id !== me.id),
+    ];
     return list.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 6);
   }, [mention, people, me.id]);
 
@@ -189,15 +296,53 @@ export function ChatRoom({
     });
   };
 
+  const addFiles = (list: FileList | File[] | null) => {
+    const files = Array.from(list ?? []).slice(0, 10 - picked.length);
+    if (!files.length) return;
+    const fresh: Picked[] = files.map((f) => ({
+      key: `${Date.now()}-${Math.random()}`,
+      name: f.name || "Pasted image",
+      size: f.size,
+      mime: f.type,
+      preview: f.type.startsWith("image/") ? URL.createObjectURL(f) : undefined,
+    }));
+    setPicked((p) => [...p, ...fresh]);
+    files.forEach(async (f, i) => {
+      const key = fresh[i].key;
+      try {
+        const r = await upload(f, {});
+        setPicked((p) => p.map((x) => (x.key === key ? { ...x, id: r.id } : x)));
+      } catch (e) {
+        toast({
+          kind: "error",
+          text: e instanceof Error ? e.message : "The upload didn't work.",
+        });
+        setPicked((p) => p.filter((x) => x.key !== key));
+      }
+    });
+    inputRef.current?.focus();
+  };
+
+  const unpick = (key: string) =>
+    setPicked((p) => {
+      const x = p.find((y) => y.key === key);
+      if (x?.preview) URL.revokeObjectURL(x.preview);
+      return p.filter((y) => y.key !== key);
+    });
+
   const send = async () => {
     const body = text.trim();
-    if (!body || sending) return;
+    const ids = picked.filter((p) => p.id).map((p) => p.id!);
+    if ((!body && !ids.length) || sending || uploading) return;
     setSending(true);
     const fd = new FormData();
     fd.set("body", body);
+    for (const id of ids) fd.append("attachmentId", id);
     const r = await chatPostAction(null, fd);
     setSending(false);
     if (r && !r.ok) return toast({ kind: "error", text: r.error });
+    for (const p of picked) if (p.preview) URL.revokeObjectURL(p.preview);
+    setPicked([]);
     setText("");
     lastTyping.current = 0;
     stick.current = true;
@@ -214,7 +359,10 @@ export function ChatRoom({
 
   const react = async (id: string, emoji: string) => {
     pending.current.add(id);
-    setReactions((all) => ({ ...all, [id]: applyReaction(all[id] ?? [], emoji, me.name) }));
+    setReactions((all) => ({
+      ...all,
+      [id]: applyReaction(all[id] ?? [], emoji, me.name),
+    }));
     const r = await reactAction("chat", id, emoji);
     pending.current.delete(id);
     if (r && !r.ok) toast({ kind: "error", text: r.error });
@@ -263,7 +411,7 @@ export function ChatRoom({
           {msgs.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center text-center text-muted">
               <MessagesSquare className="mb-2 size-8 text-electric" />
-              <div className="font-display text-[16px] font-bold text-ink">Say hi to the team 👋</div>
+              <div className="font-display text-[16px] font-bold text-ink">Say hi to the team</div>
               <div className="text-[13px]">Messages here are seen by everyone.</div>
             </div>
           )}
@@ -305,11 +453,16 @@ export function ChatRoom({
                         title={grouped ? timeFmt.format(d) : undefined}
                         className={clsx(
                           "whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-[14.5px] leading-relaxed shadow-[0_1px_2px_rgb(11_22_57/0.08)]",
-                          mine ? "rounded-br-md bg-electric text-white" : "rounded-bl-md border border-line bg-surface text-ink",
+                          !m.body && m.files?.length ? "!bg-transparent !p-0 !shadow-none border-0" : mine ? "rounded-br-md bg-electric text-white" : "rounded-bl-md border border-line bg-surface text-ink",
                           forMe && !mine && "border-[#f5c84c] bg-[#fffaeb] ring-1 ring-[#f5c84c]/40",
                         )}
                       >
-                        <Body text={m.body} people={people} meName={me.name} mine={mine} />
+                        {m.body && <Body text={m.body} people={people} meName={me.name} mine={mine} />}
+                        {!!m.files?.length && (
+                          <div className={clsx(m.body && "mt-2")}>
+                            <Files files={m.files} mine={mine} />
+                          </div>
+                        )}
                         {m.itemId && m.itemTitle && (
                           <Link href={`/items/${m.itemId}`} className={clsx("mt-1 block text-[12.5px] font-semibold underline-offset-2 hover:underline", mine ? "text-white/90" : "text-electric")}>
                             {m.itemTitle} →
@@ -413,73 +566,132 @@ export function ChatRoom({
               ))}
             </div>
           )}
-          <div className="card flex items-end gap-1.5 p-2 focus-within:border-electric/50 focus-within:ring-3 focus-within:ring-electric/10">
-            <Popover
-              label="Emoji"
-              width={320}
-              triggerClassName="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-sunken hover:text-ink"
-              trigger={<Smile className="size-[22px]" />}
-            >
-              {() => (
-                <div className="max-h-[300px] space-y-2 overflow-y-auto">
-                  {EMOJI_GROUPS.map((g) => (
-                    <div key={g.label}>
-                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">{g.label}</div>
-                      <div className="grid grid-cols-8 gap-0.5">
-                        {g.list.map((e) => (
-                          <button key={e} type="button" onClick={() => insert(e)} className="grid size-9 cursor-pointer place-items-center rounded-lg text-[20px] transition hover:scale-110 hover:bg-hover">
-                            {e}
-                          </button>
-                        ))}
+          <div
+            className="card p-2 focus-within:border-electric/50 focus-within:ring-3 focus-within:ring-electric/10"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              addFiles(e.dataTransfer.files);
+            }}
+          >
+            {picked.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2 border-b border-line px-1 pb-2">
+                {picked.map((p) => {
+                  const Icon = iconFor({
+                    kind: "file",
+                    mime: p.mime,
+                    name: p.name,
+                  });
+                  return (
+                    <span key={p.key} className="relative flex max-w-[220px] items-center gap-2 rounded-lg border border-line bg-subtle py-1 pl-1 pr-7">
+                      {p.preview ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.preview} alt="" className="size-9 rounded-md object-cover" />
+                      ) : (
+                        <span className="grid size-9 place-items-center rounded-md bg-surface text-muted">
+                          <Icon className="size-4" />
+                        </span>
+                      )}
+                      <span className="min-w-0">
+                        <span className="block truncate text-[12.5px] font-medium">{p.name}</span>
+                        <span className="flex items-center gap-1 text-[11px] text-faint">
+                          {p.id ? (
+                            sizeText(p.size)
+                          ) : (
+                            <>
+                              <Loader2 className="size-3 animate-spin" /> Uploading
+                            </>
+                          )}
+                        </span>
+                      </span>
+                      <button type="button" onClick={() => unpick(p.key)} className="absolute right-1 top-1 grid size-5 cursor-pointer place-items-center rounded text-faint hover:bg-hover hover:text-ink" aria-label={`Remove ${p.name}`}>
+                        <X className="size-3.5" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex items-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-sunken hover:text-ink"
+                aria-label="Attach a photo or file"
+                title="Photo, PDF or any file (up to 25 MB)"
+              >
+                <Paperclip className="size-[21px]" />
+              </button>
+              <input ref={fileRef} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => (addFiles(e.target.files), (e.target.value = ""))} />
+              <Popover label="Emoji" width={320} triggerClassName="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-sunken hover:text-ink" trigger={<Smile className="size-[22px]" />}>
+                {() => (
+                  <div className="max-h-[300px] space-y-2 overflow-y-auto">
+                    {EMOJI_GROUPS.map((g) => (
+                      <div key={g.label}>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">{g.label}</div>
+                        <div className="grid grid-cols-8 gap-0.5">
+                          {g.list.map((e) => (
+                            <button key={e} type="button" onClick={() => insert(e)} className="grid size-9 cursor-pointer place-items-center rounded-lg text-[20px] transition hover:scale-110 hover:bg-hover">
+                              {e}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Popover>
-            <textarea
-              ref={inputRef}
-              value={text}
-              rows={1}
-              aria-label="Message"
-              placeholder="Write a message… (@ to mention, Enter to send)"
-              onChange={(e) => onChange(e.target.value, e.target.selectionStart)}
-              onKeyDown={(e) => {
-                if (mention && candidates.length) {
-                  if (e.key === "ArrowDown") {
+                    ))}
+                  </div>
+                )}
+              </Popover>
+              <textarea
+                ref={inputRef}
+                value={text}
+                rows={1}
+                aria-label="Message"
+                placeholder="Write a message… (@ to mention, Enter to send)"
+                onChange={(e) => onChange(e.target.value, e.target.selectionStart)}
+                onPaste={(e) => {
+                  const files = Array.from(e.clipboardData.files);
+                  if (files.length) {
                     e.preventDefault();
-                    setActive((a) => (a + 1) % candidates.length);
-                    return;
+                    addFiles(files);
                   }
-                  if (e.key === "ArrowUp") {
+                }}
+                onKeyDown={(e) => {
+                  if (mention && candidates.length) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setActive((a) => (a + 1) % candidates.length);
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setActive((a) => (a - 1 + candidates.length) % candidates.length);
+                      return;
+                    }
+                    if (e.key === "Enter" || e.key === "Tab") {
+                      e.preventDefault();
+                      pick(candidates[active].name);
+                      return;
+                    }
+                    if (e.key === "Escape") return setMention(null);
+                  }
+                  if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    setActive((a) => (a - 1 + candidates.length) % candidates.length);
-                    return;
+                    send();
                   }
-                  if (e.key === "Enter" || e.key === "Tab") {
-                    e.preventDefault();
-                    pick(candidates[active].name);
-                    return;
-                  }
-                  if (e.key === "Escape") return setMention(null);
-                }
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              className="max-h-40 min-h-[44px] flex-1 resize-none rounded-lg border-0 bg-transparent px-1 py-2.5 text-[14.5px] text-ink outline-none placeholder:text-faint"
-              style={{ fieldSizing: "content" } as React.CSSProperties}
-            />
-            <button
-              type="button"
-              onClick={send}
-              disabled={!text.trim() || sending}
-              className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-electric text-white shadow-[0_6px_16px_-8px_rgb(59_130_246/0.9)] transition hover:bg-[#2f74e6] active:scale-95 disabled:opacity-40 disabled:shadow-none"
-              aria-label="Send"
-            >
-              <SendHorizontal className="size-5" />
-            </button>
+                }}
+                className="max-h-40 min-h-[44px] flex-1 resize-none rounded-lg border-0 bg-transparent px-1 py-2.5 text-[14.5px] text-ink outline-none placeholder:text-faint"
+                style={{ fieldSizing: "content" } as React.CSSProperties}
+              />
+              <button
+                type="button"
+                onClick={send}
+                disabled={(!text.trim() && !picked.some((p) => p.id)) || sending || uploading}
+                className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-electric text-white shadow-[0_6px_16px_-8px_rgb(59_130_246/0.9)] transition hover:bg-[#2f74e6] active:scale-95 disabled:opacity-40 disabled:shadow-none"
+                aria-label="Send"
+              >
+                <SendHorizontal className="size-5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -497,12 +709,7 @@ export function ChatRoom({
             const on = onlineSet.has(p.id) || p.id === me.id;
             return (
               <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => insert(`@${p.name} `)}
-                  title={`Mention ${p.name}`}
-                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-hover"
-                >
+                <button type="button" onClick={() => insert(`@${p.name} `)} title={`Mention ${p.name}`} className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-hover">
                   <span className="relative">
                     <Avatar name={p.name} size={30} badge={false} />
                     <span className={clsx("absolute -bottom-0.5 -right-0.5 size-3 rounded-full ring-2 ring-surface", on ? "bg-ok" : "bg-line-strong")} />

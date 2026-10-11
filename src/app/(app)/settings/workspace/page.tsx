@@ -36,16 +36,20 @@ export default async function WorkspaceSettings() {
       </Card>
 
       <Card icon={ImageIcon} title="Logos" hint="PNG with a transparent background looks best">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <ImageSlot k="wordmark" label={IMAGE_KEYS.wordmark} hint="sidebar & sign-in" src={ws.logos.wordmark} custom={ws.custom.wordmark} dark box={[640, 160]} />
           <ImageSlot k="mark" label={IMAGE_KEYS.mark} hint="next to the name" src={ws.logos.mark} custom={ws.custom.mark} dark box={[256, 256]} />
           <ImageSlot k="markLight" label={IMAGE_KEYS.markLight} hint="light pages" src={ws.logos.markLight} custom={ws.custom.markLight} dark={false} box={[256, 256]} />
           <ImageSlot k="watermark" label={IMAGE_KEYS.watermark} hint="behind the pages" src={ws.custom.watermark ? ws.logos.watermark : ws.logos.markLight} custom={ws.custom.watermark} dark={false} box={[512, 512]} />
+          <ImageSlot k="watermarkDark" label={IMAGE_KEYS.watermarkDark} hint="behind the pages, dark mode" src={ws.logos.watermarkDark} custom={ws.custom.watermarkDark} dark box={[512, 512]} />
         </div>
       </Card>
 
-      <Card icon={Stamp} title="Watermark" hint="The faint mark behind every page">
-        <WatermarkForm mode={ws.watermark} opacity={ws.watermarkOpacity} src={ws.watermark === "image" ? ws.logos.watermark : ws.logos.markLight} />
+      <Card icon={Stamp} title="Watermark" hint="The faint mark behind every page, one for light mode and one for dark mode">
+        <WatermarkForm
+          light={{ mode: ws.watermark, opacity: ws.watermarkOpacity, logo: ws.logos.markLight, image: ws.logos.watermark }}
+          dark={{ mode: ws.watermarkDark, opacity: ws.watermarkDarkOpacity, logo: ws.logos.mark, image: ws.logos.watermarkDark }}
+        />
       </Card>
 
       <Card icon={Blocks} title="Modules" hint="Turn off what your team doesn't use. Nothing is deleted; turning it back on brings everything back.">

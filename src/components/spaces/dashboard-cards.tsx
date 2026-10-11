@@ -18,7 +18,7 @@ export function DashboardCards({ data, widgets }: { data: DashboardData; widgets
           {w === "done_weeks" && <Weeks weeks={data.weeks} />}
           {w === "lists" && <Lists rows={data.perList} />}
           {w === "time" && <Bars rows={data.timeByPerson.map((p) => ({ label: p.name, value: p.ms, color: "#3b82f6", text: formatDuration(p.ms) }))} empty="No time tracked this month" />}
-          {w === "overdue" && <TaskList rows={data.overdue} empty="Nothing overdue 🎉" tone="bad" />}
+          {w === "overdue" && <TaskList rows={data.overdue} empty="Nothing overdue." tone="bad" />}
           {w === "due_soon" && <TaskList rows={data.dueSoon} empty="Nothing due in the next 7 days" tone="warn" />}
         </Card>
       ))}

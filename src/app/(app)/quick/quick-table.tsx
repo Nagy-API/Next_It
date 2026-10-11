@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { CheckCircle2, ClipboardPaste, Wand2 } from "lucide-react";
+import { CheckCircle2, ClipboardPaste, ListPlus } from "lucide-react";
 import { quickAction } from "@/app/actions";
 import type { StageKind } from "@/db/schema";
 import { ActionForm, Submit } from "@/components/client";
@@ -118,7 +118,7 @@ export function QuickTable({ step, hint, items, platforms }: { step: StageKind; 
           />
           <div className="mt-2 flex items-center gap-2">
             <button type="button" onClick={fill} disabled={!paste.trim()} className={btn("primary", "sm")}>
-              <Wand2 className="size-3.5" /> Fill the rows
+              <ListPlus className="size-3.5" /> Fill the rows
             </button>
             <span className="text-[12px] text-muted">{hint}. Nothing is saved until Save all.</span>
           </div>

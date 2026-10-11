@@ -22,7 +22,7 @@ export async function POST(request: Request) {
       const v = fd.get(k);
       return typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v) ? v : null;
     };
-    const a = await saveFile({ id: user.id, name: user.name, isAdmin: user.isAdmin, isManager: user.isManager, teams: user.teams, perms: user.perms }, file, { itemId: id("itemId"), taskId: id("taskId"), workTaskId: id("workTaskId") });
+    const a = await saveFile({ id: user.id, name: user.name, isAdmin: user.isAdmin, isManager: user.isManager, teams: user.teams, perms: user.perms }, file, { itemId: id("itemId"), taskId: id("taskId"), workTaskId: id("workTaskId"), privateNoteId: id("privateNoteId"), planId: id("planId") });
     return Response.json({ id: a.id, name: a.name, size: a.size, mime: a.mime });
   } catch (e) {
     if (e instanceof UserError) return Response.json({ error: e.message }, { status: 400 });

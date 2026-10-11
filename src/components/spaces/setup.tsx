@@ -3,7 +3,7 @@
 import { FIELD_ICON, FieldPicker } from "./field-picker";
 import { useState } from "react";
 import clsx from "clsx";
-import { ArrowDown, ArrowRight, ArrowUp, Pencil, Plus, Trash2, X, Zap } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Pencil, Plus, Trash2, Workflow, X } from "lucide-react";
 import {
   archiveFieldAction,
   archiveFolderAction,
@@ -394,7 +394,7 @@ export function Automations({ spaceId, automations, statuses, lists, people }: {
           {automations.map((a) => (
             <li key={a.id} className={clsx("rounded-xl border bg-surface px-3.5 py-3", a.enabled ? "border-amber-200" : "border-line opacity-70")}>
               <div className="flex flex-wrap items-center gap-2">
-                <Zap className={clsx("size-4", a.enabled ? "text-amber-500" : "text-faint")} />
+                <Workflow className={clsx("size-4", a.enabled ? "text-electric" : "text-faint")} />
                 <span className="text-[14px] font-semibold">{a.name}</span>
                 <span className="text-[12px] text-muted">· ran {a.runs} time(s)</span>
                 <span className="ml-auto flex items-center gap-1">
@@ -433,7 +433,7 @@ export function Automations({ spaceId, automations, statuses, lists, people }: {
         <AutomationBuilder spaceId={spaceId} statuses={statuses} lists={lists} people={people} onDone={() => setAdding(false)} />
       ) : (
         <button type="button" onClick={() => setAdding(true)} className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-[13.5px] font-semibold text-white transition-transform hover:bg-amber-600 active:scale-[0.97]">
-          <Zap className="size-4" /> New automation
+          <Plus className="size-4" /> New automation
         </button>
       )}
     </div>
@@ -548,7 +548,7 @@ function AutomationBuilder({ spaceId, statuses, lists, people, onDone }: { space
       </div>
       <div className="flex gap-2">
         <Submit disabled={!actions.length}>
-          <Zap className="size-4" /> Save automation
+          Save automation
         </Submit>
         <button type="button" onClick={onDone} className="cursor-pointer px-3 text-[13.5px] text-muted hover:text-ink">
           Cancel

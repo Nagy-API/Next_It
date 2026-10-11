@@ -67,7 +67,7 @@ export async function createTasks(actor: Actor, input: TaskInput, opts: { now?: 
       await tx.update(tasks).set({ seriesId: t.id }).where(eq(tasks.id, t.id));
       await notify(tx, actor, [assigneeId], {
         kind: "task",
-        title: `${priority ? `${TASK_PRIORITIES[priority].emoji} ${TASK_PRIORITIES[priority].label}: ` : ""}New task from ${actor.name}: ${title}`,
+        title: `${priority ? `${TASK_PRIORITIES[priority].label}: ` : ""}New task from ${actor.name}: ${title}`,
         body: [dueDate ? `Due ${formatDay(dueDate)}${input.dueTime ? ` ${input.dueTime}` : ""}` : null, recurrence !== "none" ? RECURRENCE_LABEL[recurrence] : null]
           .filter(Boolean)
           .join(" · ") || null,

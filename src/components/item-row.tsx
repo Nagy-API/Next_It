@@ -41,13 +41,14 @@ export function ItemRow({
   const titleLink = (
     <Link href={`/items/${item.id}`} className="flex min-w-0 items-center gap-1.5 font-medium text-ink after:absolute after:inset-0 group-hover:text-electric">
       <TypeIcon type={item.type} />
-      <span className="truncate">{item.title}</span>
+      {/* Phones: the whole title on up to two lines instead of a few letters. */}
+      <span className="line-clamp-2 break-words sm:line-clamp-none sm:truncate">{item.title}</span>
     </Link>
   );
   const dateBox = (
     <span
           className={clsx(
-            "flex w-[52px] shrink-0 flex-col items-center rounded-xl py-1 text-center leading-tight",
+            "flex w-[44px] shrink-0 flex-col sm:w-[52px] items-center rounded-xl py-1 text-center leading-tight",
             isToday && "bg-electric text-white shadow-[0_6px_16px_-8px_rgb(59_130_246/0.9)]",
             isTomorrow && "bg-warn-soft ring-1 ring-warn/40",
           )}
@@ -72,7 +73,7 @@ export function ItemRow({
   return (
     <div
       style={showContext && item.brand ? { boxShadow: `inset 3px 0 0 ${item.brand.color}` } : undefined}
-      className={clsx("group relative flex items-center gap-3 px-4 transition-colors hover:bg-hover", compact ? "py-2.5" : "py-3", item.cancelledAt && "opacity-60")}
+      className={clsx("group relative flex items-center gap-2.5 px-3 transition-colors sm:gap-3 sm:px-4 hover:bg-hover", compact ? "py-2.5" : "py-3", item.cancelledAt && "opacity-60")}
     >
       {leading}
       {editable && !item.cancelledAt ? (
@@ -141,7 +142,8 @@ export function ItemRow({
       <div className={clsx("hidden shrink-0 justify-end sm:flex", compact ? "w-[130px]" : "w-[150px]")}>
         <ItemStatus item={item} />
       </div>
-      {actions && <div className="relative z-10 flex shrink-0 items-center gap-1">{actions}</div>}
+      {/* Row tools need a mouse; on phones the item page has them (rename, delete…). */}
+      {actions && <div className="relative z-10 flex shrink-0 items-center gap-1 max-sm:hidden">{actions}</div>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BarChart3, Lock, Plus, Sparkles } from "lucide-react";
+import { BarChart3, LayoutGrid, Lock, Plus } from "lucide-react";
 import { ButtonLink, Empty, PageHeader } from "@/components/ui";
 import { can } from "@/domain/permissions";
 import { requireUser } from "@/server/auth";
@@ -36,7 +36,7 @@ export default async function SpacesPage() {
         }
       />
       {!list.length ? (
-        <Empty icon={Sparkles} title="No spaces yet" action={canCreate ? <ButtonLink href="/spaces/new" variant="primary">Build your first workflow</ButtonLink> : undefined}>
+        <Empty icon={LayoutGrid} title="No spaces yet" action={canCreate ? <ButtonLink href="/spaces/new" variant="primary">Build your first workflow</ButtonLink> : undefined}>
           {canCreate ? "Pick a ready template (marketing, hiring, sales, events…) or start simple. It takes a minute." : "When someone adds you to a space, it shows here."}
         </Empty>
       ) : (

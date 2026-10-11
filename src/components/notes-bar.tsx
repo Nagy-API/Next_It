@@ -2,17 +2,17 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { MessagesSquare, Plus, Trash2 } from "lucide-react";
+import { Lock, MessagesSquare, NotebookPen, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { noteAction, removeNoteAction } from "@/app/actions";
 import { ActionForm, Modal, Submit } from "./client";
 import { Avatar } from "./avatar";
+import { openNotebook } from "./notebook";
 import { btn } from "./ui";
 
 type Note = { id: string; userId: string; name: string; text: string; color: string; createdAt: string; expiresAt: string };
 
-const COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981", "#0ea5e9", "#f43f5e", "#0b1639"];
-const QUICK = ["🔥", "☕", "🎬", "✨", "😂", "❤️", "👏", "🎉", "🙏", "😴", "💪", "🤯"];
+const COLORS = ["#3b82f6", "#8b5cf6", "#e0569b", "#d97706", "#059669", "#0284c7", "#e11d48", "#0b1639"];
 const MAX = 80;
 
 function left(expiresAt: string, now: number) {
@@ -30,6 +30,15 @@ export function NotesBar({ notes, meId, meName, now }: { notes: Note[]; meId: st
   return (
     <section aria-label="Team notes" className="-mx-1 overflow-x-auto px-1 pb-1 pt-1 [scrollbar-width:none]">
       <div className="flex min-w-max items-end gap-3.5">
+        <button type="button" onClick={openNotebook} className="group flex w-[88px] shrink-0 cursor-pointer flex-col items-center gap-1.5 text-center" title="My notebook: only you can see it (shortcut N)">
+          <span className="mb-1 flex min-h-[38px] w-full items-center justify-center gap-1 rounded-2xl border border-line bg-subtle px-2 py-1.5 text-[11.5px] font-medium text-muted transition-transform duration-150 group-hover:-translate-y-0.5">
+            <Lock className="size-3" /> Private
+          </span>
+          <span className="flex size-[56px] items-center justify-center rounded-full border border-line bg-surface text-ink-2 shadow-card transition-colors group-hover:border-electric group-hover:text-electric">
+            <NotebookPen className="size-6" strokeWidth={1.6} />
+          </span>
+          <span className="w-full truncate text-[12px] font-medium text-ink-2">My notebook</span>
+        </button>
         <NoteBubble
           name="Your note"
           person={meName}
@@ -75,13 +84,12 @@ function NoteBubble({ name, person, note, onClick, empty, now }: { name: string;
     <button type="button" onClick={onClick} className="group flex w-[88px] shrink-0 cursor-pointer flex-col items-center gap-1.5 text-center" title={note?.text}>
       <span
         className={clsx(
-          "relative mb-1 flex min-h-[38px] w-full items-center justify-center rounded-2xl px-2 py-1.5 text-[12px] font-semibold leading-tight shadow-card transition-transform duration-150 group-hover:-translate-y-0.5",
+          "mb-1 flex min-h-[38px] w-full items-center justify-center rounded-2xl px-2 py-1.5 text-[12px] font-semibold leading-tight shadow-card transition-transform duration-150 group-hover:-translate-y-0.5",
           note ? "text-white" : "border border-dashed border-line-strong bg-surface",
         )}
         style={note ? { background: note.color } : undefined}
       >
         <span className="line-clamp-2 break-words">{note ? note.text : empty}</span>
-        <span aria-hidden className="absolute -bottom-1 left-1/2 size-2.5 -translate-x-1/2 rotate-45 rounded-[2px]" style={note ? { background: note.color } : { background: "white", borderRight: "1px dashed var(--color-line-strong)", borderBottom: "1px dashed var(--color-line-strong)" }} />
       </span>
       <span className="rounded-full p-[2.5px]" style={{ background: note ? `linear-gradient(135deg, ${note.color}, ${note.color}88)` : "var(--color-line)" }}>
         <span className="block rounded-full bg-surface p-[2px]">
@@ -102,7 +110,7 @@ function Composer({ mine, onDone }: { mine: Note | null; onDone: () => void }) {
     <div className="space-y-4">
       <div className="flex justify-center">
         <div className="w-full max-w-[300px] rounded-3xl px-4 py-4 text-center text-[17px] font-semibold leading-snug text-white shadow-pop transition-colors" style={{ background: color }}>
-          {text || <span className="opacity-60">Your note…</span>}
+          {text || <span className="opacity-60">Your note</span>}
         </div>
       </div>
       <ActionForm action={noteAction} onSuccess={onDone} className="space-y-3">
@@ -114,7 +122,7 @@ function Composer({ mine, onDone }: { mine: Note | null; onDone: () => void }) {
             onChange={(e) => setText([...e.target.value].slice(0, MAX).join(""))}
             rows={2}
             autoFocus
-            placeholder="e.g. Shooting all day 🎬 ping me after 5"
+            placeholder="e.g. Shooting all day, ping me after 5"
             aria-label="Your note"
             className="field resize-none text-[15px]"
           />
@@ -125,13 +133,6 @@ function Composer({ mine, onDone }: { mine: Note | null; onDone: () => void }) {
             </span>
           </div>
         </div>
-        <div className="flex flex-wrap gap-1">
-          {QUICK.map((e) => (
-            <button key={e} type="button" onClick={() => setText((t) => [...`${t}${e}`].slice(0, MAX).join(""))} className="flex size-9 cursor-pointer items-center justify-center rounded-lg text-[19px] transition-transform hover:scale-110 hover:bg-canvas" aria-label={`Add ${e}`}>
-              {e}
-            </button>
-          ))}
-        </div>
         <div className="flex flex-wrap items-center gap-2">
           {COLORS.map((c) => (
             <button
@@ -140,7 +141,7 @@ function Composer({ mine, onDone }: { mine: Note | null; onDone: () => void }) {
               onClick={() => setColor(c)}
               aria-label="Colour"
               aria-pressed={color === c}
-              className={clsx("size-7 cursor-pointer rounded-full ring-offset-2 transition-transform hover:scale-110", color === c && "ring-2 ring-ink")}
+              className={clsx("size-7 cursor-pointer rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110", color === c && "ring-2 ring-ink")}
               style={{ background: c }}
             />
           ))}

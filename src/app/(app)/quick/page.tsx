@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { Zap } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import { Empty, PageHeader } from "@/components/ui";
 import { isManager } from "@/domain/permissions";
 import { STAGE_COLOR } from "@/domain/workflow";
@@ -74,7 +74,7 @@ export default async function QuickPage({ searchParams }: PageProps<"/quick">) {
         })}
       </nav>
       {items.length === 0 ? (
-        <Empty icon={Zap} title={`Nothing waiting at ${meta.label}`}>
+        <Empty icon={ListChecks} title={`Nothing waiting at ${meta.label}`}>
           Items you can update at this step show here.
         </Empty>
       ) : (

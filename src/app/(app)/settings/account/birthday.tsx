@@ -14,7 +14,7 @@ export function BirthdayForm({ value }: { value: string | null }) {
       <div className="flex items-center gap-2 font-display text-[15px] font-bold">
         <Cake className="size-4 text-[#e0569b]" /> My birthday
       </div>
-      <p className="mt-1 text-[13px] text-muted">Only the day and month. The team sees it on the Overview so nobody forgets 🎂</p>
+      <p className="mt-1 text-[13px] text-muted">Only the day and month. The team sees it on the Overview so nobody forgets.</p>
       <ActionForm action={birthdayAction} className="mt-3 flex flex-wrap items-end gap-2">
         <label className="text-[13px] font-medium text-ink-2">
           Day

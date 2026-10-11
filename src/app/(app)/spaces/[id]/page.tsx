@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, FileSpreadsheet, FileText, LayoutList, Lock, Plus, Presentation, Settings2, Zap } from "lucide-react";
+import { ArrowLeft, FileSpreadsheet, FileText, LayoutList, Lock, Plus, Presentation, Settings2, Workflow } from "lucide-react";
 import { pagesForSpaces } from "@/server/pages";
 import { SpaceView } from "@/components/spaces/space-view";
 import { Faces } from "@/components/spaces/controls";
@@ -51,7 +51,7 @@ export default async function SpacePage({ params, searchParams }: PageProps<"/sp
         <Faces ids={page.members.map((m) => m.userId)} people={people} size={28} max={5} />
         {activeAutos > 0 && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 dark:bg-amber-400/15 dark:text-amber-300" title="Automations running in this space">
-            <Zap className="size-3.5" /> {activeAutos} automation{activeAutos > 1 ? "s" : ""}
+            <Workflow className="size-3.5" /> {activeAutos} automation{activeAutos > 1 ? "s" : ""}
           </span>
         )}
         {page.access.manage && (

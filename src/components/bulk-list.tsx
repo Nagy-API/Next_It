@@ -87,7 +87,7 @@ export function BulkList({ items, people, showContext = false, selectable = true
             <span className="mr-1 text-[13px] font-semibold">{selected.size} selected</span>
             <div className="flex rounded-lg bg-white/10 p-0.5 text-[13px]">
               {(canDeadline ? (["assign", "deadline", "complete"] as const) : (["assign", "complete"] as const)).map((m) => (
-                <button key={m} type="button" onClick={() => setMode(m)} className={clsx("rounded-md px-2.5 py-1", mode === m ? "bg-surface text-navy-900" : "text-white/80 hover:text-white")}>
+                <button key={m} type="button" onClick={() => setMode(m)} className={clsx("rounded-md px-2.5 py-1", mode === m ? "bg-white font-semibold text-navy-900" : "text-white/80 hover:text-white")}>
                   {m === "assign" ? "Assign" : m === "deadline" ? "Deadline" : "Mark done"}
                 </button>
               ))}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { AlertTriangle, ArrowRight, CalendarDays, Camera, Check, CircleUserRound, ClipboardCheck, CornerUpLeft, Flame, Hourglass, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, Cake, CalendarDays, Camera, Check, CheckCheck, CircleUserRound, ClipboardCheck, Clock3, CornerUpLeft, Flame, Hourglass, MapPin, Send, StickyNote, Trophy, UserRound, type LucideIcon } from "lucide-react";
 import { can, isManager } from "@/domain/permissions";
 import { getWorkspace } from "@/server/settings";
 import { getKudos, getUpdates, starsOfTheWeek, teamMoods, upcomingBirthdays } from "@/server/fun";
@@ -72,10 +72,10 @@ export default async function HomePage() {
           <p className="mt-1 max-w-[680px] text-[14px] text-muted">Everything happening right now on one page: what&rsquo;s posting, who&rsquo;s shooting, who has what, and what needs a push.</p>
         </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Tile href="/my-work" icon="🙋" label="On you now" value={mine.length + myTasks.filter((t) => !t.doneAt).length} hint={moveNow.length ? `${moveNow.length} must move in 48h` : "Nothing urgent"} tone={moveNow.length ? "warn" : undefined} />
-          <Tile href="#posting-today" icon="📲" label="Posting today" value={postingToday.length} hint={postingToday.length ? `${postingToday.filter((i) => i.completedAt).length} live · ${postingToday.filter((i) => !i.completedAt).length} still to go` : "Nothing posts today"} tone={postingToday.some((i) => !i.completedAt) ? "blue" : undefined} />
-          <Tile href="/shoots" icon="🎬" label="Shoots today" value={shootsToday.length} hint={shootsToday.length ? shootsToday.map((s) => s.start ?? "").filter(Boolean).slice(0, 3).join(" · ") || "Times not set" : "No shoot today"} />
-          <Tile href="/work?status=late" icon="⏰" label="Late across the agency" value={late.length + postingPassed} hint={late.length + postingPassed ? `${late.length} past deadline · ${postingPassed} past posting date` : "Nothing late 🎉"} tone={late.length + postingPassed ? "bad" : "ok"} />
+          <Tile href="/my-work" icon={UserRound} label="On you now" value={mine.length + myTasks.filter((t) => !t.doneAt).length} hint={moveNow.length ? `${moveNow.length} must move in 48h` : "Nothing urgent"} tone={moveNow.length ? "warn" : undefined} />
+          <Tile href="#posting-today" icon={Send} label="Posting today" value={postingToday.length} hint={postingToday.length ? `${postingToday.filter((i) => i.completedAt).length} live · ${postingToday.filter((i) => !i.completedAt).length} still to go` : "Nothing posts today"} tone={postingToday.some((i) => !i.completedAt) ? "blue" : undefined} />
+          <Tile href="/shoots" icon={Camera} label="Shoots today" value={shootsToday.length} hint={shootsToday.length ? shootsToday.map((s) => s.start ?? "").filter(Boolean).slice(0, 3).join(" · ") || "Times not set" : "No shoot today"} />
+          <Tile href="/work?status=late" icon={Clock3} label="Late across the agency" value={late.length + postingPassed} hint={late.length + postingPassed ? `${late.length} past deadline · ${postingPassed} past posting date` : "Nothing late"} tone={late.length + postingPassed ? "bad" : "ok"} />
         </div>
       </header>
 
@@ -164,12 +164,14 @@ export default async function HomePage() {
               <div className="card space-y-4 p-4">
                 {stars.length > 0 && (
                   <div>
-                    <div className="font-display text-[15px] font-bold">⭐ Stars of the week</div>
+                    <div className="flex items-center gap-2 font-display text-[15px] font-bold">
+                      <Trophy className="size-4 text-[#d97706]" /> Stars of the week
+                    </div>
                     <div className="text-[12.5px] text-muted">Most steps finished on time since Saturday.</div>
                     <ol className="mt-2.5 space-y-1.5">
                       {stars.map((s, i) => (
                         <li key={s.userId} className="flex items-center gap-2.5 text-[14px]">
-                          <span className="w-6 text-center text-[18px]">{["🥇", "🥈", "🥉"][i]}</span>
+                          <span className={clsx("grid size-6 place-items-center rounded-full text-[12px] font-bold tabular-nums", ["bg-[#f59e0b]/15 text-[#b45309] dark:text-[#fbbf24]", "bg-slate-400/15 text-slate-500 dark:text-slate-300", "bg-[#c2410c]/12 text-[#c2410c] dark:text-[#fb923c]"][i] ?? "bg-sunken text-muted")}>{i + 1}</span>
                           <Avatar name={s.name} size={26} />
                           <span className="flex-1 font-semibold">{s.name}</span>
                           <span className="text-[12.5px] text-muted">{s.onTime} on time</span>
@@ -181,12 +183,14 @@ export default async function HomePage() {
                 {birthdays.length > 0 && (
                   <div className={clsx(stars.length > 0 && "border-t border-line pt-4")}>
                     {birthdays.map((b) => (
-                      <div key={b.id} className={clsx("flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-[14px]", b.inDays === 0 && "bg-[#fdf0f6]")}>
-                        <span className="text-[20px]">{b.inDays === 0 ? "🎂" : "🎈"}</span>
+                      <div key={b.id} className={clsx("flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-[14px]", b.inDays === 0 && "bg-[#e0569b]/10")}>
+                        <span className={clsx("grid size-8 shrink-0 place-items-center rounded-full", b.inDays === 0 ? "bg-[#e0569b] text-white" : "bg-[#e0569b]/12 text-[#e0569b]")}>
+                          <Cake className="size-4" />
+                        </span>
                         <span className="flex-1">
                           {b.inDays === 0 ? (
                             <>
-                              <b>Happy birthday, {b.name}!</b> 🎉
+                              <b>Happy birthday, {b.name}!</b>
                             </>
                           ) : (
                             <>
@@ -224,7 +228,7 @@ export default async function HomePage() {
           <section className="min-w-0">
             <SectionTitle right={<Link href="/work" className="text-[13px] font-medium text-electric hover:underline">All open work</Link>}>Needs attention</SectionTitle>
             {late.length + returned.length + atRisk.length + unassigned.length === 0 ? (
-              <Empty icon={Sparkles} title="All clear">Nothing is late, sent back, or missing an owner.</Empty>
+              <Empty icon={CheckCheck} title="All clear">Nothing is late, sent back, or missing an owner.</Empty>
             ) : (
               <div className="space-y-5">
                 <AttentionGroup icon={AlertTriangle} tone="bad" title="Late" hint="Past the deadline while it's with this person" items={late} href="/work?status=late" />
@@ -258,18 +262,18 @@ export default async function HomePage() {
   );
 }
 
-function Tile({ label, value, hint, tone, href, icon }: { label: string; value: number; hint?: string; tone?: "bad" | "warn" | "ok" | "blue"; href?: string; icon?: string }) {
+function Tile({ label, value, hint, tone, href, icon: Icon }: { label: string; value: number; hint?: string; tone?: "bad" | "warn" | "ok" | "blue"; href?: string; icon?: LucideIcon }) {
   const body = (
     <>
       <div className="flex items-center gap-2 text-[12.5px] font-medium text-muted">
-        {icon && <span className="text-[16px]">{icon}</span>}
+        {Icon && <Icon className="size-4 shrink-0" strokeWidth={1.9} />}
         {label}
       </div>
       <div
         className={clsx(
           "mt-1.5 font-display text-[30px] font-bold leading-none tracking-tight",
           tone === "bad" && value > 0 && "text-bad",
-          tone === "warn" && "text-[#c2410c]",
+          tone === "warn" && "text-[#c2410c] dark:text-[#fb923c]",
           tone === "ok" && "text-ok",
           tone === "blue" && "text-electric",
         )}
@@ -294,12 +298,9 @@ function PostingToday({ items, tomorrow, meId }: { items: WorkItem[]; tomorrow: 
   const left = items.filter((i) => !i.completedAt);
   return (
     <section id="posting-today" className="scroll-mt-24">
-      <div className="overflow-hidden rounded-2xl border border-electric/30 bg-surface shadow-[0_18px_40px_-28px_rgb(59_130_246/0.8)]">
-        <div className="flex flex-wrap items-center gap-3 bg-gradient-to-r from-electric to-[color-mix(in_srgb,var(--color-electric)_55%,#0b1639)] px-5 py-3.5 text-white">
-          <span className="relative flex size-3">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-white opacity-60" />
-            <span className="relative inline-flex size-3 rounded-full bg-white" />
-          </span>
+      <div className="overflow-hidden rounded-2xl border border-electric/40 bg-surface shadow-card">
+        <div className="flex flex-wrap items-center gap-3 bg-electric px-5 py-3.5 text-white">
+          <Send className="size-[18px]" strokeWidth={2} />
           <h2 className="font-display text-[18px] font-bold">Posting today</h2>
           <span className="text-[13.5px] text-white/85">{items.length ? `${items.length - left.length} of ${items.length} live` : "Nothing today"}{tomorrow.length ? ` · ${tomorrow.length} tomorrow` : ""}</span>
         </div>
@@ -372,7 +373,12 @@ function ShootStrip({ shoots, today }: { shoots: ShootEntry[]; today: string }) 
               <div className="truncate font-semibold">{s.title}</div>
               <div className="truncate text-[12.5px] text-muted">
                 {s.brand?.name ?? "No brand"}
-                {s.location ? ` · 📍 ${s.location}` : ""}
+                {s.location && (
+                  <>
+                    {" · "}
+                    <MapPin className="inline size-3 -translate-y-px" /> {s.location}
+                  </>
+                )}
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-1">
                 {s.owner && <Avatar name={s.owner.name} size={20} />}
@@ -380,7 +386,11 @@ function ShootStrip({ shoots, today }: { shoots: ShootEntry[]; today: string }) 
                   <Avatar key={c.id} name={c.name} size={20} />
                 ))}
                 {s.status === "shot" && <span className="ml-1 rounded-full bg-ok-soft px-2 text-[11px] font-bold text-ok">Shot ✓</span>}
-                {s.notes && <span className="ml-1 truncate text-[12px] text-muted">📝 {s.notes}</span>}
+                {s.notes && (
+                  <span className="ml-1 inline-flex min-w-0 items-center gap-1 truncate text-[12px] text-muted">
+                    <StickyNote className="size-3 shrink-0" /> <span className="truncate">{s.notes}</span>
+                  </span>
+                )}
               </div>
             </div>
           </Link>

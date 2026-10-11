@@ -12,8 +12,10 @@ import type { ContentType } from "@/db/schema";
 import { monthKey, monthLabel, monthName, parseMonthKey, shiftMonth, todayISO } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
 import { getActivePeople } from "@/server/cached";
-import { can } from "@/domain/permissions";
+import { can, isManager } from "@/domain/permissions";
+import { attachmentsFor } from "@/server/attachments";
 import { MonthLinks } from "./month-links";
+import { MonthDone } from "./month-done";
 import { getBrandBySlug, getBrandMonths, getPlan, getWorkItems } from "@/server/queries";
 
 export async function generateMetadata({ params }: PageProps<"/brands/[slug]">) {
@@ -48,6 +50,7 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
     plan ? getWorkItems({ planIds: [plan.id], includeDone: true, includeCancelled: showCancelled }) : Promise.resolve([]),
     getActivePeople(),
   ]);
+  const planFiles = await attachmentsFor({ planIds: plan ? [plan.id] : [] });
   // Team filter: Media Production = Reels, Graphic Design = Posts & Carousels.
   const TEAM_TYPES: Record<string, ContentType[]> = { media: ["reel"], design: ["static", "carousel"], story: ["story"] };
   const team = typeof sp.team === "string" && (TEAM_TYPES[sp.team] || sp.team === "extra") ? sp.team : "";
@@ -90,6 +93,7 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
+          <span aria-hidden className="mb-2 block h-1 w-12 rounded-full" style={{ background: brand.color }} />
           <Link href="/brands" className="text-[13px] text-muted hover:text-electric">
             Brands
           </Link>
@@ -190,8 +194,14 @@ export default async function BrandPage({ params, searchParams }: PageProps<"/br
           driveFolderUrl={plan?.driveFolderUrl ?? null}
           canEdit={canAdd && brand.isActive}
           monthLabel={monthName(sel.month)}
+          planId={plan?.id ?? null}
+          files={plan ? (planFiles.get(plan.id) ?? []) : []}
+          meId={me.id}
+          manager={isManager(me)}
         />
       </div>
+
+      {planned.length > 0 && done === planned.length && <MonthDone brand={brand.name} color={brand.color} month={monthLabel(sel.year, sel.month)} total={planned.length} keyId={`${brand.id}:${monthKey(sel.year, sel.month)}`} />}
 
       {allLive.length === 0 ? (
         <div className="mt-6">
