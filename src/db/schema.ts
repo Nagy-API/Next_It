@@ -23,14 +23,16 @@ import {
 export const TEAMS = ["leadership", "content", "media", "design", "social", "account"] as const;
 export const teamEnum = pgEnum("team", TEAMS);
 
-export const CONTENT_TYPES = ["reel", "static", "carousel", "story"] as const;
+/** `other` = anything that isn't a post: a brief, a document, a script, research… Its steps are chosen when it's given. */
+export const CONTENT_TYPES = ["reel", "static", "carousel", "story", "other"] as const;
 export const contentTypeEnum = pgEnum("content_type", CONTENT_TYPES);
 
 /**
  * A workflow stage. `shooting` = pre-production, `media` = post-production (editing).
- * `delivery` is the final hand-over step for one-off project work.
+ * `delivery` is the final hand-over step for one-off project work. `approval` is the last step of "Other" work
+ * (a brief, a document…): the approver (by default the account manager) approves it and it's done.
  */
-export const STAGE_KINDS = ["content", "shooting", "media", "design", "social", "delivery"] as const;
+export const STAGE_KINDS = ["content", "shooting", "media", "design", "social", "delivery", "approval"] as const;
 export const stageKindEnum = pgEnum("stage_kind", STAGE_KINDS);
 
 /** waiting = previous stage not delivered yet, active = current stage, done = completed. */
@@ -602,6 +604,15 @@ export const tasks = pgTable(
     statusAt: ts("status_at"),
     doneAt: ts("done_at"),
     doneById: uuid("done_by_id").references(() => users.id),
+    /** Who approves it when it's finished (null = no approval: ticking it done is enough). Managers can approve any. */
+    approverId: uuid("approver_id").references(() => users.id),
+    /** Finished by the person and waiting for the approver. */
+    submittedAt: ts("submitted_at"),
+    approvedById: uuid("approved_by_id").references(() => users.id),
+    /** The last "send back" on this task: the note, who sent it and when (either side can send it back). */
+    returnNote: text("return_note"),
+    returnedById: uuid("returned_by_id").references(() => users.id),
+    returnedAt: ts("returned_at"),
     createdAt: ts("created_at").notNull().defaultNow(),
     deletedAt: ts("deleted_at"),
   },

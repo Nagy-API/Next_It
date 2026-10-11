@@ -393,5 +393,23 @@ export const MIGRATIONS: { sql: string[]; bps: boolean; folderMillis: number; ha
     "bps": true,
     "folderMillis": 1791682170551,
     "hash": "c67815f52fcdf5e708be5d5a07c0d9a7f6c195a458bd15f35b19d870a4bb9104"
+  },
+  {
+    "sql": [
+      "ALTER TYPE \"public\".\"content_type\" ADD VALUE 'other';",
+      "\nALTER TYPE \"public\".\"stage_kind\" ADD VALUE 'approval';",
+      "\nALTER TABLE \"tasks\" ADD COLUMN \"approver_id\" uuid;",
+      "\nALTER TABLE \"tasks\" ADD COLUMN \"submitted_at\" timestamp with time zone;",
+      "\nALTER TABLE \"tasks\" ADD COLUMN \"approved_by_id\" uuid;",
+      "\nALTER TABLE \"tasks\" ADD COLUMN \"return_note\" text;",
+      "\nALTER TABLE \"tasks\" ADD COLUMN \"returned_by_id\" uuid;",
+      "\nALTER TABLE \"tasks\" ADD COLUMN \"returned_at\" timestamp with time zone;",
+      "\nALTER TABLE \"tasks\" ADD CONSTRAINT \"tasks_approver_id_users_id_fk\" FOREIGN KEY (\"approver_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"tasks\" ADD CONSTRAINT \"tasks_approved_by_id_users_id_fk\" FOREIGN KEY (\"approved_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"tasks\" ADD CONSTRAINT \"tasks_returned_by_id_users_id_fk\" FOREIGN KEY (\"returned_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;"
+    ],
+    "bps": true,
+    "folderMillis": 1791728316631,
+    "hash": "27abdf2b084907e55856ce115cd5001ac08851a804bfe92a6eb943dd294d321f"
   }
 ];

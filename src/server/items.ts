@@ -16,7 +16,7 @@ import {
   type StageKind,
 } from "@/db/schema";
 import { cleanPriority } from "@/domain/priority";
-import { STAGE_META, TYPE_META, routeFor } from "@/domain/workflow";
+import { OTHER_STEPS, STAGE_META, TYPE_META, routeFor } from "@/domain/workflow";
 import { cairoDate, formatDay, isValidISODate, isValidTime, monthLabel, monthOf, plural } from "@/lib/dates";
 import { logActivity, type Actor } from "./activity";
 import { UserError, assert } from "./errors";
@@ -160,7 +160,7 @@ export async function createItems(
     const contentAssignee = options.contentAssigneeId !== undefined ? options.contentAssigneeId : defaultCreator;
     // Default people per team for this brand (or the team's only member) — work goes straight to them.
     const defaults: Partial<Record<StageKind, string | null>> = { content: contentAssignee };
-    for (const k of ["shooting", "media", "design", "social", "delivery"] as StageKind[]) defaults[k] = await defaultAssigneeTx(tx, brandId, k);
+    for (const k of ["shooting", "media", "design", "social", "delivery", "approval"] as StageKind[]) defaults[k] = await defaultAssigneeTx(tx, brandId, k);
     // Each row lives in the plan of its posting month (dated 3 Nov while adding to October → November).
     // Slide numbers continue after the last one already in that month's Canva presentation.
     const nextSlide = new Map<string, number>();
@@ -631,6 +631,10 @@ export type ExtraTaskInput = {
   type: ContentType;
   dueDate?: string | null;
   priority?: string | null;
+  /** "Other" work only: the steps it goes through (any of content / shooting / editing / design, in that order). */
+  steps?: StageKind[];
+  /** "Other" work only: who approves it at the end (default: Account Management, else whoever gave it). */
+  approverId?: string | null;
 };
 
 /**
@@ -647,8 +651,11 @@ export async function createExtraTasks(actor: Actor, input: ExtraTaskInput, opts
   const ids = [...new Set(input.assigneeIds.filter(Boolean))];
   assert(ids.length, "Choose who it's for.");
   assert(TYPE_META[input.type], "Unknown content type.");
-  const route = routeFor(input.type, "plan");
-  const start = route.indexOf(input.step);
+  // "Other" (a brief, a document…): the chosen steps, then Approval.
+  const otherSteps = input.type === "other" ? OTHER_STEPS.filter((k) => (input.steps?.length ? input.steps : [input.step]).includes(k)) : [];
+  if (input.type === "other") assert(otherSteps.length, "Pick at least one step before the approval.");
+  const route = input.type === "other" ? [...otherSteps, "approval" as StageKind] : routeFor(input.type, "plan");
+  const start = input.type === "other" ? 0 : route.indexOf(input.step);
   assert(start >= 0, `A ${TYPE_META[input.type].label} has no ${STAGE_META[input.step]?.label ?? "such"} step — pick another type or step.`);
   if (input.dueDate) assert(isValidISODate(input.dueDate), "Invalid date.");
   const now = opts.now ?? new Date();
@@ -665,6 +672,13 @@ export async function createExtraTasks(actor: Actor, input: ExtraTaskInput, opts
     const kinds = route.slice(start);
     const defaults: Partial<Record<StageKind, string | null>> = {};
     for (const k of kinds) defaults[k] = await defaultAssigneeTx(tx, brand.id, k);
+    if (kinds.includes("approval")) {
+      if (input.approverId) {
+        const [ap] = await tx.select().from(users).where(eq(users.id, input.approverId));
+        assert(ap?.isActive && (isManager(ap) || (ap.teams as string[]).includes("account")), "The approver must be a manager or in Account Management.");
+        defaults.approval = ap.id;
+      } else defaults.approval = defaults.approval ?? actor.id;
+    }
     const people = await tx.select({ id: users.id, name: users.name, isActive: users.isActive }).from(users).where(inArray(users.id, ids));
     const created: string[] = [];
     for (const assigneeId of ids) {
@@ -684,13 +698,13 @@ export async function createExtraTasks(actor: Actor, input: ExtraTaskInput, opts
           assigneeId: i === 0 ? assigneeId : (defaults[kind] ?? null),
         })),
       );
-      const step = STAGE_META[input.step].label;
+      const step = input.type === "other" ? kinds.map((k) => STAGE_META[k].short).join(" → ") : STAGE_META[input.step].label;
       await logActivity(tx, actor, {
         action: "item_created",
         itemId: item.id,
         brandId: brand.id,
         subjectUserId: assigneeId,
-        summary: `${actor.name} gave ${p!.name} an extra task in ${where}: ${TYPE_META[input.type].label} “${title}”, starting at ${step}${input.dueDate ? `, due ${formatDay(input.dueDate)}` : ""}.`,
+        summary: `${actor.name} gave ${p!.name} an extra task in ${where}: ${TYPE_META[input.type].label} “${title}”, ${input.type === "other" ? `steps: ${step}` : `starting at ${step}`}${input.dueDate ? `, due ${formatDay(input.dueDate)}` : ""}.`,
         at: now,
       });
       if (input.dueDate) {

@@ -178,7 +178,7 @@ async function Brands({ from, to, dueBy, today, open, qsDue }: { from: string; t
               )}
               {from === to && from === today && b.notFinished.length > 0 && (
                 <p className="text-[12px] text-muted">
-                  {b.notFinished.length} not finished: {(["content", "shooting", "media", "design", "social", "delivery"] as const)
+                  {b.notFinished.length} not finished: {(["content", "shooting", "media", "design", "social", "delivery", "approval"] as const)
                     .map((k) => [k, b.notFinished.filter((i) => i.current?.kind === k).length] as const)
                     .filter(([, n]) => n)
                     .map(([k, n]) => `${n} in ${STAGE_META[k].short}`)

@@ -5,6 +5,7 @@ import { useState } from "react";
 import clsx from "clsx";
 import {
   ArrowRight,
+  BadgeCheck,
   CalendarDays,
   Camera,
   Check,
@@ -35,7 +36,7 @@ import {
 } from "lucide-react";
 import { assignAction, completeStageAction, handOffAction, platformAction, progressAction, reviewVersionAction, shootAction, submitVersionAction } from "@/app/actions";
 import type { PlatformStatus, StageKind } from "@/db/schema";
-import { PICKABLE_PROGRESS, PROGRESS_META, STAGE_META, TYPE_META, handoffTargets, isNewWork, type WorkContext } from "@/domain/workflow";
+import { PICKABLE_PROGRESS, PROGRESS_META, STAGE_META, TYPE_META, finalStep, handoffTargets, isNewWork, type WorkContext } from "@/domain/workflow";
 import { formatDateTime, formatDay, formatRelative, todayISO } from "@/lib/dates";
 import { linkInfo, openLabel } from "@/lib/links";
 import type { StageView, VersionView, WorkItem } from "@/server/queries";
@@ -59,6 +60,7 @@ const TARGET_INFO: Partial<Record<StageKind, { icon: typeof Send; hint: string; 
   design: { icon: PenTool, hint: "Posts & carousels", short: "Design" },
   social: { icon: Send, hint: "Ready: publish it", short: "Social" },
   delivery: { icon: Truck, hint: "Send to the client", short: "Delivery" },
+  approval: { icon: BadgeCheck, hint: "To be approved", short: "Approval" },
 };
 
 type HandItem = Pick<WorkItem, "id" | "type" | "context" | "driveUrl" | "canvaUrl" | "canvaLink" | "stages" | "versions" | "shoot" | "title" | "defaults" | "slideNumber">;
@@ -207,14 +209,14 @@ function ContentLinkField({ item, id, compact }: { item: HandItem; id: string; c
 
 function SendOnPanel({ item, stageId, from, people, rights, meId }: { item: HandItem; stageId: string; from: StageKind; people: PickPerson[]; rights: Rights; meId: string }) {
   const context: WorkContext = item.context;
-  const targets = handoffTargets(from, context);
+  const targets = handoffTargets(from, context, item.type);
   const [target, setTarget] = useState<StageKind>(defaultTarget(item, stageId, targets));
   const [assigneeId, setAssigneeId] = useState("");
   const nextStage = item.stages.find((s) => s.kind === target);
   const existingDeadline = nextStage?.deadline ?? null;
   const defaultPerson = nextStage ? (nextStage.assignee?.name ?? null) : (item.defaults[target] ?? null);
   const assigneeName = people.find((p) => p.id === assigneeId)?.name ?? "";
-  const final = target === "social" || target === "delivery";
+  const final = target === "social" || target === "delivery" || target === "approval";
 
   return (
     <ActionForm action={handOffAction} className="space-y-4">
@@ -495,7 +497,7 @@ function NeedField({ id, name, label, placeholder, value, ready }: { id: string;
 }
 
 function ShootPanel({ item, stageId, people, rights, meId, compact }: { item: HandItem; stageId: string; people: PickPerson[]; rights: Rights; meId: string; compact?: boolean }) {
-  const targets = handoffTargets("shooting", item.context);
+  const targets = handoffTargets("shooting", item.context, item.type);
   const [target, setTarget] = useState<StageKind>(defaultTarget(item, stageId, targets));
   const [assigneeId, setAssigneeId] = useState("");
   const [more, setMore] = useState(false);
@@ -708,8 +710,9 @@ export function VersionPanel({
   const latest = list.at(-1);
   const pending = latest?.status === "pending" ? latest : null;
   const nextNumber = (latest?.number ?? 0) + 1;
-  const final = item.context === "plan" ? "Social" : "Delivery";
-  const nextStage = item.stages.find((s) => s.kind === (item.context === "plan" ? "social" : "delivery"));
+  const finalKind = finalStep(item.context, item.type);
+  const final = STAGE_META[finalKind].short;
+  const nextStage = item.stages.find((s) => s.kind === finalKind);
   const nextName = nextStage?.assignee?.name ?? final;
   const what = stage.kind === "media" ? "video" : "design";
   const [showAll, setShowAll] = useState(false);
@@ -771,6 +774,18 @@ export function DeliverButton({ stageId }: { stageId: string }) {
       <input type="hidden" name="stageId" value={stageId} />
       <Submit variant="success">
         <Truck className="size-4" /> Mark as delivered
+      </Submit>
+    </ActionForm>
+  );
+}
+
+/** The last step of "Other" work: the approver approves and it's done (or sends it back with a note). */
+export function ApproveButton({ stageId }: { stageId: string }) {
+  return (
+    <ActionForm action={completeStageAction} inlineError={false}>
+      <input type="hidden" name="stageId" value={stageId} />
+      <Submit variant="success">
+        <BadgeCheck className="size-4" /> Approve it
       </Submit>
     </ActionForm>
   );
@@ -1194,14 +1209,13 @@ export function TaskCard({
           Details & comments
         </Link>
         {unclaimed && <TakeButton stageId={cur.id} userId={meId} size="sm" />}
-        {backTargets.length > 0 && <SendBack itemId={item.id} targets={backTargets} people={people} meId={meId} manager={manager} size="sm" />}
+        {mode === "do" && <SendBack itemId={item.id} targets={backTargets} people={people} meId={meId} manager={manager} size="sm" giver={item.extra?.by ?? null} />}
       </div>
 
-      {attachments && attachments.length > 0 && (
-        <div className="mt-2.5 px-4">
-          <Attachments items={attachments} itemId={item.id} meId={meId} manager={manager} canAdd={false} compact />
-        </div>
-      )}
+      {/* Files and links: always there to open, and to add one (a brief, a reference, the final file…). */}
+      <div className="mt-2.5 px-4">
+        <Attachments items={attachments ?? []} itemId={item.id} meId={meId} manager={manager} compact />
+      </div>
 
       <DeliveryTimes item={item} className="mt-2.5 px-4" />
 
@@ -1246,19 +1260,26 @@ function QuickAction({ item, people, rights, meId, allPlatforms }: { item: WorkI
       </div>
     );
   }
+  if (cur.kind === "approval") {
+    return (
+      <div className="flex flex-wrap items-center gap-3 text-[13px] text-muted">
+        <ApproveButton stageId={cur.id} /> Open the link or files above. Not right yet? Use Send back with a note.
+      </div>
+    );
+  }
   return <SocialPanel item={item} allPlatforms={allPlatforms} />;
 }
 
 function ContentQuick({ item, people, rights, meId }: { item: WorkItem; people: PickPerson[]; rights: Rights; meId: string }) {
   const cur = item.current!;
-  const targets = handoffTargets("content", item.context);
+  const targets = handoffTargets("content", item.context, item.type);
   const [target, setTarget] = useState<StageKind>(defaultTarget(item, cur.id, targets));
   const [more, setMore] = useState(false);
   const [assigneeId, setAssigneeId] = useState("");
   const nextStage = item.stages.find((s) => s.kind === target);
   const defaultPerson = nextStage ? (nextStage.assignee?.name ?? null) : (item.defaults[target] ?? null);
   const assigneeName = people.find((p) => p.id === assigneeId)?.name ?? "";
-  const final = target === "social" || target === "delivery";
+  const final = target === "social" || target === "delivery" || target === "approval";
   return (
     <ActionForm action={handOffAction} className="space-y-3">
       <input type="hidden" name="stageId" value={cur.id} />

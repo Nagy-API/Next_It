@@ -87,6 +87,7 @@ export function Shell({
   shootsToday,
   canAdd,
   taskPeople,
+  meId,
   taskBrands,
   sidebar,
   children,
@@ -102,7 +103,8 @@ export function Shell({
   chatUnread: number;
   shootsToday: number;
   canAdd: boolean;
-  taskPeople: { id: string; name: string; teams: string[] }[];
+  taskPeople: { id: string; name: string; teams: string[]; manager?: boolean }[];
+  meId: string;
   taskBrands: { id: string; name: string }[];
   sidebar: SidebarPref;
   children: React.ReactNode;
@@ -199,7 +201,7 @@ export function Shell({
         </div>
 
         <nav className="sidebar-scroll flex-1 overflow-y-auto px-3 pb-4 pt-1">
-          {nav.giveTasks && <GiveTaskButton people={taskPeople} brands={nav.modules.content ? taskBrands : []} />}
+          {nav.giveTasks && <GiveTaskButton people={taskPeople} brands={nav.modules.content ? taskBrands : []} meId={meId} />}
           <div className="space-y-0.5">
             <NavItem href="/my-work" icon={UserRound} label="My tasks" active={pathname.startsWith("/my-work")} count={myCount} />
             <NavItem href="/overview" icon={Home} label="Overview" active={pathname.startsWith("/overview") || pathname.startsWith("/work")} />

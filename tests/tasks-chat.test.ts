@@ -28,11 +28,11 @@ describe("Tasks managers give", () => {
     expect((await notesOf(esraa.id)).some((n) => n.kind === "task" && n.href === "/my-work#tasks")).toBe(true);
 
     await expect(setTaskDone(king, weekly.id, true)).rejects.toThrow(/isn't yours/);
-    const next = await setTaskDone(esraa, weekly.id, true);
+    const next = (await setTaskDone(esraa, weekly.id, true))?.next;
     expect(next).toMatchObject({ dueDate: "2026-10-12", assigneeId: esraa.id, seriesId: weekly.id, doneAt: null });
     // Reopening and finishing again doesn't create a duplicate.
     await setTaskDone(esraa, weekly.id, false);
-    expect(await setTaskDone(esraa, weekly.id, true)).toBeNull();
+    expect((await setTaskDone(esraa, weekly.id, true))?.next ?? null).toBeNull();
     expect((await notesOf(ammar.id)).some((n) => n.kind === "finished" && n.title.includes("Weekly report"))).toBe(true);
 
     const mine = await getTasksFor(esraa.id, "2026-10-06");
@@ -48,7 +48,7 @@ describe("Tasks managers give", () => {
     const shahenda = await makeManager("Shahenda", ["leadership"]);
     const assem = await makeUser("Assem", ["account"]);
     const [t] = await createTasks(shahenda, { title: "Invoice", assigneeIds: [assem.id], dueDate: "2027-01-31", recurrence: "monthly" });
-    const next = await setTaskDone(assem, t.id, true);
+    const next = (await setTaskDone(assem, t.id, true))?.next;
     expect(next?.dueDate).toBe("2027-02-28");
   });
 });

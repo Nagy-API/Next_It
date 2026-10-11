@@ -22,7 +22,7 @@ import { Avatar, BrandDot, BrandMark, Empty, ProgressBar, ProgressChip, SectionT
 
 export const metadata = { title: "Overview" };
 
-const PIPELINE: StageKind[] = ["content", "shooting", "media", "design", "social", "delivery"];
+const PIPELINE: StageKind[] = ["content", "shooting", "media", "design", "social", "delivery", "approval"];
 
 export default async function HomePage() {
   const user = await requireUser();
@@ -464,7 +464,7 @@ function TeamNow({ open }: { open: WorkItem[] }) {
 /* ------------------------------------------------------------------ */
 
 function Pipeline({ open, publishedThisMonth }: { open: WorkItem[]; publishedThisMonth: number }) {
-  const kinds = PIPELINE.filter((k) => k !== "delivery" || open.some((i) => i.current?.kind === "delivery"));
+  const kinds = PIPELINE.filter((k) => (k !== "delivery" && k !== "approval") || open.some((i) => i.current?.kind === k));
   return (
     <div className="card overflow-x-auto">
       <div className="flex min-w-[760px] items-stretch">

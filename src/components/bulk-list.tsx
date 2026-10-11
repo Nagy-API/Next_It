@@ -22,7 +22,7 @@ export function BulkList({ items, people, showContext = false, selectable = true
   const kinds = useMemo(() => {
     const ks = new Set<StageKind>();
     for (const i of items) if (selected.has(i.id)) for (const s of i.stages) ks.add(s.kind);
-    return (["content", "shooting", "media", "design", "social", "delivery"] as StageKind[]).filter((k) => ks.has(k));
+    return (["content", "shooting", "media", "design", "social", "delivery", "approval"] as StageKind[]).filter((k) => ks.has(k));
   }, [items, selected]);
   const [kind, setKind] = useState<StageKind | "">("");
   const effectiveKind = kind && kinds.includes(kind) ? kind : (kinds.find((k) => k !== "content") ?? kinds[0] ?? "content");

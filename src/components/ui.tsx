@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { Camera, Clapperboard, Film, GalleryHorizontalEnd, Image as ImageIcon, CircleDashed, PackageCheck, Palette, PenLine, Plus, Send, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Camera, Clapperboard, FileText, Film, GalleryHorizontalEnd, Image as ImageIcon, CircleDashed, PackageCheck, Palette, PenLine, Plus, Send, type LucideIcon } from "lucide-react";
 import type { ContentType, StageKind, StageProgress } from "@/db/schema";
 import { PROGRESS_META, STAGE_COLOR, STAGE_META, TYPE_META } from "@/domain/workflow";
 import { formatDay, formatDuration } from "@/lib/dates";
@@ -78,6 +78,7 @@ const TYPE_ICON: Record<ContentType, LucideIcon> = {
   static: ImageIcon,
   carousel: GalleryHorizontalEnd,
   story: CircleDashed,
+  other: FileText,
 };
 
 export function TypeIcon({ type, className }: { type: ContentType; className?: string }) {
@@ -207,7 +208,7 @@ export function ExtraBadge({ by, className }: { by?: string | null; className?: 
 const chipBase = "inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-1.5 py-px text-[11.5px] font-medium leading-[18px] text-ink-2 whitespace-nowrap";
 
 /** A small icon per step, in that step's colour (the same everywhere). */
-const STAGE_ICON: Record<StageKind, LucideIcon> = { content: PenLine, shooting: Camera, media: Film, design: Palette, social: Send, delivery: PackageCheck };
+const STAGE_ICON: Record<StageKind, LucideIcon> = { content: PenLine, shooting: Camera, media: Film, design: Palette, social: Send, delivery: PackageCheck, approval: BadgeCheck };
 
 /** The step's name with its icon — plain, quiet, readable in both themes. */
 export function StageChip({ kind, short, className }: { kind: StageKind; short?: boolean; className?: string }) {

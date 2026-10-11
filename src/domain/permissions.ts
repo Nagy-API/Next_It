@@ -82,10 +82,12 @@ export function allowed(w: Who, key: PermissionKey) {
 }
 
 export const can = {
-  /** Finish / submit a step. Your own step, your team's step, or admin. Delivery: account, content or managers. */
+  /** Finish / submit a step. Your own step, your team's step, or admin. Delivery: account, content or managers. Approval: account or managers. */
   doStage(w: Who, stage: { kind: StageKind; assigneeId?: string | null }) {
     if (w.isAdmin || stage.assigneeId === w.id) return true;
     if (stage.kind === "delivery") return has(w, "account") || has(w, "content") || isManager(w);
+    // Approving "Other" work (a brief, a document…): its approver, Account Management or any manager.
+    if (stage.kind === "approval") return has(w, "account") || isManager(w);
     const team = STAGE_META[stage.kind].team;
     return !!team && has(w, team);
   },

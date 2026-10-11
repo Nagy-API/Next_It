@@ -2,7 +2,7 @@
  * Tasks managers give to anyone — one-off or repeating (daily / weekly / monthly).
  * Finishing a repeating task creates the next one automatically.
  */
-import { and, asc, desc, eq, gte, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { brands, RECURRENCES, TASK_STATUSES, tasks, users, type Recurrence, type TaskStatus } from "@/db/schema";
@@ -25,6 +25,8 @@ export type TaskInput = {
   dueTime?: string | null;
   recurrence?: Recurrence;
   priority?: string | null;
+  /** Someone approves it when it's finished (null = ticking it done is enough). */
+  approverId?: string | null;
 };
 
 function nextDue(due: string, r: Recurrence) {
@@ -44,7 +46,13 @@ export async function createTasks(actor: Actor, input: TaskInput, opts: { now?: 
   const now = opts.now ?? new Date();
   const priority = cleanPriority(input.priority);
   return db.transaction(async (tx) => {
-    const people = await tx.select({ id: users.id, name: users.name, isActive: users.isActive }).from(users);
+    const people = await tx.select({ id: users.id, name: users.name, isActive: users.isActive, isAdmin: users.isAdmin, isManager: users.isManager, teams: users.teams }).from(users);
+    let approverId: string | null = null;
+    if (input.approverId) {
+      const ap = people.find((x) => x.id === input.approverId);
+      assert(ap?.isActive && (ap.id === actor.id || isManager(ap) || (ap.teams as string[]).includes("account")), "The approver must be a manager or in Account Management.");
+      approverId = ap.id;
+    }
     const created = [];
     for (const assigneeId of ids) {
       const p = people.find((x) => x.id === assigneeId);
@@ -61,6 +69,7 @@ export async function createTasks(actor: Actor, input: TaskInput, opts: { now?: 
           dueTime: input.dueTime || null,
           recurrence,
           priority,
+          approverId: approverId && approverId !== assigneeId ? approverId : null,
           createdAt: now,
         })
         .returning();
@@ -87,14 +96,38 @@ export async function createTasks(actor: Actor, input: TaskInput, opts: { now?: 
   });
 }
 
-export async function setTaskDone(actor: Actor, taskId: string, done: boolean, opts: { now?: Date } = {}) {
+/** Who may approve a finished task: its approver, whoever gave it, or any manager. */
+export function mayApproveTask(actor: Actor, t: { approverId: string | null; createdById: string; assigneeId: string }) {
+  // Nobody approves their own work (unless they gave the task to themselves).
+  if (t.assigneeId === actor.id && t.createdById !== actor.id) return false;
+  return t.approverId === actor.id || t.createdById === actor.id || isManager(actor);
+}
+
+/**
+ * Tick a task done. A task with an approver goes to them first ("Waiting approval") when the person finishes it;
+ * the approver (or whoever gave it, or a manager) ticking it approves it and it's done.
+ */
+export async function setTaskDone(actor: Actor, taskId: string, done: boolean, opts: { now?: Date } = {}): Promise<{ next: typeof tasks.$inferSelect | null; submitted?: boolean } | null> {
   const now = opts.now ?? new Date();
   return db.transaction(async (tx) => {
     const [t] = await tx.select().from(tasks).where(eq(tasks.id, taskId)).for("update");
     assert(t && !t.deletedAt, "Task not found.");
-    assert(t.assigneeId === actor.id || t.createdById === actor.id || isManager(actor), "This task isn't yours.");
-    if (!!t.doneAt === done) return null;
-    await tx.update(tasks).set(done ? { doneAt: now, doneById: actor.id } : { doneAt: null, doneById: null }).where(eq(tasks.id, t.id));
+    assert(t.assigneeId === actor.id || t.createdById === actor.id || t.approverId === actor.id || isManager(actor), "This task isn't yours.");
+    // Finished by the person, with an approver who isn't them: it waits for approval.
+    if (done && !t.doneAt && t.approverId && !mayApproveTask(actor, t)) {
+      if (t.submittedAt) return null;
+      await tx.update(tasks).set({ submittedAt: now, statusAt: now }).where(eq(tasks.id, t.id));
+      await notify(tx, actor, [t.approverId], { kind: "review", title: `Approve: ${t.title}`, body: `${actor.name} finished it and sent it to you.`, href: "/my-work?tab=given#approve", at: now });
+      await logActivity(tx, actor, { action: "task_submitted", subjectUserId: t.assigneeId, brandId: t.brandId, summary: `${actor.name} finished the task “${t.title}” and sent it for approval.`, at: now });
+      return { next: null, submitted: true };
+    }
+    // Nothing to do: already done, or already open (and not waiting for approval).
+    if (done ? !!t.doneAt : !t.doneAt && !t.submittedAt) return null;
+    const approving = done && !!t.approverId && actor.id !== t.assigneeId;
+    await tx
+      .update(tasks)
+      .set(done ? { doneAt: now, doneById: t.submittedAt ? t.assigneeId : actor.id, approvedById: approving ? actor.id : null, submittedAt: null } : { doneAt: null, doneById: null, approvedById: null, submittedAt: null })
+      .where(eq(tasks.id, t.id));
     let next: typeof tasks.$inferSelect | null = null;
     if (done && t.recurrence !== "none") {
       // The next occurrence, unless it already exists (task was reopened and finished again).
@@ -116,23 +149,62 @@ export async function setTaskDone(actor: Actor, taskId: string, done: boolean, o
             dueTime: t.dueTime,
             recurrence: t.recurrence,
             priority: t.priority,
+            approverId: t.approverId,
             seriesId: t.seriesId ?? t.id,
             createdAt: now,
           })
           .returning();
       }
     }
-    if (done && t.createdById !== actor.id) {
-      await notify(tx, actor, [t.createdById], { kind: "finished", title: `${actor.name} finished: ${t.title}`, body: null, href: "/my-work#given", at: now });
+    if (approving && t.assigneeId !== actor.id) {
+      await notify(tx, actor, [t.assigneeId], { kind: "approved", title: `Approved: ${t.title}`, body: `${actor.name} approved it.`, href: "/my-work#tasks", at: now });
+    }
+    if (done && t.createdById !== actor.id && !(approving && t.createdById === t.approverId)) {
+      await notify(tx, actor, [t.createdById], { kind: "finished", title: `${approving ? "Approved" : `${actor.name} finished`}: ${t.title}`, body: null, href: "/my-work?tab=given", at: now });
     }
     await logActivity(tx, actor, {
       action: done ? "task_done" : "task_reopened",
       subjectUserId: t.assigneeId,
       brandId: t.brandId,
-      summary: `${actor.name} ${done ? "finished" : "reopened"} the task “${t.title}”.${next ? ` Next one: ${formatDay(next.dueDate)}.` : ""}`,
+      summary: `${actor.name} ${done ? (approving ? "approved" : "finished") : "reopened"} the task “${t.title}”.${next ? ` Next one: ${formatDay(next.dueDate)}.` : ""}`,
       at: now,
     });
-    return next;
+    return { next };
+  });
+}
+
+/**
+ * Send a task back, with a note. The person doing it sends it back to whoever gave it ("I need…": it reads Waiting);
+ * the giver, the approver or a manager send it back to the person (changes: it reopens, not done, not waiting approval).
+ */
+export async function sendBackTask(actor: Actor, taskId: string, note: string, opts: { now?: Date } = {}) {
+  const text = note.trim().slice(0, 1000);
+  assert(text, "Write what's needed.");
+  const now = opts.now ?? new Date();
+  return db.transaction(async (tx) => {
+    const [t] = await tx.select().from(tasks).where(eq(tasks.id, taskId)).for("update");
+    assert(t && !t.deletedAt, "Task not found.");
+    const toGiver = t.assigneeId === actor.id && !mayApproveTask(actor, t);
+    assert(toGiver || mayApproveTask(actor, t), "This task isn't yours.");
+    if (toGiver) {
+      assert(!t.doneAt, "This task is already done.");
+      await tx.update(tasks).set({ status: "waiting", statusAt: now, submittedAt: null, returnNote: text, returnedById: actor.id, returnedAt: now }).where(eq(tasks.id, t.id));
+      await notify(tx, actor, [t.createdById], { kind: "sent_back", title: `${actor.name} sent back: ${t.title}`, body: text, href: "/my-work?tab=given", at: now });
+    } else {
+      await tx
+        .update(tasks)
+        .set({ status: "todo", statusAt: now, submittedAt: null, doneAt: null, doneById: null, approvedById: null, returnNote: text, returnedById: actor.id, returnedAt: now })
+        .where(eq(tasks.id, t.id));
+      if (t.assigneeId !== actor.id) await notify(tx, actor, [t.assigneeId], { kind: "sent_back", title: `Changes: ${t.title}`, body: `${actor.name}: ${text}`, href: "/my-work#tasks", at: now });
+    }
+    await logActivity(tx, actor, {
+      action: "task_sent_back",
+      subjectUserId: t.assigneeId,
+      brandId: t.brandId,
+      summary: `${actor.name} sent back the task “${t.title}”${toGiver ? " to whoever gave it" : ""}: “${text.slice(0, 200)}”.`,
+      at: now,
+    });
+    return { toGiver };
   });
 }
 
@@ -191,6 +263,7 @@ export async function deleteTask(actor: Actor, taskId: string, opts: { series?: 
 
 const giver = alias(users, "giver");
 const assignee = alias(users, "assignee");
+const approver = alias(users, "approver");
 
 const taskCols = {
   id: tasks.id,
@@ -210,6 +283,12 @@ const taskCols = {
   createdByName: giver.name,
   brandName: brands.name,
   brandColor: brands.color,
+  approverId: tasks.approverId,
+  approverName: approver.name,
+  submittedAt: tasks.submittedAt,
+  returnNote: tasks.returnNote,
+  returnedById: tasks.returnedById,
+  returnedAt: tasks.returnedAt,
 };
 
 export type TaskView = Awaited<ReturnType<typeof getTasksFor>>[number];
@@ -222,6 +301,7 @@ export async function getTasksFor(userId: string, today = todayISO()) {
     .from(tasks)
     .innerJoin(giver, eq(giver.id, tasks.createdById))
     .innerJoin(assignee, eq(assignee.id, tasks.assigneeId))
+    .leftJoin(approver, eq(approver.id, tasks.approverId))
     .leftJoin(brands, eq(brands.id, tasks.brandId))
     .where(and(eq(tasks.assigneeId, userId), isNull(tasks.deletedAt), or(isNull(tasks.doneAt), gte(tasks.doneAt, since))))
     .orderBy(asc(tasks.doneAt), asc(tasks.dueDate), asc(tasks.createdAt));
@@ -235,7 +315,36 @@ export async function getTasksGivenBy(userId: string, today = todayISO()) {
     .from(tasks)
     .innerJoin(giver, eq(giver.id, tasks.createdById))
     .innerJoin(assignee, eq(assignee.id, tasks.assigneeId))
+    .leftJoin(approver, eq(approver.id, tasks.approverId))
     .leftJoin(brands, eq(brands.id, tasks.brandId))
     .where(and(eq(tasks.createdById, userId), isNull(tasks.deletedAt), or(isNull(tasks.doneAt), gte(tasks.doneAt, since))))
     .orderBy(asc(tasks.doneAt), asc(tasks.dueDate), desc(tasks.createdAt));
+}
+
+/** Every task given in the team (managers): open ones and the last week's finished ones, newest first. */
+export async function getAllGivenTasks(today = todayISO()) {
+  const since = new Date(`${addDays(today, -7)}T00:00:00Z`);
+  return db
+    .select(taskCols)
+    .from(tasks)
+    .innerJoin(giver, eq(giver.id, tasks.createdById))
+    .innerJoin(assignee, eq(assignee.id, tasks.assigneeId))
+    .leftJoin(approver, eq(approver.id, tasks.approverId))
+    .leftJoin(brands, eq(brands.id, tasks.brandId))
+    .where(and(isNull(tasks.deletedAt), or(isNull(tasks.doneAt), gte(tasks.doneAt, since))))
+    .orderBy(asc(tasks.doneAt), asc(tasks.dueDate), desc(tasks.createdAt));
+}
+
+/** Finished tasks waiting for this person's approval (their approver, whoever gave it; managers see every one). */
+export async function getTasksToApprove(user: Actor) {
+  const rows = await db
+    .select(taskCols)
+    .from(tasks)
+    .innerJoin(giver, eq(giver.id, tasks.createdById))
+    .innerJoin(assignee, eq(assignee.id, tasks.assigneeId))
+    .leftJoin(approver, eq(approver.id, tasks.approverId))
+    .leftJoin(brands, eq(brands.id, tasks.brandId))
+    .where(and(isNull(tasks.deletedAt), isNull(tasks.doneAt), isNotNull(tasks.submittedAt)))
+    .orderBy(asc(tasks.submittedAt));
+  return rows.filter((t) => t.assigneeId !== user.id && mayApproveTask(user, t));
 }

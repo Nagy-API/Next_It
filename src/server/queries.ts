@@ -844,7 +844,7 @@ export function tasksFor(open: WorkItem[], user: { id: string; teams: readonly s
   });
 }
 /** Whose task list a step shows up in. Handing one-off work to the client is Account Management's. */
-const STAGE_TEAM: Record<string, string> = { content: "content", shooting: "media", media: "media", design: "design", social: "social", delivery: "account" };
+const STAGE_TEAM: Record<string, string> = { content: "content", shooting: "media", media: "media", design: "design", social: "social", delivery: "account", approval: "account" };
 
 /**
  * Versions waiting for this person's approval: the item's content creator reviews it;

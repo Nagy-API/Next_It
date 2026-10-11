@@ -10,7 +10,7 @@ import { useToast } from "./client";
  * A list the person can put in their own order: drag the grip (computer) or tap ↑ ↓ (phone).
  * Saved for them only; "Reset order" goes back to the automatic order.
  */
-export function Reorderable({ rows, custom, className }: { rows: { key: string; node: React.ReactNode; head?: React.ReactNode }[]; custom: boolean; className?: string }) {
+export function Reorderable({ rows, custom, className, resetLabel = "Reset to the automatic order (by day)" }: { rows: { key: string; node: React.ReactNode; head?: React.ReactNode }[]; custom: boolean; className?: string; resetLabel?: string }) {
   const [order, setOrder] = useState(rows.map((r) => r.key));
   const [seen, setSeen] = useState(rows.map((r) => r.key).join());
   const [drag, setDrag] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function Reorderable({ rows, custom, className }: { rows: { key: string; 
           }
           className="mt-2 inline-flex cursor-pointer items-center gap-1 text-[12.5px] font-medium text-muted hover:text-electric"
         >
-          <RotateCcw className="size-3.5" /> Reset to the automatic order (by day)
+          <RotateCcw className="size-3.5" /> {resetLabel}
         </button>
       )}
     </div>

@@ -98,7 +98,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           chatUnread={chatUnread}
           shootsToday={shootsToday.filter((s) => s.status !== "cancelled").length}
           canAdd={ws.modules.content && can.editContent(user)}
-          taskPeople={active.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }))}
+          taskPeople={active.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[], manager: p.isManager || p.isAdmin }))}
+          meId={user.id}
           taskBrands={brands.filter((b) => b.isActive).map((b) => ({ id: b.id, name: b.name }))}
           sidebar={parseSidebar(jar.get("sb")?.value)}
         >
