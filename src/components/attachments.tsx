@@ -12,10 +12,10 @@ import { btn } from "./ui";
 export type AttachmentItem = { id: string; kind: "file" | "link"; name: string; href: string; mime: string | null; size: number | null; createdById: string };
 
 /** Same list as the server allows (src/server/attachments.ts). */
-const ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.rtf,.txt,.csv,.png,.jpg,.jpeg,.webp,.gif,.heic,.mp3,.m4a,.wav,.mp4,.mov,.zip";
+export const ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.rtf,.txt,.csv,.png,.jpg,.jpeg,.webp,.gif,.heic,.mp3,.m4a,.wav,.mp4,.mov,.zip";
 const MAX = 25 * 1024 * 1024;
 
-function iconFor(a: Pick<AttachmentItem, "kind" | "mime" | "name">) {
+export function iconFor(a: Pick<AttachmentItem, "kind" | "mime" | "name">) {
   if (a.kind === "link") return Link2;
   const m = a.mime ?? "";
   if (m.startsWith("image/")) return FileImage;
@@ -27,18 +27,19 @@ function iconFor(a: Pick<AttachmentItem, "kind" | "mime" | "name">) {
   return FileText;
 }
 
-function sizeText(n: number | null) {
+export function sizeText(n: number | null) {
   if (!n) return "";
   return n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-async function upload(file: File, target: { itemId?: string; taskId?: string; workTaskId?: string }) {
+export type UploadTarget = Partial<Record<"itemId" | "taskId" | "workTaskId" | "privateNoteId" | "planId", string>>;
+
+/** Uploads one file to /api/files (checked on the server); no target = waits for the form it's picked in. */
+export async function upload(file: File, target: UploadTarget) {
   if (file.size > MAX) throw new Error(`${file.name} is bigger than 25 MB. Put it on Google Drive and attach the link instead.`);
   const fd = new FormData();
   fd.set("file", file);
-  if (target.itemId) fd.set("itemId", target.itemId);
-  if (target.taskId) fd.set("taskId", target.taskId);
-  if (target.workTaskId) fd.set("workTaskId", target.workTaskId);
+  for (const [k, v] of Object.entries(target)) if (v) fd.set(k, v);
   const res = await fetch("/api/files", { method: "POST", body: fd });
   const json = (await res.json().catch(() => ({}))) as { id?: string; name?: string; size?: number; mime?: string; error?: string };
   if (!res.ok || !json.id) throw new Error(json.error ?? "The upload didn't work. Please try again.");
@@ -51,6 +52,7 @@ export function Attachments({
   itemId,
   taskId,
   workTaskId,
+  planId,
   meId,
   manager,
   canAdd = true,
@@ -60,6 +62,8 @@ export function Attachments({
   itemId?: string;
   taskId?: string;
   workTaskId?: string;
+  /** A brand's month plan (more links and files beside its Canva / Drive). */
+  planId?: string;
   meId: string;
   manager?: boolean;
   canAdd?: boolean;
@@ -75,7 +79,7 @@ export function Attachments({
     if (!files?.length) return;
     setBusy(true);
     try {
-      for (const f of Array.from(files)) await upload(f, { itemId, taskId, workTaskId });
+      for (const f of Array.from(files)) await upload(f, { itemId, taskId, workTaskId, planId });
       push({ kind: "ok", text: files.length > 1 ? `${files.length} files attached.` : "File attached." });
       router.refresh();
     } catch (e) {
@@ -128,6 +132,7 @@ export function Attachments({
               {itemId && <input type="hidden" name="itemId" value={itemId} />}
               {taskId && <input type="hidden" name="taskId" value={taskId} />}
               {workTaskId && <input type="hidden" name="workTaskId" value={workTaskId} />}
+              {planId && <input type="hidden" name="planId" value={planId} />}
               <input name="url" required autoFocus placeholder="Paste a Google Doc, Drive, Canva… link" className="field field-sm h-8 min-w-0 flex-1" />
               <Submit size="sm" variant="dark">
                 Add

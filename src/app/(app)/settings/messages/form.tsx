@@ -17,7 +17,7 @@ export function DailyMessagesForm({ lines }: { lines: string[] }) {
           onChange={(e) => setText(e.target.value)}
           rows={8}
           className="field mt-1 w-full resize-y py-2 leading-relaxed"
-          placeholder={"Let's make something people stop scrolling for.\nMeeting every Sunday at 11 — bring your ideas ☕\nDone is a beautiful word."}
+          placeholder={"Let's make something people stop scrolling for.\nMeeting every Sunday at 11 — bring your ideas\nDone is a beautiful word."}
         />
       </label>
       <div className="mt-3 flex items-center justify-between gap-3">

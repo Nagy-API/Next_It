@@ -12,8 +12,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db, databaseMode, type Tx } from "@/db";
-import { attachments, contentItems, tasks, type Attachment } from "@/db/schema";
-import { isManager } from "@/domain/permissions";
+import { attachments, chatMessages, contentItems, contentPlans, privateNotes, tasks, type Attachment } from "@/db/schema";
+import { NOT_ALLOWED, can, isManager } from "@/domain/permissions";
 import { assertTaskWork } from "./spaces";
 import { logActivity, type Actor } from "./activity";
 import { assert } from "./errors";
@@ -75,7 +75,17 @@ async function assertTaskAccess(tx: Tx, actor: Actor, taskId: string) {
   assert(t.assigneeId === actor.id || t.createdById === actor.id || isManager(actor), "This task isn't yours.");
 }
 
-type Target = { itemId?: string | null; taskId?: string | null; workTaskId?: string | null; commentId?: string | null };
+type Target = { itemId?: string | null; taskId?: string | null; workTaskId?: string | null; commentId?: string | null; privateNoteId?: string | null; planId?: string | null; chatMessageId?: string | null };
+
+const targetCols = (t: Target) => ({
+  itemId: t.itemId || null,
+  taskId: t.taskId || null,
+  workTaskId: t.workTaskId || null,
+  commentId: t.commentId || null,
+  privateNoteId: t.privateNoteId || null,
+  planId: t.planId || null,
+  chatMessageId: t.chatMessageId || null,
+});
 
 async function checkTarget(tx: Tx, actor: Actor, target: Target) {
   if (target.itemId) {
@@ -84,6 +94,19 @@ async function checkTarget(tx: Tx, actor: Actor, target: Target) {
   }
   if (target.taskId) await assertTaskAccess(tx, actor, target.taskId);
   if (target.workTaskId) await assertTaskWork(tx, actor, target.workTaskId);
+  if (target.privateNoteId) {
+    const [n] = await tx.select({ userId: privateNotes.userId, deletedAt: privateNotes.deletedAt }).from(privateNotes).where(eq(privateNotes.id, target.privateNoteId));
+    assert(n && !n.deletedAt && n.userId === actor.id, "That note isn't yours.");
+  }
+  if (target.planId) {
+    assert(can.editContent(actor), NOT_ALLOWED);
+    const [p] = await tx.select({ id: contentPlans.id }).from(contentPlans).where(eq(contentPlans.id, target.planId));
+    assert(p, "That month plan doesn't exist.");
+  }
+  if (target.chatMessageId) {
+    const [m] = await tx.select({ authorId: chatMessages.authorId }).from(chatMessages).where(eq(chatMessages.id, target.chatMessageId));
+    assert(m && m.authorId === actor.id, "That message isn't yours.");
+  }
   return null;
 }
 
@@ -110,7 +133,7 @@ export async function saveFile(actor: Actor, file: File, target: Target = {}): P
       const ctx = await checkTarget(tx, actor, target);
       const [a] = await tx
         .insert(attachments)
-        .values({ itemId: target.itemId || null, taskId: target.taskId || null, workTaskId: target.workTaskId || null, kind: "file", name: cleanName(file.name), mime, size: file.size, storageKey: key, createdById: actor.id })
+        .values({ ...targetCols(target), kind: "file", name: cleanName(file.name), mime, size: file.size, storageKey: key, createdById: actor.id })
         .returning();
       if (ctx) await logActivity(tx, actor, { action: "attachment_added", itemId: ctx.item.id, brandId: ctx.brandId, projectId: ctx.projectId, clientId: ctx.clientId, summary: `${actor.name} attached “${a.name}”.` });
       return a;
@@ -129,7 +152,7 @@ export async function addLink(actor: Actor, input: { url: string; name?: string 
     const ctx = await checkTarget(tx, actor, input);
     const [a] = await tx
       .insert(attachments)
-      .values({ itemId: input.itemId || null, taskId: input.taskId || null, workTaskId: input.workTaskId || null, commentId: input.commentId || null, kind: "link", name: truncate(name, 120), url, createdById: actor.id })
+      .values({ ...targetCols(input), kind: "link", name: truncate(name, 120), url, createdById: actor.id })
       .returning();
     if (ctx) await logActivity(tx, actor, { action: "attachment_added", itemId: ctx.item.id, brandId: ctx.brandId, projectId: ctx.projectId, clientId: ctx.clientId, summary: `${actor.name} attached a link: ${a.name}.` });
     return a;
@@ -143,13 +166,25 @@ export async function linkPendingTx(tx: Tx, actor: Actor, ids: string[], targets
   const pending = await tx
     .select()
     .from(attachments)
-    .where(and(inArray(attachments.id, clean), eq(attachments.createdById, actor.id), isNull(attachments.itemId), isNull(attachments.taskId), isNull(attachments.workTaskId), isNull(attachments.deletedAt)));
+    .where(
+      and(
+        inArray(attachments.id, clean),
+        eq(attachments.createdById, actor.id),
+        isNull(attachments.itemId),
+        isNull(attachments.taskId),
+        isNull(attachments.workTaskId),
+        isNull(attachments.privateNoteId),
+        isNull(attachments.planId),
+        isNull(attachments.chatMessageId),
+        isNull(attachments.deletedAt),
+      ),
+    );
   for (const a of pending) {
     const [first, ...rest] = targets;
-    await tx.update(attachments).set({ itemId: first.itemId ?? null, taskId: first.taskId ?? null, commentId: first.commentId ?? null }).where(eq(attachments.id, a.id));
+    await tx.update(attachments).set(targetCols(first)).where(eq(attachments.id, a.id));
     // The same file for every person / item: one copy on disk, one row each.
     for (const t of rest) {
-      await tx.insert(attachments).values({ itemId: t.itemId ?? null, taskId: t.taskId ?? null, kind: a.kind, name: a.name, url: a.url, mime: a.mime, size: a.size, storageKey: a.storageKey, createdById: actor.id, createdAt: a.createdAt });
+      await tx.insert(attachments).values({ ...targetCols(t), kind: a.kind, name: a.name, url: a.url, mime: a.mime, size: a.size, storageKey: a.storageKey, createdById: actor.id, createdAt: a.createdAt });
     }
   }
 }
@@ -169,7 +204,8 @@ export async function removeAttachment(actor: Actor, id: string) {
   return db.transaction(async (tx) => {
     const [a] = await tx.select().from(attachments).where(eq(attachments.id, id));
     assert(a && !a.deletedAt, "Already removed.");
-    assert(a.createdById === actor.id || isManager(actor), "Only the person who attached it (or a manager) can remove it.");
+    if (a.privateNoteId) assert(a.createdById === actor.id, "That file isn't yours.");
+    else assert(a.createdById === actor.id || isManager(actor), "Only the person who attached it (or a manager) can remove it.");
     await tx.update(attachments).set({ deletedAt: new Date() }).where(eq(attachments.id, id));
     if (a.itemId) {
       const [i] = await tx.select({ id: contentItems.id }).from(contentItems).where(eq(contentItems.id, a.itemId));
@@ -199,7 +235,7 @@ function view(a: Attachment): AttachmentView {
   };
 }
 
-export async function attachmentsFor(target: { itemIds?: string[]; taskIds?: string[]; workTaskIds?: string[] }): Promise<Map<string, AttachmentView[]>> {
+export async function attachmentsFor(target: { itemIds?: string[]; taskIds?: string[]; workTaskIds?: string[]; planIds?: string[]; chatMessageIds?: string[]; privateNoteIds?: string[] }): Promise<Map<string, AttachmentView[]>> {
   const out = new Map<string, AttachmentView[]>();
   const add = (key: string, a: Attachment) => out.set(key, [...(out.get(key) ?? []), view(a)]);
   if (target.itemIds?.length) {
@@ -214,14 +250,28 @@ export async function attachmentsFor(target: { itemIds?: string[]; taskIds?: str
     const rows = await db.select().from(attachments).where(and(inArray(attachments.workTaskId, target.workTaskIds), isNull(attachments.deletedAt))).orderBy(asc(attachments.createdAt));
     for (const a of rows) add(a.workTaskId!, a);
   }
+  for (const [ids, col, key] of [
+    [target.planIds, attachments.planId, "planId"],
+    [target.chatMessageIds, attachments.chatMessageId, "chatMessageId"],
+    [target.privateNoteIds, attachments.privateNoteId, "privateNoteId"],
+  ] as const) {
+    if (!ids?.length) continue;
+    const rows = await db.select().from(attachments).where(and(inArray(col, ids), isNull(attachments.deletedAt))).orderBy(asc(attachments.createdAt));
+    for (const a of rows) add(a[key]!, a);
+  }
   return out;
 }
 
 /** The stored file for /api/files/[id]. */
-export async function readAttachment(id: string): Promise<{ a: Attachment; file: string } | null> {
+export async function readAttachment(id: string, viewerId: string): Promise<{ a: Attachment; file: string } | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [a] = await db.select().from(attachments).where(eq(attachments.id, id));
   if (!a || a.deletedAt || a.kind !== "file" || !a.storageKey || !/^[0-9a-f-]{36}\.[a-z0-9]+$/.test(a.storageKey)) return null;
+  // A file in someone's private notebook opens only for them (not even for managers).
+  if (a.privateNoteId) {
+    const [n] = await db.select({ userId: privateNotes.userId }).from(privateNotes).where(eq(privateNotes.id, a.privateNoteId));
+    if (n?.userId !== viewerId) return null;
+  }
   const file = path.join(filesDir(), a.storageKey);
   return fs.existsSync(file) ? { a, file } : null;
 }

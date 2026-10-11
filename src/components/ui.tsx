@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { Clapperboard, GalleryHorizontalEnd, Image as ImageIcon, CircleDashed, type LucideIcon } from "lucide-react";
+import { Camera, Clapperboard, Film, GalleryHorizontalEnd, Image as ImageIcon, CircleDashed, PackageCheck, Palette, PenLine, Plus, Send, type LucideIcon } from "lucide-react";
 import type { ContentType, StageKind, StageProgress } from "@/db/schema";
 import { PROGRESS_META, STAGE_COLOR, STAGE_META, TYPE_META } from "@/domain/workflow";
 import { formatDay, formatDuration } from "@/lib/dates";
@@ -127,7 +127,7 @@ export function SectionTitle({ children, right, className }: { children: React.R
 
 export function Empty({ icon: Icon, title, children, action }: { icon?: LucideIcon; title: string; children?: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-white/60 px-6 py-12 text-center">
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-subtle px-6 py-12 text-center">
       {Icon && (
         <div className="mb-3 flex size-11 items-center justify-center rounded-full bg-electric-soft text-electric">
           <Icon className="size-5" />
@@ -194,9 +194,9 @@ export function ExtraBadge({ by, className }: { by?: string | null; className?: 
   return (
     <span
       title={by ? `Extra task given by ${by} — on top of the month's plan` : "Extra task — on top of the month's plan"}
-      className={clsx("tint inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide", className)}
-      style={{ "--tint": "#b45309" } as React.CSSProperties}
+      className={clsx(chipBase, "text-[#b45309] dark:text-[#fbbf24]", className)}
     >
+      <Plus aria-hidden className="size-3" strokeWidth={2.6} />
       Extra{by ? ` · ${by}` : ""}
     </span>
   );
@@ -204,12 +204,17 @@ export function ExtraBadge({ by, className }: { by?: string | null; className?: 
 
 /* ------------------------------ Steps ------------------------------ */
 
-/** The step's name in its own colour — the same colour for that step everywhere. */
+const chipBase = "inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-1.5 py-px text-[11.5px] font-medium leading-[18px] text-ink-2 whitespace-nowrap";
+
+/** A small icon per step, in that step's colour (the same everywhere). */
+const STAGE_ICON: Record<StageKind, LucideIcon> = { content: PenLine, shooting: Camera, media: Film, design: Palette, social: Send, delivery: PackageCheck };
+
+/** The step's name with its icon — plain, quiet, readable in both themes. */
 export function StageChip({ kind, short, className }: { kind: StageKind; short?: boolean; className?: string }) {
-  const c = STAGE_COLOR[kind];
+  const Icon = STAGE_ICON[kind];
   return (
-    <span className={clsx("tint inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-semibold", className)} style={{ "--tint": c.fg } as React.CSSProperties}>
-      <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: c.fg }} />
+    <span className={clsx(chipBase, className)}>
+      <Icon aria-hidden className="size-3 shrink-0" strokeWidth={2.2} style={{ color: STAGE_COLOR[kind].fg }} />
       {short ? STAGE_META[kind].short : STAGE_META[kind].label}
     </span>
   );
@@ -217,9 +222,61 @@ export function StageChip({ kind, short, className }: { kind: StageKind; short?:
 
 /* ------------------------------ Status ------------------------------ */
 
+/** Status glyphs drawn like a project tool's: empty circle, half, ring, pause… (12 px, colour = the status). */
+function StatusGlyph({ progress, color, running }: { progress: StageProgress; color: string; running?: boolean }) {
+  const common = { width: 12, height: 12, viewBox: "0 0 12 12", "aria-hidden": true, className: "shrink-0" } as const;
+  switch (progress) {
+    case "not_started":
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="6" r="4.6" fill="none" stroke={color} strokeWidth="1.4" strokeDasharray="2 1.6" />
+        </svg>
+      );
+    case "processing":
+    case "adjusting":
+      return (
+        <svg {...common} className={clsx("shrink-0", running && "animate-[spin_3s_linear_infinite]")}>
+          <circle cx="6" cy="6" r="4.6" fill="none" stroke={color} strokeWidth="1.4" />
+          <path d={progress === "processing" ? "M6 2.6 A3.4 3.4 0 0 1 6 9.4 Z" : "M6 2.6 A3.4 3.4 0 0 1 9.4 6 L6 6 Z"} fill={color} />
+        </svg>
+      );
+    case "changes_requested":
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="6" r="5.2" fill={color} />
+          <path d="M6 3.2v3.4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
+          <circle cx="6" cy="8.6" r=".85" fill="#fff" />
+        </svg>
+      );
+    case "scheduled":
+      return (
+        <svg {...common}>
+          <rect x="1.4" y="2.2" width="9.2" height="8.4" rx="1.6" fill="none" stroke={color} strokeWidth="1.3" />
+          <path d="M1.4 5h9.2M4 1.2v2M8 1.2v2" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      );
+    case "waiting_approval":
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="6" r="4.6" fill="none" stroke={color} strokeWidth="1.4" />
+          <circle cx="6" cy="6" r="2" fill={color} />
+        </svg>
+      );
+    case "paused":
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="6" r="4.6" fill="none" stroke={color} strokeWidth="1.4" />
+          <path d="M4.9 4.2v3.6M7.1 4.2v3.6" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      );
+    default:
+      return <span aria-hidden className="size-2 rounded-full" style={{ background: color }} />;
+  }
+}
+
 /**
  * Where the person is with the step, readable from outside (rows, Overview, Dashboard, profiles):
- * In progress · Adjusting · Changes requested · Scheduled (with the day) · Waiting approval. Soft colours.
+ * In progress · Adjusting · Changes requested · Scheduled (with the day) · Waiting approval.
  */
 export function ProgressChip({
   progress,
@@ -230,7 +287,7 @@ export function ProgressChip({
 }: {
   progress: StageProgress;
   scheduledFor?: string | null;
-  /** The clock is running (a soft pulse). */
+  /** The clock is running (the glyph turns slowly). */
   running?: boolean;
   className?: string;
   hideNotStarted?: boolean;
@@ -238,8 +295,8 @@ export function ProgressChip({
   if (hideNotStarted && progress === "not_started") return null;
   const m = PROGRESS_META[progress];
   return (
-    <span className={clsx("tint inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-semibold whitespace-nowrap", className)} style={{ "--tint": m.fg } as React.CSSProperties}>
-      <span aria-hidden className={clsx("size-1.5 rounded-full", running && "animate-pulse")} style={{ backgroundColor: m.dot }} />
+    <span className={clsx(chipBase, className)}>
+      <StatusGlyph progress={progress} color={m.dot} running={running} />
       {m.label}
       {progress === "scheduled" && scheduledFor ? ` · ${formatDay(scheduledFor)}` : ""}
     </span>
@@ -280,13 +337,17 @@ export function BrandMark({ name, color, logoUrl, size = 20, className }: { name
   );
 }
 
-/** Urgent / Important (nothing for normal). */
+/** Urgent / Important (nothing for normal): signal bars like a project tool. */
 export function PriorityChip({ priority, className }: { priority: string | null | undefined; className?: string }) {
-  const m = priority === "urgent" ? { label: "Urgent", c: "#ef4444" } : priority === "important" ? { label: "Important", c: "#f59e0b" } : null;
+  const m = priority === "urgent" ? { label: "Urgent", c: "#e5484d", bars: 3 } : priority === "important" ? { label: "Important", c: "#f59e0b", bars: 2 } : null;
   if (!m) return null;
   return (
-    <span className={clsx("tint inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-bold", className)} style={{ "--tint": m.c } as React.CSSProperties}>
-      <span className={clsx("size-1.5 rounded-full", priority === "urgent" && "animate-pulse")} style={{ background: m.c }} />
+    <span className={clsx(chipBase, className)}>
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden className="shrink-0">
+        {[0, 1, 2].map((i) => (
+          <rect key={i} x={1 + i * 3.8} y={8 - i * 3} width="2.6" height={3 + i * 3} rx=".8" fill={i < m.bars ? m.c : "var(--color-line-strong)"} />
+        ))}
+      </svg>
       {m.label}
     </span>
   );

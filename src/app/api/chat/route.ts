@@ -15,5 +15,6 @@ export async function GET(req: Request) {
   ]);
   const reactions = await reactionsFor("chat", recent.map((m) => m.id), user.id);
   await markChatRead(user.id);
-  return Response.json({ messages, online, typing: typingNow(user.id), reactions: Object.fromEntries(reactions) }, { headers: { "Cache-Control": "no-store" } });
+  // The ids still there, so a message deleted by someone else disappears for everyone.
+  return Response.json({ messages, online, typing: typingNow(user.id), reactions: Object.fromEntries(reactions), recent: { since: recent[0]?.createdAt ?? null, ids: recent.map((m) => m.id) } }, { headers: { "Cache-Control": "no-store" } });
 }

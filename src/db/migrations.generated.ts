@@ -377,5 +377,21 @@ export const MIGRATIONS: { sql: string[]; bps: boolean; folderMillis: number; ha
     "bps": true,
     "folderMillis": 1791656645392,
     "hash": "815c2cc123ed5c3ba6f735084ee2bf16ff208339bd334cbe251263158d1195d5"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"private_notes\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"user_id\" uuid NOT NULL,\n\t\"title\" text DEFAULT '' NOT NULL,\n\t\"body\" text DEFAULT '' NOT NULL,\n\t\"color\" text,\n\t\"pinned\" boolean DEFAULT false NOT NULL,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"updated_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "\nALTER TABLE \"attachments\" ADD COLUMN \"chat_message_id\" uuid;",
+      "\nALTER TABLE \"attachments\" ADD COLUMN \"private_note_id\" uuid;",
+      "\nALTER TABLE \"attachments\" ADD COLUMN \"plan_id\" uuid;",
+      "\nALTER TABLE \"private_notes\" ADD CONSTRAINT \"private_notes_user_id_users_id_fk\" FOREIGN KEY (\"user_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nCREATE INDEX \"private_notes_user_idx\" ON \"private_notes\" USING btree (\"user_id\");",
+      "\nALTER TABLE \"attachments\" ADD CONSTRAINT \"attachments_chat_message_id_chat_messages_id_fk\" FOREIGN KEY (\"chat_message_id\") REFERENCES \"public\".\"chat_messages\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"attachments\" ADD CONSTRAINT \"attachments_private_note_id_private_notes_id_fk\" FOREIGN KEY (\"private_note_id\") REFERENCES \"public\".\"private_notes\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"attachments\" ADD CONSTRAINT \"attachments_plan_id_content_plans_id_fk\" FOREIGN KEY (\"plan_id\") REFERENCES \"public\".\"content_plans\"(\"id\") ON DELETE no action ON UPDATE no action;"
+    ],
+    "bps": true,
+    "folderMillis": 1791682170551,
+    "hash": "c67815f52fcdf5e708be5d5a07c0d9a7f6c195a458bd15f35b19d870a4bb9104"
   }
 ];

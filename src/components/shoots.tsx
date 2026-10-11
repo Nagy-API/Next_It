@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
-import { Ban, Camera, Check, ChevronLeft, ChevronRight, Clapperboard, Clock, ExternalLink, MapPin, Pencil, Plus, RotateCcw, ShoppingBag, StickyNote, Trash2, Users, Warehouse } from "lucide-react";
+import { Ban, Camera, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Clapperboard, Clock, ExternalLink, MapPin, Pencil, Plus, RotateCcw, ShoppingBag, StickyNote, Trash2, Users, Warehouse } from "lucide-react";
 import { deleteShootAction, saveShootAction, shootStatusAction } from "@/app/shoot-actions";
+import { shootAction } from "@/app/actions";
 import { ActionForm, Modal, Submit } from "./client";
 import { Avatar } from "./avatar";
 import { BrandMark } from "./ui";
@@ -19,6 +20,22 @@ type BrandOpt = { id: string; name: string; slug: string; color: string };
 const WEEKDAYS = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
 
 /** Saturday that starts the week of `iso`. */
+
+/** The same day one month earlier / later (the 31st becomes the last day of a shorter month). */
+function shiftMonth(iso: string, dir: number) {
+  let y = Number(iso.slice(0, 4));
+  let m = Number(iso.slice(5, 7)) + dir;
+  if (m < 1) {
+    m = 12;
+    y -= 1;
+  }
+  if (m > 12) {
+    m = 1;
+    y += 1;
+  }
+  const last = Number(monthRange(y, m).end.slice(8));
+  return `${y}-${String(m).padStart(2, "0")}-${String(Math.min(Number(iso.slice(8)), last)).padStart(2, "0")}`;
+}
 
 export function ShootBoard({
   entries,
@@ -43,6 +60,10 @@ export function ShootBoard({
   const today = todayISO();
   const [open, setOpen] = useState<ShootEntry | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
+  // The picked day: arrows move it a day (or a month); the page loads a new range only when it leaves this one.
+  const [sel, setSel] = useState(anchor);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => setSel(anchor), [anchor]);
   useEffect(() => {
     if (!openId) return;
     const e = entries.find((x) => x.id === openId);
@@ -56,15 +77,18 @@ export function ShootBoard({
     else q.delete(k);
     router.replace(`${pathname}?${q}`, { scroll: false });
   };
-  const step = (dir: -1 | 1) => {
-    if (view === "month") {
-      const y = Number(anchor.slice(0, 4));
-      const m = Number(anchor.slice(5, 7)) + dir;
-      const d = m < 1 ? `${y - 1}-12-01` : m > 12 ? `${y + 1}-01-01` : `${y}-${String(m).padStart(2, "0")}-01`;
-      go({ d });
-    } else go({ d: addDays(anchor, dir * (view === "list" ? 30 : 7)) });
-  };
   const ws = weekStart(anchor);
+  const mr = monthRange(Number(anchor.slice(0, 4)), Number(anchor.slice(5, 7)));
+  const [from, to] = view === "month" ? [mr.start, mr.end] : view === "week" ? [ws, addDays(ws, 6)] : [anchor, addDays(anchor, 29)];
+  const pick = (d: string) => {
+    if (d >= from && d <= to && view !== "list") {
+      setSel(d);
+      const q = new URLSearchParams(sp.toString());
+      q.delete("open");
+      q.set("d", d);
+      window.history.replaceState(null, "", `${pathname}?${q}`);
+    } else go({ d: d === today ? null : d });
+  };
   const title =
     view === "month"
       ? monthLabel(Number(anchor.slice(0, 4)), Number(anchor.slice(5, 7)))
@@ -72,7 +96,9 @@ export function ShootBoard({
         ? `${formatDay(ws)} – ${formatDay(addDays(ws, 6))}`
         : `${formatDay(anchor)} – ${formatDay(addDays(anchor, 29))}`;
   const brandSlug = sp.get("brand") ?? "";
+  const dayItems = entries.filter((e) => e.day === sel);
 
+  const navBtn = "grid size-9 cursor-pointer place-items-center rounded-lg transition-colors";
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -89,19 +115,26 @@ export function ShootBoard({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => step(-1)} className="grid size-9 cursor-pointer place-items-center rounded-lg border border-line bg-surface hover:border-line-strong" aria-label="Earlier">
+        {/* « a month · ‹ a day · Today · › a day · » a month */}
+        <div className="flex items-center gap-1" role="group" aria-label="Move through the calendar">
+          <button type="button" onClick={() => go({ d: shiftMonth(sel, -1) })} className={clsx(navBtn, "bg-sunken text-ink-2 hover:bg-hover hover:text-ink")} aria-label="One month back" title="One month back">
+            <ChevronsLeft className="size-[18px]" />
+          </button>
+          <button type="button" onClick={() => pick(addDays(sel, -1))} className={clsx(navBtn, "border border-line bg-surface hover:border-line-strong")} aria-label="One day back" title="One day back">
             <ChevronLeft className="size-4" />
           </button>
           <button type="button" onClick={() => go({ d: null })} className="h-9 cursor-pointer rounded-lg border border-line bg-surface px-3 text-[13px] font-medium hover:border-line-strong">
             Today
           </button>
-          <button type="button" onClick={() => step(1)} className="grid size-9 cursor-pointer place-items-center rounded-lg border border-line bg-surface hover:border-line-strong" aria-label="Later">
+          <button type="button" onClick={() => pick(addDays(sel, 1))} className={clsx(navBtn, "border border-line bg-surface hover:border-line-strong")} aria-label="One day forward" title="One day forward">
             <ChevronRight className="size-4" />
           </button>
+          <button type="button" onClick={() => go({ d: shiftMonth(sel, 1) })} className={clsx(navBtn, "bg-sunken text-ink-2 hover:bg-hover hover:text-ink")} aria-label="One month forward" title="One month forward">
+            <ChevronsRight className="size-[18px]" />
+          </button>
         </div>
-        <span className="font-display text-[16px] font-bold">{title}</span>
-        <select value={brandSlug} onChange={(e) => go({ brand: e.target.value || null })} aria-label="Brand" className="field field-sm ml-auto h-9 w-auto">
+        <span className="font-display text-[16px] font-bold max-sm:basis-full">{title}</span>
+        <select value={brandSlug} onChange={(e) => go({ brand: e.target.value || null })} aria-label="Brand" className="field field-sm h-9 w-auto sm:ml-auto">
           <option value="">All brands</option>
           {brands.map((b) => (
             <option key={b.id} value={b.slug}>
@@ -110,50 +143,82 @@ export function ShootBoard({
           ))}
         </select>
         {canPlan && (
-          <button type="button" onClick={() => setAdding(view === "week" ? (ws <= today && today <= addDays(ws, 6) ? today : ws) : today)} className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-electric px-3.5 text-[14px] font-semibold text-white shadow-sm transition-transform hover:brightness-110 active:scale-[0.97]">
+          <button type="button" onClick={() => setAdding(sel)} className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-electric px-3.5 text-[14px] font-semibold text-white shadow-sm transition-transform hover:brightness-110 active:scale-[0.97] max-sm:ml-auto">
             <Plus className="size-4" strokeWidth={2.5} /> Add a shoot
           </button>
         )}
       </div>
 
       {view === "week" && (
-        <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-          <div className="grid min-w-[820px] grid-cols-7 gap-2">
-            {Array.from({ length: 7 }, (_, i) => addDays(ws, i)).map((d, i) => {
-              const items = entries.filter((e) => e.day === d);
-              const isToday = d === today;
-              return (
-                <div key={d} className={clsx("flex min-h-[260px] flex-col rounded-2xl border p-2", isToday ? "border-electric/50 bg-electric-soft/50" : "border-line bg-subtle")}>
-                  <div className="mb-2 flex items-baseline justify-between px-1">
-                    <span className={clsx("text-[11.5px] font-semibold uppercase tracking-[0.08em]", isToday ? "text-electric" : "text-muted")}>{WEEKDAYS[i]}</span>
-                    <span className={clsx("font-display text-[18px] font-bold", isToday ? "text-electric" : "text-ink")}>{Number(d.slice(8))}</span>
-                  </div>
-                  {isToday && <span className="mb-2 self-start rounded-full bg-electric px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-white">Today</span>}
-                  <div className="flex flex-1 flex-col gap-2">
-                    {items.map((e) => (
-                      <SlotCard key={e.id} e={e} onOpen={() => setOpen(e)} compact />
-                    ))}
-                    {!items.length && <p className="px-1 text-[12px] text-faint">No shoots</p>}
-                  </div>
-                  {canPlan && (
-                    <button type="button" onClick={() => setAdding(d)} className="mt-2 inline-flex cursor-pointer items-center gap-1 self-start rounded-lg px-1.5 py-1 text-[12px] font-medium text-muted hover:bg-surface hover:text-electric">
-                      <Plus className="size-3.5" /> Add
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+        <>
+          {/* Phones: a strip of the 7 days, then the picked day's shoots. */}
+          <div className="md:hidden">
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({ length: 7 }, (_, i) => addDays(ws, i)).map((d, i) => {
+                const n = entries.filter((e) => e.day === d && e.status !== "cancelled").length;
+                const on = d === sel;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => pick(d)}
+                    aria-pressed={on}
+                    className={clsx("flex cursor-pointer flex-col items-center rounded-xl border py-1.5 transition-colors", on ? "border-electric bg-electric text-white" : d === today ? "border-electric/50 bg-electric-soft" : "border-line bg-surface")}
+                  >
+                    <span className={clsx("text-[10.5px] font-semibold uppercase", on ? "text-white/80" : "text-muted")}>{WEEKDAYS[i]}</span>
+                    <span className="font-display text-[17px] font-bold leading-tight">{Number(d.slice(8))}</span>
+                    <span className={clsx("mt-0.5 h-1.5 w-1.5 rounded-full", n ? (on ? "bg-white" : "bg-[#be185d]") : "bg-transparent")} />
+                  </button>
+                );
+              })}
+            </div>
+            <DayList day={sel} today={today} items={dayItems} onOpen={setOpen} onAdd={canPlan ? setAdding : undefined} />
           </div>
-        </div>
+          <div className="hidden md:block">
+            <div className="grid grid-cols-7 gap-2">
+              {Array.from({ length: 7 }, (_, i) => addDays(ws, i)).map((d, i) => {
+                const items = entries.filter((e) => e.day === d);
+                const isToday = d === today;
+                return (
+                  <div key={d} className={clsx("flex min-h-[260px] min-w-0 flex-col rounded-2xl border p-2", isToday ? "border-electric/50 bg-electric-soft/50" : "border-line bg-subtle", d === sel && !isToday && "ring-2 ring-electric/40")}>
+                    <button type="button" onClick={() => pick(d)} className="mb-2 flex cursor-pointer items-baseline justify-between px-1">
+                      <span className={clsx("text-[11.5px] font-semibold uppercase tracking-[0.08em]", isToday ? "text-electric" : "text-muted")}>{WEEKDAYS[i]}</span>
+                      <span className={clsx("font-display text-[18px] font-bold", isToday ? "text-electric" : "text-ink")}>{Number(d.slice(8))}</span>
+                    </button>
+                    {isToday && <span className="mb-2 self-start rounded-full bg-electric px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-white">Today</span>}
+                    <div className="flex flex-1 flex-col gap-2">
+                      {items.map((e) => (
+                        <SlotCard key={e.id} e={e} onOpen={() => setOpen(e)} compact />
+                      ))}
+                      {!items.length && <p className="px-1 text-[12px] text-faint">No shoots</p>}
+                    </div>
+                    {canPlan && (
+                      <button type="button" onClick={() => setAdding(d)} className="mt-2 inline-flex cursor-pointer items-center gap-1 self-start rounded-lg px-1.5 py-1 text-[12px] font-medium text-muted hover:bg-surface hover:text-electric">
+                        <Plus className="size-3.5" /> Add
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
       )}
 
-      {view === "month" && <MonthGrid anchor={anchor} entries={entries} onOpen={setOpen} onAdd={canPlan ? setAdding : undefined} />}
+      {view === "month" && (
+        <>
+          <MonthGrid anchor={anchor} sel={sel} entries={entries} onOpen={setOpen} onPick={pick} onAdd={canPlan ? setAdding : undefined} />
+          <div className="md:hidden">
+            <DayList day={sel} today={today} items={dayItems} onOpen={setOpen} onAdd={canPlan ? setAdding : undefined} />
+          </div>
+        </>
+      )}
 
       {view === "list" && (
         <div className="space-y-4">
           {[...new Set(entries.map((e) => e.day))].map((d) => (
             <section key={d}>
-              <h3 className={clsx("mb-2 flex items-center gap-2 font-display text-[15px] font-bold", d === today && "text-electric")}>
+              <h3 className={clsx("mb-2 flex flex-wrap items-center gap-2 font-display text-[15px] font-bold", d === today && "text-electric")}>
                 {formatDay(d, { weekday: true })}
                 {d === today && <span className="rounded-full bg-electric px-2 py-0.5 text-[10.5px] font-bold uppercase text-white">Today</span>}
                 <span className="text-[12.5px] font-normal text-muted">{entries.filter((e) => e.day === d).length} shoot(s)</span>
@@ -181,6 +246,34 @@ export function ShootBoard({
   );
 }
 
+/** One day's shoots, big and easy to tap (phones). */
+function DayList({ day, today, items, onOpen, onAdd }: { day: string; today: string; items: ShootEntry[]; onOpen: (e: ShootEntry) => void; onAdd?: (d: string) => void }) {
+  return (
+    <section className="mt-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className={clsx("font-display text-[15px] font-bold", day === today && "text-electric")}>
+          {day === today ? "Today · " : ""}
+          {formatDay(day, { weekday: true })}
+        </h3>
+        {onAdd && (
+          <button type="button" onClick={() => onAdd(day)} className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1 text-[13px] font-medium text-electric hover:bg-electric-soft">
+            <Plus className="size-4" /> Add
+          </button>
+        )}
+      </div>
+      {items.length ? (
+        <div className="space-y-2">
+          {items.map((e) => (
+            <SlotCard key={e.id} e={e} onOpen={() => onOpen(e)} />
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-xl border border-dashed border-line-strong bg-subtle px-4 py-6 text-center text-[13px] text-muted">No shoots this day.</p>
+      )}
+    </section>
+  );
+}
+
 /* ------------------------------ One slot ------------------------------ */
 
 export function SlotCard({ e, onOpen, compact }: { e: ShootEntry; onOpen: () => void; compact?: boolean }) {
@@ -199,7 +292,9 @@ export function SlotCard({ e, onOpen, compact }: { e: ShootEntry; onOpen: () => 
       <div className="flex items-center gap-1.5 text-[12px] font-bold tabular-nums text-ink">
         <Clock className="size-3.5 text-muted" />
         {e.start ? `${e.start}${e.end ? `–${e.end}` : ""}` : "Time not set"}
-        {e.status === "shot" && <span className="ml-auto inline-flex items-center gap-0.5 rounded-full bg-ok-soft px-1.5 text-[10.5px] font-bold text-ok">✓ Shot</span>}
+        {e.status === "shot" && <span className="ml-auto inline-flex items-center gap-0.5 rounded-full bg-ok-soft px-1.5 text-[10.5px] font-bold text-ok">
+            <Check className="size-3" strokeWidth={3} /> Shot
+          </span>}
         {e.status === "cancelled" && <span className="ml-auto rounded-full bg-bad-soft px-1.5 text-[10.5px] font-bold text-bad">Cancelled</span>}
       </div>
       <div className={clsx("mt-1 font-semibold leading-snug text-ink group-hover:text-electric", compact ? "line-clamp-2 text-[13px]" : "text-[14px]", e.status === "cancelled" && "line-through")}>{e.title}</div>
@@ -236,7 +331,7 @@ export function SlotCard({ e, onOpen, compact }: { e: ShootEntry; onOpen: () => 
 
 /* ------------------------------ Month grid ------------------------------ */
 
-function MonthGrid({ anchor, entries, onOpen, onAdd }: { anchor: string; entries: ShootEntry[]; onOpen: (e: ShootEntry) => void; onAdd?: (d: string) => void }) {
+function MonthGrid({ anchor, sel, entries, onOpen, onPick, onAdd }: { anchor: string; sel: string; entries: ShootEntry[]; onOpen: (e: ShootEntry) => void; onPick: (d: string) => void; onAdd?: (d: string) => void }) {
   const y = Number(anchor.slice(0, 4));
   const m = Number(anchor.slice(5, 7));
   const { start, end } = monthRange(y, m);
@@ -244,39 +339,51 @@ function MonthGrid({ anchor, entries, onOpen, onAdd }: { anchor: string; entries
   const total = Math.ceil((((dayOfWeek(start) + 1) % 7) + Number(end.slice(8))) / 7) * 7;
   const today = todayISO();
   return (
-    <div className="card overflow-x-auto">
-      <div className="grid min-w-[760px] grid-cols-7">
+    <div className="card overflow-hidden">
+      <div className="grid grid-cols-7">
         {WEEKDAYS.map((d) => (
-          <div key={d} className="border-b border-line bg-subtle px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">
+          <div key={d} className="border-b border-line bg-subtle px-1 py-1.5 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-faint md:px-2 md:text-left md:text-[11px]">
             {d}
           </div>
         ))}
         {Array.from({ length: total }, (_, i) => addDays(gridStart, i)).map((d) => {
           const inMonth = d >= start && d <= end;
           const items = entries.filter((e) => e.day === d);
+          const live = items.filter((e) => e.status !== "cancelled");
           return (
-            <div key={d} className={clsx("group/day min-h-[104px] border-b border-r border-line p-1.5", !inMonth && "bg-subtle")}>
-              <div className="mb-1 flex items-center justify-between">
-                <span className={clsx("text-[12px] font-semibold tabular-nums", d === today ? "grid size-6 place-items-center rounded-full bg-electric text-white" : inMonth ? "text-ink-2" : "text-faint")}>{Number(d.slice(8))}</span>
-                {onAdd && inMonth && (
-                  <button type="button" onClick={() => onAdd(d)} className="cursor-pointer rounded p-0.5 text-faint opacity-0 transition-opacity hover:text-electric group-hover/day:opacity-100" aria-label={`Add a shoot on ${formatDay(d)}`}>
-                    <Plus className="size-3.5" />
-                  </button>
-                )}
-              </div>
-              <div className="space-y-1">
-                {items.slice(0, 4).map((e) => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={() => onOpen(e)}
-                    className={clsx("block w-full cursor-pointer truncate rounded-md border-l-[3px] bg-surface px-1.5 py-0.5 text-left text-[11.5px] font-medium shadow-card hover:text-electric", e.status === "cancelled" && "line-through opacity-60")}
-                    style={{ borderLeftColor: e.brand?.color ?? "#8b5cf6" }}
-                  >
-                    <span className="tabular-nums text-muted">{e.start}</span> {e.brand?.name ?? e.title}
-                  </button>
-                ))}
-                {items.length > 4 && <div className="px-1 text-[11px] text-muted">+{items.length - 4} more</div>}
+            <div key={d} className={clsx("group/day min-w-0 border-b border-r border-line p-1 md:min-h-[104px] md:p-1.5", !inMonth && "bg-subtle", d === sel && "bg-electric-soft/60")}>
+              {/* Phones: the day number and a dot per shoot; tap shows that day below. */}
+              <button type="button" onClick={() => onPick(d)} disabled={!inMonth} className="flex w-full cursor-pointer flex-col items-center gap-1 py-1 disabled:cursor-default md:hidden" aria-label={`${formatDay(d)}: ${live.length} shoot(s)`}>
+                <span className={clsx("grid size-7 place-items-center rounded-full text-[13px] font-semibold tabular-nums", d === sel ? "bg-electric text-white" : d === today ? "text-electric ring-1 ring-electric" : inMonth ? "text-ink-2" : "text-faint")}>{Number(d.slice(8))}</span>
+                <span className="flex h-1.5 gap-0.5">
+                  {live.slice(0, 3).map((e) => (
+                    <span key={e.id} className="size-1.5 rounded-full" style={{ background: e.brand?.color ?? "#be185d" }} />
+                  ))}
+                </span>
+              </button>
+              <div className="hidden md:block">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className={clsx("text-[12px] font-semibold tabular-nums", d === today ? "grid size-6 place-items-center rounded-full bg-electric text-white" : inMonth ? "text-ink-2" : "text-faint")}>{Number(d.slice(8))}</span>
+                  {onAdd && inMonth && (
+                    <button type="button" onClick={() => onAdd(d)} className="cursor-pointer rounded p-0.5 text-faint opacity-0 transition-opacity hover:text-electric focus-visible:opacity-100 group-hover/day:opacity-100" aria-label={`Add a shoot on ${formatDay(d)}`}>
+                      <Plus className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {items.slice(0, 4).map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => onOpen(e)}
+                      className={clsx("block w-full cursor-pointer truncate rounded-md border-l-[3px] bg-surface px-1.5 py-0.5 text-left text-[11.5px] font-medium shadow-card hover:text-electric", e.status === "cancelled" && "line-through opacity-60")}
+                      style={{ borderLeftColor: e.brand?.color ?? "#8b5cf6" }}
+                    >
+                      <span className="tabular-nums text-muted">{e.start}</span> {e.brand?.name ?? e.title}
+                    </button>
+                  ))}
+                  {items.length > 4 && <div className="px-1 text-[11px] text-muted">+{items.length - 4} more</div>}
+                </div>
               </div>
             </div>
           );
@@ -327,11 +434,12 @@ function ShootDetails({ e, people, brands, canPlan, onDone }: { e: ShootEntry; p
             Open the content <ExternalLink className="size-3.5" />
           </Link>
         ) : null}
-        {e.kind === "item" && <span className="text-[12.5px] text-muted">Plan or change this shoot on its Pre-production step.</span>}
+        {e.kind === "item" && canPlan && e.status === "planned" && <CancelItemShoot itemId={e.id} onDone={onDone} />}
+        {e.kind === "item" && <span className="text-[12.5px] text-muted">Change the plan on its Pre-production step.</span>}
         {e.kind === "slot" && canPlan && (
           <>
             {e.status === "planned" && (
-              <StatusButton id={e.id} status="shot" label={e.after === "edit" ? `Shot ✓ send to ${e.editor?.name ?? "editing"}` : "Shot ✓"} primary onDone={onDone} />
+              <StatusButton id={e.id} status="shot" label={e.after === "edit" ? `Shot, send to ${e.editor?.name ?? "editing"}` : "Mark as shot"} primary onDone={onDone} />
             )}
             {e.status !== "planned" && <StatusButton id={e.id} status="planned" label="Back to planned" icon={RotateCcw} onDone={onDone} />}
             <button type="button" onClick={() => setEditing(true)} className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[13.5px] font-medium hover:border-line-strong">
@@ -348,6 +456,22 @@ function ShootDetails({ e, people, brands, canPlan, onDone }: { e: ShootEntry; p
         )}
       </div>
     </div>
+  );
+}
+
+/** Takes the day off a content item's shoot (it goes back to "Waiting for a shoot day"). */
+function CancelItemShoot({ itemId, onDone }: { itemId: string; onDone: () => void }) {
+  return (
+    <ActionForm action={shootAction} onSuccess={onDone}>
+      <input type="hidden" name="itemId" value={itemId} />
+      <input type="hidden" name="shootDate" value="" />
+      <input type="hidden" name="shootTime" value="" />
+      <input type="hidden" name="shootEndTime" value="" />
+      <input type="hidden" name="shootDuration" value="" />
+      <button type="submit" onClick={(ev) => !confirm("Cancel this shoot day? The content goes back to waiting for a day.") && ev.preventDefault()} className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[13.5px] font-medium text-bad hover:bg-bad-soft">
+        <Ban className="size-3.5" /> Cancel shoot day
+      </button>
+    </ActionForm>
   );
 }
 

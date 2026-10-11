@@ -94,7 +94,9 @@ src/
                            drag order, personal_order); approvals; "Sent, waiting approval"
       overview/          ← "The agency today": tiles, Big updates, Posting today, shoots today/tomorrow, move now (48h),
                            Team right now, mood / kudos / birthdays / stars (module "fun"), pipeline, brands
-      shoots/            ← Shoot schedule (week / month / list): item shoots + standalone slots (several per day), crew, notes
+      shoots/            ← Shoot schedule (week / month / list): item shoots + standalone slots (several per day), crew, notes;
+                           « » a month, ‹ › a day; phones get a day strip / dot calendar with the picked day's list;
+                           an item's planned day can be cancelled (here or on its Pre-production step)
       tasks/             ← (removed: Day tasks) redirects to My tasks
       spaces/            ← Spaces (workflow builder): list (+ deleted spaces to restore), new/ = the template library
                            (space / whiteboard / doc / sheet, by shelf, with previews), [id] (tabs: Tasks + its pages;
@@ -103,7 +105,7 @@ src/
       dashboards/        ← Spaces dashboards: build one (scope + cards), [id] = live view
       quick/             ← Quick update: a whole step at once (paste a list of links → Save all), every team
       reports/           ← Reports (managers): People / Brands for today, a week, a month; Excel
-      chat/              ← Team chat (page + client room with @mentions, polling /api/chat)
+      chat/              ← Team chat (page + client room with @mentions, photos/PDF/any file, polling /api/chat)
       stats/             ← Dashboard (managers)
       activity/          ← Activity log (managers)
       brands/            ← brand list + month plan (list/calendar, filters, month Canva/Drive links)
@@ -147,7 +149,9 @@ src/
     attachments.ts       ← files & links on items and tasks (files on disk next to the database, see §5)
     reports.ts           ← people report (finished, time, from–to per day, open) and brands report
     notes.ts             ← team notes (12 h); quick.ts = Quick update (many rows through the normal workflow)
-    chat.ts              ← Team chat + @mention parsing
+    chat.ts              ← Team chat + @mention parsing; files on messages; deleting a message removes its files
+                           and the poll's `recent` ids make it disappear for everyone
+    notebook.ts          ← My notebook (private notes), owner-only
     admin.ts             ← brands, projects, platforms, people, photos
     queries.ts           ← read models (WorkItem with stages/versions/platforms/health), activity, insights
     stats.ts             ← dashboard numbers, month-over-month, bell alerts, notifications
@@ -197,8 +201,13 @@ docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
 - **work_sessions** — the step's clock: one row per stretch of In progress / Adjusting (`kind`), `startedAt`, `endedAt`,
   `endReason` (sent/done/status/paused/auto_paused/returned/reassigned/cancelled, edited/added). Written by `trackTimeTx`
   (workflow.ts), `autoPauseClocks` and the time corrections in time.ts (`editedById`/`editedAt`), never by hand.
-- **attachments** — files and links on an item (`itemId`) or a task (`taskId`); files: `storageKey` (random name) in
+- **attachments** — files and links on an item (`itemId`), a task (`taskId`), a month plan (`planId`, "Month links & files"),
+  a chat message (`chatMessageId`) or a private note (`privateNoteId`); files: `storageKey` (random name) in
   `filesDir()` = `<database folder>-files` (production `~/nexora-ops-data-files`, outside the app folder); `deletedAt`.
+  A file uploaded with no target waits for its form (chat composer, comment) and is linked by `linkPendingTx`.
+- **private_notes** — My notebook (notebook.ts, notebook-actions.ts, components/notebook.tsx; strip bubble, sidebar,
+  user menu, key N): title, body, colour, pinned, files. ONLY the owner reads, changes, deletes or opens its files — not
+  managers, not admins (checked in notebook.ts, attachments.ts `checkTarget` / `removeAttachment` / `readAttachment`).
 - **notes** — team notes: text, colour, `expiresAt` (12 h); one live note per person. **alert_dismissals** — bell reminders
   a person cleared today (`<alertId>@<day>`).
 - **stage_completions** — append-only fact per completion (credited person, lateness, round) → fair statistics.
@@ -303,10 +312,17 @@ the pipeline); every status has one (`PROGRESS_META` → `ProgressChip`); brands
 carry their brand's colour as a left stripe; `/` or Ctrl/⌘+K focuses search. `(app)/error.tsx` and `global-error.tsx`
 show a calm "Try again" page instead of a blank error (Next 16 passes `retry`, not `reset`).
 Delight: an action can return `{ message, celebrate: "small" | "big" }` from `run()`; `ActionForm` then calls `celebrate()`
-(`components/celebrate.ts` + `.celebrate` CSS) — a short emoji shower (≤28 nodes, transform/opacity only, removed after
+(`components/celebrate.ts` + `.celebrate` CSS) — a short paper-confetti shower (≤40 strips and dots, transform/opacity only, removed after
 2.7 s, never twice at once, skipped with prefers-reduced-motion). Used for: step finished/sent on, version approved,
-task done, published (big when the item is finished). Greetings show the person's team emoji and a daily line
-(`lib/cheer.ts`). Buttons press (`active:scale`), task cards rise in and lift on hover.
+task done, published (big when the item is finished), thanks sent, a brand month fully published (`MonthDone`, once per
+person). Greetings show a sun / sunset / moon by Cairo time and a daily line (`lib/cheer.ts`). Buttons press
+(`active:scale`), task cards rise in and lift on hover. Work cards have "Thanks" for whoever handed the work over
+(`thankFor`, fun.ts: a private notification, once per item, person and day). My tasks shows "Your day" (`myDay`: finished
+today, time on the clock, working-day streak; Friday doesn't break it). Avatars get a pink ring on the person's birthday.
+**Look rules (the team asked for a human, not "AI", look):** no sparkle/star/wand/lightning icons, no emojis next to
+names, in tiles, titles or toasts (reactions, chat and user-chosen space icons are fine), no glowing gradients. Chips are
+outlined with a small coloured icon or status glyph (`StageChip`, `ProgressChip` in ui.tsx). Moods are drawn faces with a
+word (stored values unchanged); Big update icons are short keys (`UPDATE_ICONS`, older emoji values still map).
 
 **Dashboard month report** (`getDashboard` → `qualityFor`, stats.ts): planned / done / not done (plan only), extra
 requested + done, changes requested (versions reviewed with "changes" that month), items that needed changes more than
@@ -353,8 +369,9 @@ notifications for new work, approvals, changes, mentions, deadlines, finished; b
 
 ## 9. Branding — how to rebrand (for NEXORA or another company)
 
-Owners do it **without code** in Settings → Workspace (name, tagline, colours with presets, the four logos, watermark
-picture/opacity, modules on/off, auto pause time). `src/config/brand.ts` holds the DEFAULTS used for anything not set.
+Owners do it **without code** in Settings → Workspace (name, tagline, colours with presets, the logos, a watermark for
+light mode and one for dark mode — `watermark`/`watermarkOpacity` and `watermarkDark`/`watermarkDarkOpacity`, images
+`watermark` / `watermarkDark` — modules on/off, auto pause time). `src/config/brand.ts` holds the DEFAULTS used for anything not set.
 For the defaults, edit **only** `src/config/brand.ts` (`BRAND.name`, `appName`, `tagline`, `adminContact`, `colors.primary`,
 `colors.dark`, `logos.*`) and replace images in `public/brand/` + `src/app/icon.png` / `apple-icon.png`.
 `brandCss()` turns the two colours into the whole palette. NEXORA identity: navy `#0B1639`, electric blue `#3B82F6`

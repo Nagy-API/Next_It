@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
-import { Check, FileSpreadsheet, FileText, LayoutGrid, Presentation, Search, Sparkles, Zap, type LucideIcon } from "lucide-react";
+import { Check, FileSpreadsheet, FileText, LayoutGrid, Presentation, Search, LayoutTemplate, Workflow, type LucideIcon } from "lucide-react";
 import { createPageAction } from "@/app/page-actions";
 import { ActionForm, Submit } from "@/components/client";
 import { TEMPLATE_CATEGORIES, type PageKind } from "@/domain/pages";
@@ -166,7 +166,7 @@ function NewPageForm({ kind, tpl, spaces, spaceId }: { kind: PageKind; tpl: Gall
   if (!spaces.length)
     return (
       <div className="card space-y-2 p-5 text-[14px]">
-        <Sparkles className="size-5 text-electric" />
+        <LayoutTemplate className="size-5 text-electric" />
         <p className="font-semibold">Docs, whiteboards and sheets live inside a space.</p>
         <p className="text-muted">Ask a manager to add you to a space (or create one from the Space tab), then come back here.</p>
       </div>
@@ -220,7 +220,7 @@ function Preview({ thumb, color }: { thumb: Thumb; color?: string }) {
         {thumb.fields.length > 0 && <div className="truncate text-[11.5px] text-muted">Columns: {thumb.fields.slice(0, 4).join(", ")}</div>}
         {thumb.automations > 0 && (
           <div className="flex items-center gap-1 text-[11.5px] text-ink-2">
-            <Zap className="size-3 text-amber-500" /> {thumb.automations} automation{thumb.automations > 1 ? "s" : ""}
+            <Workflow className="size-3" /> {thumb.automations} automation{thumb.automations > 1 ? "s" : ""}
           </div>
         )}
       </div>

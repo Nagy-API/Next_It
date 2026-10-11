@@ -24,7 +24,9 @@ import {
   PenTool,
   Plus,
   Send,
+  HeartHandshake,
   ShoppingBag,
+  StickyNote,
   ThumbsUp,
   Truck,
   Users,
@@ -37,7 +39,8 @@ import { PICKABLE_PROGRESS, PROGRESS_META, STAGE_META, TYPE_META, handoffTargets
 import { formatDateTime, formatDay, formatRelative, todayISO } from "@/lib/dates";
 import { linkInfo, openLabel } from "@/lib/links";
 import type { StageView, VersionView, WorkItem } from "@/server/queries";
-import { ActionForm, Submit } from "./client";
+import { thankAction } from "@/app/people-actions";
+import { ActionForm, Submit, useToast } from "./client";
 import { BrandDot, ExtraBadge, PriorityChip, ProgressChip, StageChip, TimeSpent, TypeIcon, btn } from "./ui";
 import { DateInput } from "./date-input";
 import { PlatformIcon } from "./platform-icon";
@@ -327,8 +330,67 @@ function ShootForm({ item, compact, people }: { item: HandItem; compact?: boolea
           <Plus className="size-3.5" /> Who goes and notes for the crew <span className="font-normal text-muted">(optional)</span>
         </button>
       )}
-      <Submit variant="secondary">{item.shoot.date ? "Update" : "Save shoot"}</Submit>
+      <div className="flex flex-wrap items-center gap-2">
+        <Submit variant="secondary">{item.shoot.date ? "Update" : "Save shoot"}</Submit>
+        {item.shoot.date && <ClearShootDay itemId={id} />}
+      </div>
     </ActionForm>
+  );
+}
+
+/** A small "thank you" to the person who handed the work over (they get a notification). */
+function ThankButton({ itemId, toId, name }: { itemId: string; toId: string; name: string }) {
+  const [sent, setSent] = useState(false);
+  return (
+    <ActionForm action={thankAction} onSuccess={() => setSent(true)} inlineError={false} className="inline">
+      <input type="hidden" name="itemId" value={itemId} />
+      <input type="hidden" name="toId" value={toId} />
+      <button
+        type="submit"
+        disabled={sent}
+        title={`Say thanks to ${name}`}
+        className={clsx("inline-flex cursor-pointer items-center gap-1 rounded-full px-1.5 py-px text-[11.5px] font-medium transition-colors", sent ? "text-[#e0569b]" : "text-muted hover:bg-[#e0569b]/10 hover:text-[#e0569b]")}
+      >
+        <HeartHandshake className="size-3.5" /> {sent ? "Thanked" : "Thanks"}
+      </button>
+    </ActionForm>
+  );
+}
+
+/** Undo a planned shoot day: back to "no day yet" (the step stops reading Scheduled). Its own form, so the fields above stay as typed. */
+function ClearShootDay({ itemId }: { itemId: string }) {
+  const [sure, setSure] = useState(false);
+  const push = useToast();
+  if (!sure)
+    return (
+      <button type="button" onClick={() => setSure(true)} className={btn("ghost", "sm", "text-bad")}>
+        <X className="size-3.5" /> Cancel this shoot day
+      </button>
+    );
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2 text-[12.5px] text-ink-2">
+      Remove the day and times?
+      <button
+        type="button"
+        onClick={async () => {
+          const fd = new FormData();
+          fd.set("itemId", itemId);
+          fd.set("shootDate", "");
+          fd.set("shootTime", "");
+          fd.set("shootEndTime", "");
+          fd.set("shootDuration", "");
+          const r = await shootAction(null, fd);
+          setSure(false);
+          push(r?.ok ? { kind: "ok", text: "Shoot day cancelled. It's waiting for a new day." } : { kind: "error", text: r && !r.ok ? r.error : "Couldn't cancel it." });
+        }}
+        className={btn("danger", "sm")}
+      >
+        Yes, cancel it
+      </button>
+      <button type="button" onClick={() => setSure(false)} className={btn("ghost", "sm")}>
+        Keep it
+      </button>
+    </span>
   );
 }
 
@@ -358,8 +420,8 @@ export function ShootSummary({ shoot, className }: { shoot: WorkItem["shoot"]; c
       {shoot.purchases && <NeedChip icon={ShoppingBag} label="Buy" text={shoot.purchases} ready={shoot.purchasesReady} />}
       {shoot.crew.length > 0 && <span title={`Going: ${shoot.crew.map((c) => c.name).join(", ")}`}>· {shoot.crew.map((c) => c.name).join(", ")}</span>}
       {shoot.notes && (
-        <span className="basis-full text-[12px] font-normal opacity-90" title="Notes for the crew">
-          📝 {shoot.notes}
+        <span className="flex basis-full items-start gap-1 text-[12px] font-normal opacity-90" title="Notes for the crew">
+          <StickyNote className="mt-0.5 size-3 shrink-0" /> {shoot.notes}
         </span>
       )}
     </span>
@@ -1035,6 +1097,7 @@ export function TaskCard({
   const cur = item.current!;
   const prev = item.stages.filter((s) => s.position < cur.position && s.status === "done").at(-1);
   const from = prev ? (prev.assignee?.name ?? prev.completedBy?.name) : (item.extra?.by?.name ?? null);
+  const fromId = prev ? (prev.assignee?.id ?? prev.completedBy?.id) : (item.extra?.by?.id ?? null);
   const fresh = mode === "do" && isNewWork(item);
   const where = item.brand ? item.brand.name : item.project ? `${item.project.clientName} · ${item.project.name}` : "";
   const late = cur.health === "overdue";
@@ -1081,6 +1144,7 @@ export function TaskCard({
                 {from && <> from {from}</>}
               </span>
             )}
+            {mode === "do" && fromId && fromId !== meId && from && <ThankButton itemId={item.id} toId={fromId} name={from} />}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <StageChip kind={cur.kind} />

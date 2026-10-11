@@ -508,6 +508,12 @@ export const attachments = pgTable(
     /** Sent with a comment (shown under it). */
     commentId: uuid("comment_id").references(() => comments.id),
     workTaskCommentId: uuid("work_task_comment_id").references(() => workTaskComments.id),
+    /** Sent in Team chat (an image, a PDF…). */
+    chatMessageId: uuid("chat_message_id").references(() => chatMessages.id),
+    /** In someone's private notebook: only its owner can open it. */
+    privateNoteId: uuid("private_note_id").references(() => privateNotes.id),
+    /** On a brand's month plan (more links and files next to the month's Canva / Drive). */
+    planId: uuid("plan_id").references(() => contentPlans.id),
     /** file | link */
     kind: text("kind").notNull(),
     name: text("name").notNull(),
@@ -1086,3 +1092,26 @@ export const spacePages = pgTable(
 
 export type Shoot = typeof shoots.$inferSelect;
 export type SpacePage = typeof spacePages.$inferSelect;
+
+/* ------------------------------------------------------------------ */
+/* My notebook: private notes only their owner can see                  */
+/* ------------------------------------------------------------------ */
+
+export const privateNotes = pgTable(
+  "private_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    title: text("title").notNull().default(""),
+    body: text("body").notNull().default(""),
+    color: text("color"),
+    pinned: boolean("pinned").notNull().default(false),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("private_notes_user_idx").on(t.userId)],
+);
+export type PrivateNote = typeof privateNotes.$inferSelect;

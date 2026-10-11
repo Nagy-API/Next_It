@@ -122,7 +122,7 @@ export async function signOutEverywhereAction() {
 export async function completeStageAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
     const r = await completeStage(actor, str(fd, "stageId"), { driveUrl: opt(fd, "driveUrl") ?? undefined });
-    return r.next ? { message: `Sent to ${STAGE_META[r.next].label}.`, celebrate: "small" } : { message: "Done — nice work! 🎉", celebrate: "big" };
+    return r.next ? { message: `Sent to ${STAGE_META[r.next].label}.`, celebrate: "small" } : { message: "Done. Nice work!", celebrate: "big" };
   });
 }
 
@@ -137,7 +137,7 @@ export async function handOffAction(_: ActionResult, fd: FormData): Promise<Acti
       driveUrl: opt(fd, "driveUrl") ?? undefined,
       canvaUrl: opt(fd, "canvaUrl") ?? undefined,
     });
-    if (!r.next) return { message: "Done — nice work! 🎉", celebrate: "big" };
+    if (!r.next) return { message: "Done. Nice work!", celebrate: "big" };
     const who = r.nextAssignee ?? (str(fd, "assigneeName") || null);
     return { message: who ? `Sent to ${who} (${STAGE_META[r.next].label}).` : `Sent to the ${STAGE_META[r.next].label} team.`, celebrate: "small" };
   });
@@ -220,8 +220,8 @@ export async function platformAction(_: ActionResult, fd: FormData): Promise<Act
       liveUrl,
     });
     // Live on every planned platform → the item is finished: a big celebration. One platform live → a small one.
-    if ((liveUrl || status === "published") && (await isItemFinished(itemId))) return { message: "Published everywhere — done! 🎉", celebrate: "big" };
-    if (liveUrl || status === "published") return { message: "Published! ✨", celebrate: "small" };
+    if ((liveUrl || status === "published") && (await isItemFinished(itemId))) return { message: "Published everywhere. Done!", celebrate: "big" };
+    if (liveUrl || status === "published") return { message: "Published!", celebrate: "small" };
     return "Saved.";
   });
 }
@@ -396,7 +396,7 @@ export async function reviewVersionAction(_: ActionResult, fd: FormData): Promis
     const approve = str(fd, "decision") === "approve";
     const r = await reviewVersion(actor, str(fd, "versionId"), { approve, note: opt(fd, "note"), chosenUrl: opt(fd, "chosenUrl") });
     if (!r.approved) return "Sent back for changes — they'll upload the next version.";
-    return r.next ? { message: `Approved and sent to ${r.nextAssignee ?? STAGE_META[r.next].label}.`, celebrate: "small" } : { message: "Approved — done! 🎉", celebrate: "big" };
+    return r.next ? { message: `Approved and sent to ${r.nextAssignee ?? STAGE_META[r.next].label}.`, celebrate: "small" } : { message: "Approved. Done!", celebrate: "big" };
   });
 }
 
@@ -438,6 +438,8 @@ export async function updateWorkspaceAction(_: ActionResult, fd: FormData): Prom
       dark: has("dark") ? str(fd, "dark") : undefined,
       watermark: has("watermark") ? (str(fd, "watermark") as "logo" | "image" | "none") : undefined,
       watermarkOpacity: has("watermarkOpacity") ? Number(str(fd, "watermarkOpacity")) : undefined,
+      watermarkDark: has("watermarkDark") ? (str(fd, "watermarkDark") as "logo" | "image" | "none") : undefined,
+      watermarkDarkOpacity: has("watermarkDarkOpacity") ? Number(str(fd, "watermarkDarkOpacity")) : undefined,
       autoPauseAt: has("autoPauseAt") ? (fd.get("autoPauseOn") === "on" ? str(fd, "autoPauseAt") : "") : undefined,
       // The modules form sends `modules` (unticked boxes aren't sent).
       modules: has("modules") ? (Object.fromEntries(MODULE_KEYS.map((k) => [k, fd.get(`module_${k}`) === "on"])) as Record<ModuleKey, boolean>) : undefined,
@@ -549,7 +551,7 @@ export async function taskDoneAction(_: ActionResult, fd: FormData): Promise<Act
     const done = str(fd, "done") !== "0";
     const next = await setTaskDone(actor, str(fd, "taskId"), done);
     if (!done) return "Reopened.";
-    return { message: next ? "Done! The next one is already scheduled." : "Done — nice work! 🎉", celebrate: "small" };
+    return { message: next ? "Done! The next one is already scheduled." : "Done. Nice work!", celebrate: "small" };
   });
 }
 
@@ -573,7 +575,7 @@ export async function deleteTaskAction(_: ActionResult, fd: FormData): Promise<A
 
 export async function addLinkAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
-    await addLink(actor, { url: str(fd, "url"), name: opt(fd, "name"), itemId: opt(fd, "itemId"), taskId: opt(fd, "taskId"), workTaskId: opt(fd, "workTaskId") });
+    await addLink(actor, { url: str(fd, "url"), name: opt(fd, "name"), itemId: opt(fd, "itemId"), taskId: opt(fd, "taskId"), workTaskId: opt(fd, "workTaskId"), planId: opt(fd, "planId"), privateNoteId: opt(fd, "privateNoteId") });
     return "Link attached.";
   });
 }
@@ -632,7 +634,7 @@ export async function removeNoteAction(_: ActionResult, fd: FormData): Promise<A
 
 export async function chatPostAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
-    await postChatMessage(actor, { body: str(fd, "body"), itemId: opt(fd, "itemId") });
+    await postChatMessage(actor, { body: str(fd, "body"), itemId: opt(fd, "itemId"), attachmentIds: fd.getAll("attachmentId").map(String) });
   });
 }
 

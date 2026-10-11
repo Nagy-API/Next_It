@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { CheckCircle2, Clock, ListTodo, PlayCircle, Sparkles } from "lucide-react";
+import { CheckCircle2, CircleDashed, Clock, ListTodo, PlayCircle } from "lucide-react";
 import { cairoDate, formatDay, formatDuration, formatTime } from "@/lib/dates";
 import type { PersonReport } from "@/server/reports";
 import { Avatar, Badge, BrandDot, ExtraBadge, ProgressChip, StageChip, TimeSpent, TypeIcon } from "./ui";
@@ -125,7 +125,7 @@ export function PersonReportBody({ r, single }: { r: PersonReport; single: boole
 
       <div>
         <h4 className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
-          <Sparkles className="size-3.5 text-[#c2410c]" /> Not finished yet ({r.open.length})
+          <CircleDashed className="size-3.5 text-[#c2410c] dark:text-[#fb923c]" /> Not finished yet ({r.open.length})
         </h4>
         {r.open.length === 0 ? (
           <p className="text-[13px] text-faint">Nothing open on them.</p>

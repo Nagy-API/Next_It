@@ -5,6 +5,7 @@ import { ExternalLink, FolderOpen, Palette, Pencil } from "lucide-react";
 import { planLinksAction } from "@/app/actions";
 import { ActionForm, Modal, Submit } from "@/components/client";
 import { btn } from "@/components/ui";
+import { Attachments, type AttachmentItem } from "@/components/attachments";
 
 /** The month's Canva presentation and Drive folder: set once, used by every item that month. */
 export function MonthLinks({
@@ -15,6 +16,10 @@ export function MonthLinks({
   driveFolderUrl,
   canEdit,
   monthLabel,
+  planId,
+  files,
+  meId,
+  manager,
 }: {
   brandId: string;
   year: number;
@@ -23,9 +28,14 @@ export function MonthLinks({
   driveFolderUrl: string | null;
   canEdit: boolean;
   monthLabel: string;
+  /** The month plan (null until the month has items or links). */
+  planId: string | null;
+  files: AttachmentItem[];
+  meId: string;
+  manager: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  if (!canEdit && !canvaUrl && !driveFolderUrl) return null;
+  if (!canEdit && !canvaUrl && !driveFolderUrl && !files.length) return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
       {canvaUrl ? (
@@ -38,9 +48,10 @@ export function MonthLinks({
           <FolderOpen className="size-3.5 text-[#1a73e8]" /> Drive folder <ExternalLink className="size-3 text-faint" />
         </a>
       ) : null}
+      {files.length > 0 && <Attachments items={files} meId={meId} manager={manager} canAdd={false} compact />}
       {canEdit && (
-        <button type="button" onClick={() => setOpen(true)} className={btn(canvaUrl && driveFolderUrl ? "ghost" : "primary", "sm", "cursor-pointer")}>
-          <Pencil className="size-3.5" /> {canvaUrl || driveFolderUrl ? "Edit month links" : "Add the month's Canva & Drive links"}
+        <button type="button" onClick={() => setOpen(true)} className={btn(canvaUrl || driveFolderUrl || files.length ? "ghost" : "primary", "sm", "cursor-pointer")}>
+          <Pencil className="size-3.5" /> {canvaUrl || driveFolderUrl || files.length ? "Month links & files" : "Add the month's Canva, Drive, links & files"}
         </button>
       )}
       <Modal open={open} onClose={() => setOpen(false)} title={`${monthLabel} links`}>
@@ -69,6 +80,15 @@ export function MonthLinks({
             <Submit>Save links</Submit>
           </div>
         </ActionForm>
+        <div className="mt-5 border-t border-line pt-4">
+          <div className="label">More links and files for {monthLabel}</div>
+          <p className="mb-2 text-[12px] text-muted">A second Canva, the brief, a PDF, a moodboard… everyone working on this month sees them here.</p>
+          {planId ? (
+            <Attachments items={files} planId={planId} meId={meId} manager={manager} />
+          ) : (
+            <p className="rounded-lg bg-sunken px-3 py-2 text-[12.5px] text-muted">Save the month&rsquo;s links (or add the first item) first, then add more links and files here.</p>
+          )}
+        </div>
       </Modal>
     </div>
   );

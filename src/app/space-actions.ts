@@ -240,8 +240,8 @@ export async function updateWorkTaskAction(_: ActionResult, fd: FormData): Promi
     if (has(fd, "listId")) patch.listId = str(fd, "listId");
     if (has(fd, "assignees")) patch.assigneeIds = fd.getAll("assigneeIds").map(String).filter(Boolean);
     const t = await updateWorkTask(actor, str(fd, "taskId"), patch);
-    if (t.statusChanged && t.statusKind === "done") return { message: "Done! 🎉", celebrate: "small" };
-    if (t.statusChanged && t.statusKind === "review") return { message: "Sent for review 👀", celebrate: "small" };
+    if (t.statusChanged && t.statusKind === "done") return { message: "Done!", celebrate: "small" };
+    if (t.statusChanged && t.statusKind === "review") return { message: "Sent for review.", celebrate: "small" };
     return patch.statusId ? "Status updated." : "Saved.";
   });
 }

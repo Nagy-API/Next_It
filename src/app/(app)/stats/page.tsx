@@ -149,7 +149,7 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
       </div>
 
       {/* Departments — like the old Excel dashboard, but automatic */}
-      <details className="card group overflow-x-auto p-5">
+      <details className="card group min-w-0 p-5">
         <summary className="flex cursor-pointer list-none items-center justify-between">
           <span className="font-display text-[15px] font-bold">Teams by brand</span>
           <span className="text-[12.5px] text-muted">
@@ -157,7 +157,7 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
             <span className="hidden text-electric group-open:inline">hide</span>
           </span>
         </summary>
-        <div className="mt-3" />
+        <div className="-mx-5 mt-3 overflow-x-auto px-5">
         <table className="w-full min-w-[760px] text-[13.5px]">
           <thead>
             <tr className="text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
@@ -200,6 +200,7 @@ export default async function StatsPage({ searchParams }: PageProps<"/stats">) {
             </tr>
           </tbody>
         </table>
+        </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {deptTotals.map((t) => (
             <div key={t.kind} className="rounded-xl bg-canvas px-4 py-3">

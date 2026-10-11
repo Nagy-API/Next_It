@@ -87,7 +87,7 @@ describe("Spaces: build a workflow without code", () => {
     await updateWorkTask(worker, b.id, { statusId: done.id });
     expect((await taskRow(parent.id)).statusId).toBe(review.id);
     const notes = await db.select().from(workTaskComments).where(eq(workTaskComments.taskId, parent.id)).orderBy(asc(workTaskComments.createdAt));
-    expect(notes.some((n) => n.body.startsWith("⚡"))).toBe(true);
+    expect(notes.some((n) => n.body.startsWith("Automation “"))).toBe(true);
   });
 
   it("automations: on a status, add a checklist, set the due date and notify; time-based ones run once", async () => {

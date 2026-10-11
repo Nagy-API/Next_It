@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, Columns3, Info, ListTree, ShieldAlert, Users, Workflow, Zap } from "lucide-react";
+import { ArrowLeft, CircleDot, Columns3, Info, ListTree, ShieldAlert, Users, Workflow } from "lucide-react";
 import { ArchiveSpace, Automations, Columns, DetailsForm, ListsAndFolders, Members, Statuses } from "@/components/spaces/setup";
 import type { Action, FieldConfig, FieldOption, Trigger } from "@/domain/spaces";
 import { requireUser } from "@/server/auth";
@@ -24,8 +24,8 @@ export default async function SpaceSettings({ params }: PageProps<"/spaces/[id]/
   const counts = Object.fromEntries(page.statuses.map((s) => [s.id, page.tasks.filter((t) => t.statusId === s.id).length]));
   const statuses = page.statuses.map((s) => ({ id: s.id, name: s.name, color: s.color, kind: s.kind }));
   const sections = [
-    { id: "statuses", icon: Workflow, title: "Statuses", hint: "The steps a task goes through. “What it means” tells the system when the clock runs and when work is finished." },
-    { id: "automations", icon: Zap, title: "Automations", hint: "When something happens, do something by itself. Saves clicks and nobody forgets." },
+    { id: "statuses", icon: CircleDot, title: "Statuses", hint: "The steps a task goes through. “What it means” tells the system when the clock runs and when work is finished." },
+    { id: "automations", icon: Workflow, title: "Automations", hint: "When something happens, do something by itself. Saves clicks and nobody forgets." },
     { id: "columns", icon: Columns3, title: "Columns", hint: "Extra information on every task of this space." },
     { id: "lists", icon: ListTree, title: "Folders & lists", hint: "How tasks are organised: by month, client, campaign, sprint…" },
     { id: "members", icon: Users, title: "Members", hint: "Admins set the space up, members work on tasks, viewers only see." },

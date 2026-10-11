@@ -36,10 +36,11 @@ export default async function ShootsPage({ searchParams }: PageProps<"/shoots">)
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5">
-      <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#be185d] via-[#9d174d] to-[#4c0519] px-5 py-5 text-white sm:px-7">
-        <Camera aria-hidden className="pointer-events-none absolute -right-6 -top-6 size-40 text-white/10" />
-        <h1 className="flex items-center gap-2.5 font-display text-[24px] font-bold sm:text-[28px]">🎬 Shoot schedule</h1>
-        <p className="mt-1 max-w-[640px] text-[14px] text-white/80">Every shoot in one place: what we shoot each day, from when to when, who goes and what&rsquo;s needed. Shoots planned on content show up here by themselves.</p>
+      <header className="rounded-2xl bg-[#9d174d] px-5 py-5 text-white sm:px-7">
+        <h1 className="flex items-center gap-2.5 font-display text-[24px] font-bold sm:text-[28px]">
+          <Camera className="size-6" strokeWidth={1.8} /> Shoot schedule
+        </h1>
+        <p className="mt-1 max-w-[640px] text-[14px] text-white/80 max-sm:hidden">Every shoot in one place: what we shoot each day, from when to when, who goes and what&rsquo;s needed. Shoots planned on content show up here by themselves.</p>
         <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[13px] font-semibold">
           {todays.length ? `Today: ${todays.length} shoot${todays.length > 1 ? "s" : ""} · ${todays.map((t) => `${t.start ?? ""} ${t.brand?.name ?? t.title}`.trim()).join(" · ")}` : "No shoot today"}
         </p>
@@ -64,7 +65,7 @@ export default async function ShootsPage({ searchParams }: PageProps<"/shoots">)
           <p className="mt-0.5 text-[12.5px] text-muted">Reels at Pre-production without a day yet.</p>
           <ul className="mt-3 grid gap-1.5 sm:grid-cols-2 min-[1500px]:grid-cols-1">
             {waiting.slice(0, 12).map((u) => (
-              <li key={u.id}>
+              <li key={u.id} className="min-w-0">
                 <Link href={`/items/${u.id}`} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] hover:bg-hover">
                   {u.brand && <BrandMark name={u.brand.name} color={u.brand.color} size={18} />}
                   <span className="min-w-0 flex-1 truncate font-medium">{u.title}</span>
@@ -72,7 +73,7 @@ export default async function ShootsPage({ searchParams }: PageProps<"/shoots">)
                 </Link>
               </li>
             ))}
-            {!waiting.length && <li className="text-[13px] text-muted">Nothing waiting 🎉</li>}
+            {!waiting.length && <li className="text-[13px] text-muted">Nothing waiting.</li>}
           </ul>
           {waiting.length > 12 && (
             <details className="group mt-1">
@@ -82,7 +83,7 @@ export default async function ShootsPage({ searchParams }: PageProps<"/shoots">)
               </summary>
               <ul className="grid gap-1.5 sm:grid-cols-2 min-[1500px]:grid-cols-1">
                 {waiting.slice(12).map((u) => (
-                  <li key={u.id}>
+                  <li key={u.id} className="min-w-0">
                     <Link href={`/items/${u.id}`} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] hover:bg-hover">
                       {u.brand && <BrandMark name={u.brand.name} color={u.brand.color} size={18} />}
                       <span className="min-w-0 flex-1 truncate font-medium">{u.title}</span>

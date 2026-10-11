@@ -7,7 +7,7 @@
 import { createContext, useContext } from "react";
 import clsx from "clsx";
 
-export type AvatarPerson = { id: string; name: string; v: number | null; manager: boolean; /** Shown instead of "Manager" (e.g. "IT"). */ role?: string | null };
+export type AvatarPerson = { id: string; name: string; v: number | null; manager: boolean; /** Shown instead of "Manager" (e.g. "IT"). */ role?: string | null; /** Their birthday is today. */ birthday?: boolean };
 
 const Ctx = createContext<Map<string, AvatarPerson>>(new Map());
 
@@ -65,8 +65,11 @@ export function Avatar({
     .slice(0, 2)
     .toUpperCase();
   const star = badge && p?.manager && !p.role && size >= 22;
+  // On their birthday everyone sees a pink ring around them, all day.
+  const bday = p?.birthday && size >= 18;
+  const label = `${p?.role ? `${name} · ${p.role}` : p?.manager ? `${name} · Manager` : name}${bday ? " · Birthday today" : ""}`;
   return (
-    <span className={clsx("relative inline-flex shrink-0", className)} style={{ width: size, height: size }} title={p?.role ? `${name} · ${p.role}` : p?.manager ? `${name} · Manager` : name}>
+    <span className={clsx("relative inline-flex shrink-0 rounded-full", className)} style={{ width: size, height: size, ...(bday ? { boxShadow: "0 0 0 2px var(--color-surface), 0 0 0 3.5px #e0569b" } : null) }} title={label}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={name} width={size} height={size} className={clsx("size-full rounded-full object-cover", ring && "ring-2 ring-surface")} />

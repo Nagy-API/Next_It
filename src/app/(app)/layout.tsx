@@ -14,7 +14,6 @@ import { mySpaceTasks, visibleSpaces } from "@/server/spaces";
 import { pagesForSpaces } from "@/server/pages";
 import { dailyMessage } from "@/server/fun";
 import { getShootSchedule } from "@/server/shoots";
-import { teamEmoji } from "@/lib/cheer";
 import { formatTime, todayISO } from "@/lib/dates";
 import { FirstPassword } from "./first-password";
 
@@ -59,9 +58,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const myCount = (ws.modules.content ? onMe.length : 0) + messages.length + myTasks.filter((t) => !t.doneAt).length + (ws.modules.spaces ? mySpace.length : 0);
   return (
     <ToastProvider>
-      <AvatarProvider people={everyone.map((p) => ({ id: p.id, name: p.name, v: p.avatarUpdatedAt?.getTime() ?? null, manager: p.isManager || p.isAdmin, role: p.roleLabel }))}>
+      <AvatarProvider people={everyone.map((p) => ({ id: p.id, name: p.name, v: p.avatarUpdatedAt?.getTime() ?? null, manager: p.isManager || p.isAdmin, role: p.roleLabel, birthday: p.birthday === today.slice(5) }))}>
         <Shell
-          user={{ ...user, manager: isManager(user), emoji: teamEmoji(user.teams) }}
+          user={{ ...user, manager: isManager(user) }}
           brands={navBrands}
           spaces={spaces.map((s) => ({
             id: s.id,
@@ -87,7 +86,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           }}
           greeting={greetingNow()}
           dailyLine={line}
-          look={{ name: ws.name, logos: ws.logos, watermark: ws.watermark, watermarkOpacity: ws.watermarkOpacity, customWordmark: ws.custom.wordmark }}
+          look={{
+            name: ws.name,
+            logos: ws.logos,
+            customWordmark: ws.custom.wordmark,
+            // Each theme has its own watermark (a navy mark disappears on dark, a white one on light).
+            light: ws.watermark === "none" || !ws.watermarkOpacity ? null : { src: ws.watermark === "image" ? ws.logos.watermark : ws.logos.markLight, opacity: ws.watermarkOpacity },
+            dark: ws.watermarkDark === "none" || !ws.watermarkDarkOpacity ? null : { src: ws.watermarkDark === "image" ? ws.logos.watermarkDark : ws.logos.mark, opacity: ws.watermarkDarkOpacity },
+          }}
           myCount={myCount}
           chatUnread={chatUnread}
           shootsToday={shootsToday.filter((s) => s.status !== "cancelled").length}
