@@ -23,7 +23,7 @@ import {
 } from "@/server/admin";
 import { endSession, requireActor, requireAdmin, startSession } from "@/server/auth";
 import { UserError } from "@/server/errors";
-import { createTasks, deleteTask, setTaskDone, setTaskStatus, TASK_STATUS_LABEL } from "@/server/tasks";
+import { createTasks, deleteTask, sendBackTask, setTaskDone, setTaskStatus, TASK_STATUS_LABEL } from "@/server/tasks";
 import { deleteChatMessage, markChatRead, postChatMessage } from "@/server/chat";
 import { addComment, bulkStageAction, createExtraTasks, createItems, deleteComment, resolveComment, setItemCancelled, setItemExtra, setPlanLinks, updateItem, type BulkAction, type NewItemRow } from "@/server/items";
 import { addLink, attachLinks, linkPending, removeAttachment } from "@/server/attachments";
@@ -524,6 +524,8 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
         type: ((CONTENT_TYPES as readonly string[]).includes(typeRaw) ? typeRaw : "reel") as ContentType,
         dueDate: opt(fd, "dueDate"),
         priority: opt(fd, "priority"),
+        steps: fd.getAll("otherStep").map(String).filter((k): k is StageKind => (STAGE_KINDS as readonly string[]).includes(k)),
+        approverId: opt(fd, "approverId"),
       });
       await linkPending(actor, fd.getAll("attachmentId").map(String), ids.map((itemId) => ({ itemId })));
       await attachLinks(actor, fd.getAll("attachLink").map(String), ids.map((itemId) => ({ itemId })));
@@ -539,6 +541,7 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
       dueTime: opt(fd, "dueTime"),
       recurrence: RECURRENCES.includes(r) ? r : "none",
       priority: opt(fd, "priority"),
+      approverId: opt(fd, "approverId"),
     });
     await linkPending(actor, fd.getAll("attachmentId").map(String), created.map((t) => ({ taskId: t.id })));
     await attachLinks(actor, fd.getAll("attachLink").map(String), created.map((t) => ({ taskId: t.id })));
@@ -549,9 +552,10 @@ export async function createTaskAction(_: ActionResult, fd: FormData): Promise<A
 export async function taskDoneAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
   return run(async (actor) => {
     const done = str(fd, "done") !== "0";
-    const next = await setTaskDone(actor, str(fd, "taskId"), done);
+    const r = await setTaskDone(actor, str(fd, "taskId"), done);
     if (!done) return "Reopened.";
-    return { message: next ? "Done! The next one is already scheduled." : "Done. Nice work!", celebrate: "small" };
+    if (r?.submitted) return { message: "Sent for approval.", celebrate: "small" };
+    return { message: r?.next ? "Done! The next one is already scheduled." : "Done. Nice work!", celebrate: "small" };
   });
 }
 
@@ -561,6 +565,13 @@ export async function taskStatusAction(_: ActionResult, fd: FormData): Promise<A
     if (!(TASK_STATUSES as readonly string[]).includes(status)) throw new UserError("Unknown status.");
     await setTaskStatus(actor, str(fd, "taskId"), status as TaskStatus, { scheduledDate: opt(fd, "scheduledDate") });
     return `Status: ${TASK_STATUS_LABEL[status as TaskStatus]}.`;
+  });
+}
+
+export async function sendBackTaskAction(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  return run(async (actor) => {
+    const r = await sendBackTask(actor, str(fd, "taskId"), str(fd, "note"));
+    return r.toGiver ? "Sent back to whoever gave it." : "Sent back with your note.";
   });
 }
 

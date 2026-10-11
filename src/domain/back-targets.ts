@@ -6,6 +6,6 @@ export type BackTarget = { kind: StageKind; owner: { id: string; name: string } 
 export function backTargetsOf(item: { stages: { kind: StageKind; position: number; status: string; assignee: { id: string; name: string } | null; completedBy: { id: string; name: string } | null }[]; completedAt: Date | null; cancelledAt: Date | null }, cur: { position: number } | null): BackTarget[] {
   if (item.cancelledAt) return [];
   return item.stages
-    .filter((s) => (cur ? s.position < cur.position : item.completedAt ? s.status === "done" && s.kind !== "social" && s.kind !== "delivery" : false))
+    .filter((s) => (cur ? s.position < cur.position : item.completedAt ? s.status === "done" && s.kind !== "social" && s.kind !== "delivery" && s.kind !== "approval" : false))
     .map((s) => ({ kind: s.kind, owner: s.assignee ?? s.completedBy ?? null }));
 }

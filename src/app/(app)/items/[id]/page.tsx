@@ -17,7 +17,7 @@ import { SendBack } from "@/components/send-back";
 import { backTargetsOf } from "@/domain/back-targets";
 import { can, isManager } from "@/domain/permissions";
 import { AssignSelect, CancelToggle, CompleteStage, DeadlineInput, DetailsForm, ExceptionToggle, ExtraToggle, PlatformRow } from "./parts";
-import { ChangesBanner, DeliverButton, DeliveryTimes, HandOffPanel, HotBadge, LinkGlyph, ProgressPicker, ShootSummary, SocialPanel, TakeButton, VersionPanel } from "@/components/handoff";
+import { ChangesBanner, ApproveButton, DeliverButton, DeliveryTimes, HandOffPanel, HotBadge, LinkGlyph, ProgressPicker, ShootSummary, SocialPanel, TakeButton, VersionPanel } from "@/components/handoff";
 import { isReviewed } from "@/domain/workflow";
 import { AddSession, EditSession } from "./time-edit";
 
@@ -81,7 +81,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
             <HotBadge item={item} today={today} />
             <ShootSummary shoot={item.shoot} />
             {item.cancelledAt && <Badge tone="bad">Deleted</Badge>}
-            {item.completedAt && <Badge tone="ok" icon={CheckCircle2}>{finalLabel(item.context)}</Badge>}
+            {item.completedAt && <Badge tone="ok" icon={CheckCircle2}>{finalLabel(item.context, item.type)}</Badge>}
           </div>
           <h1 className="mt-1.5 flex flex-wrap items-center gap-2.5 font-display text-[28px] font-bold leading-tight tracking-[-0.01em]">
             {item.title}
@@ -176,7 +176,12 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                     )}
                     <SocialPanel item={item} allPlatforms={allPlatforms.filter((p) => p.isActive)} canPublish={may.publish} />
                     <p className="text-[12.5px] text-muted">Paste each app&rsquo;s link once it&rsquo;s live. When every planned app is live, it finishes by itself.</p>
-                    {!targeted.length && <CompleteStage stageId={cur.id} kind={cur.kind} nextLabel={null} nextOwner={null} needsDrive={false} driveUrl={null} finalLabel={finalLabel(item.context)} />}
+                    {!targeted.length && <CompleteStage stageId={cur.id} kind={cur.kind} nextLabel={null} nextOwner={null} needsDrive={false} driveUrl={null} finalLabel={finalLabel(item.context, item.type)} />}
+                  </div>
+                ) : cur.kind === "approval" ? (
+                  <div className="flex flex-wrap items-center gap-3 text-[14px] text-ink-2">
+                    <ApproveButton stageId={cur.id} />
+                    <span>Check the link and files, then approve. Not right yet? Send it back with a note.</span>
                   </div>
                 ) : cur.kind === "delivery" ? (
                   <div className="flex flex-wrap items-center gap-3 text-[14px] text-ink-2">
@@ -213,7 +218,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
                   </div>
                   {may.excuse && (cur.health === "overdue" || cur.health === "overdue_excused") && <ExceptionToggle stageId={cur.id} excused={!!cur.lateExcusedAt} />}
                   <div className="ml-auto">
-                    <SendBack itemId={item.id} targets={backTargets} people={pickPeople} meId={me.id} manager={manager} />
+                    <SendBack itemId={item.id} targets={backTargets} people={pickPeople} meId={me.id} manager={manager} giver={item.extra?.by ?? null} />
                   </div>
                 </div>
                 {cur.shiftDays > 0 && cur.originalDeadline && <ShiftNote s={cur} />}
@@ -225,7 +230,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/ite
             <section className="card flex flex-wrap items-center gap-4 border-ok/30 bg-ok-soft/40 p-5">
               <CheckCircle2 className="size-8 text-ok" />
               <div className="flex-1">
-                <div className="font-display text-[17px] font-bold">{finalLabel(item.context)}</div>
+                <div className="font-display text-[17px] font-bold">{finalLabel(item.context, item.type)}</div>
                 <div className="text-[13px] text-muted">Finished {formatDateTime(item.completedAt)}</div>
               </div>
               {backTargets.length > 0 && <SendBack itemId={item.id} targets={backTargets} people={pickPeople} meId={me.id} manager={manager} label={item.context === "project" ? "Client wants changes" : "Reopen / send back"} />}

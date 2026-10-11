@@ -343,14 +343,24 @@ test.describe.serial("NEXORA acceptance", () => {
     await dlg.getByRole("button", { name: "Send task" }).click();
     await toast(page, "Task sent to 2 people.");
     await page.goto("/my-work");
-    await expect(page.getByRole("heading", { name: "Tasks I gave" })).toBeVisible();
+    await page.getByRole("link", { name: /Tasks I gave/ }).click();
+    await expect(page).toHaveURL(/tab=given/);
+    await expect(page.getByText("Send the weekly report to Vanilla Roza").first()).toBeVisible();
 
+    // Approval by whoever gave it is the default: Esraa's tick sends it to Ammar.
     await login(page, "esraa");
-    await expect(page.getByText("Tasks from managers")).toBeVisible();
+    await expect(page.getByText("Tasks given to you")).toBeVisible();
     await page.getByRole("button", { name: "Done: Send the weekly report to Vanilla Roza" }).click();
-    await toast(page, "Done! The next one is already scheduled.");
+    await toast(page, "Sent for approval.");
     await page.getByRole("link", { name: "This week" }).click();
     await expect(page).toHaveURL(/when=week/);
+
+    await login(page, "ammar");
+    await page.goto("/my-work");
+    const approve = page.locator("#approve");
+    await expect(approve.getByText("Send the weekly report to Vanilla Roza")).toBeVisible();
+    await approve.getByRole("button", { name: /^Approve$/ }).first().click();
+    await toast(page, "Done! The next one is already scheduled.");
   });
 
   test("Team chat: @mention someone and they're notified", async ({ page }) => {

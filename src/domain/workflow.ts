@@ -17,6 +17,7 @@ export const STAGE_META: Record<
   design: { label: "Graphic Design", short: "Design", team: "design", completeLabel: "Submit design", needsDriveLink: true },
   social: { label: "Social Media", short: "Social", team: "social", completeLabel: "Mark as published", needsDriveLink: false },
   delivery: { label: "Delivery", short: "Delivery", team: null, completeLabel: "Mark as delivered", needsDriveLink: false },
+  approval: { label: "Approval", short: "Approval", team: "account", completeLabel: "Approve it", needsDriveLink: false },
 };
 
 export const TYPE_META: Record<ContentType, { label: string; plural: string }> = {
@@ -24,6 +25,7 @@ export const TYPE_META: Record<ContentType, { label: string; plural: string }> =
   static: { label: "Static", plural: "Statics" },
   carousel: { label: "Carousel", plural: "Carousels" },
   story: { label: "Story", plural: "Stories" },
+  other: { label: "Other", plural: "Other" },
 };
 
 export const TEAM_META: Record<Team, { label: string }> = {
@@ -48,17 +50,27 @@ export const PLATFORM_STATUS_META: Record<PlatformStatus, { label: string; targe
  * monthly brand content (published by NEXORA) or one-off project work (delivered to the client).
  */
 export function routeFor(type: ContentType, context: WorkContext): StageKind[] {
+  if (type === "other") return ["content", "approval"];
   const production: StageKind[] = type === "reel" ? ["shooting", "media"] : type === "story" ? [] : ["design"];
   const finish: StageKind = context === "plan" ? "social" : "delivery";
   return ["content", ...production, finish];
 }
 
+/** The last step: Social for brand posts, Delivery for one-off projects, Approval for "Other" work (a brief, a document…). */
+export function finalStep(context: WorkContext, type?: ContentType | null): StageKind {
+  if (type === "other") return "approval";
+  return context === "plan" ? "social" : "delivery";
+}
+
+/** Steps "Other" work can go through before its approval, in order (the person giving it picks which). */
+export const OTHER_STEPS: StageKind[] = ["content", "shooting", "media", "design"];
+
 /**
  * Where work can be sent when a stage is finished. Content chooses the team
  * (Media, Graphic Design, or straight to Social/Delivery); later stages have one next step.
  */
-export function handoffTargets(from: StageKind, context: WorkContext): StageKind[] {
-  const final: StageKind = context === "plan" ? "social" : "delivery";
+export function handoffTargets(from: StageKind, context: WorkContext, type?: ContentType | null): StageKind[] {
+  const final = finalStep(context, type);
   // Any later step can be skipped: content can go straight to editing or to Social, a shoot straight to Social.
   if (from === "content") return ["shooting", "media", "design", final];
   if (from === "shooting") return ["media", "design", final];
@@ -87,8 +99,8 @@ export const PICKABLE_PROGRESS: StageProgress[] = ["not_started", "processing", 
 export const TIMED_PROGRESS: StageProgress[] = ["processing", "adjusting"];
 
 /** The route after `from` when work is sent to `target`. */
-export function routeAfter(target: StageKind, context: WorkContext): StageKind[] {
-  const final: StageKind = context === "plan" ? "social" : "delivery";
+export function routeAfter(target: StageKind, context: WorkContext, type?: ContentType | null): StageKind[] {
+  const final = finalStep(context, type);
   if (target === final) return [final];
   if (target === "shooting") return ["shooting", "media", final];
   return [target, final];
@@ -99,7 +111,8 @@ export function isReviewed(kind: StageKind) {
   return kind === "media" || kind === "design";
 }
 
-export function finalLabel(context: WorkContext): string {
+export function finalLabel(context: WorkContext, type?: ContentType | null): string {
+  if (type === "other") return "Approved";
   return context === "plan" ? "Published" : "Delivered";
 }
 
@@ -279,4 +292,5 @@ export const STAGE_COLOR: Record<StageKind, { fg: string; bg: string }> = {
   design: { fg: "#c2410c", bg: "#fff0e4" },
   social: { fg: "#047857", bg: "#e3f6ee" },
   delivery: { fg: "#0f766e", bg: "#e0f4f2" },
+  approval: { fg: "#0e7490", bg: "#e0f2f7" },
 };

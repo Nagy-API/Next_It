@@ -286,13 +286,13 @@ export async function completeStageTx(
     tx,
     actor,
     all.filter((s) => s.id !== stage.id).map((s) => s.assigneeId ?? s.completedById),
-    { kind: "finished", title: `${finalLabel(ctx.context)}: ${ctx.item.title}`, body: ctx.where, itemId: ctx.item.id, at: now },
+    { kind: "finished", title: `${finalLabel(ctx.context, ctx.item.type)}: ${ctx.item.title}`, body: ctx.where, itemId: ctx.item.id, at: now },
   );
   await logActivity(tx, actor, {
     ...refs(ctx),
     action: "stage_completed",
     stageKind: stage.kind,
-    summary: `${actor.name} completed ${label}${onBehalf}${lateNote} → item is ${finalLabel(ctx.context)}.`,
+    summary: `${actor.name} completed ${label}${onBehalf}${lateNote} → item is ${finalLabel(ctx.context, ctx.item.type)}.`,
     meta: { lateDays, round: stage.round, next: null },
     at: now,
   });
@@ -426,7 +426,7 @@ export async function returnToStage(
     if (ctx.item.completedAt) {
       await tx.update(contentItems).set({ completedAt: null }).where(eq(contentItems.id, itemId));
     }
-    const fromLabel = from ? STAGE_META[from.kind].label : finalLabel(ctx.context);
+    const fromLabel = from ? STAGE_META[from.kind].label : finalLabel(ctx.context, ctx.item.type);
     const toLabel = STAGE_META[target].label;
     if (cleanNote) {
       await tx.insert(comments).values({ itemId, authorId: actor.id, body: cleanNote, tag: `Returned to ${toLabel}`, createdAt: now });
@@ -737,7 +737,7 @@ function joinWords(parts: string[]) {
  */
 async function rerouteTx(tx: Tx, ctx: ItemCtx, all: Stage[], from: Stage, target: StageKind): Promise<Stage[]> {
   const later = all.filter((s) => s.position > from.position);
-  const wanted = routeAfter(target, ctx.context);
+  const wanted = routeAfter(target, ctx.context, ctx.item.type);
   if (later.map((s) => s.kind).join() === wanted.join()) return all;
   const removed = later.filter((s) => !wanted.includes(s.kind));
   if (removed.length) {
@@ -807,7 +807,7 @@ export async function handOff(actor: Actor, stageId: string, input: HandOffInput
     }
     if (isReviewed(stage.kind)) assert(can.review(actor), APPROVAL_NEEDED);
     if (input.target) {
-      assert(handoffTargets(stage.kind, ctx.context).includes(input.target), "That team can't receive this work from here.");
+      assert(handoffTargets(stage.kind, ctx.context, ctx.item.type).includes(input.target), "That team can't receive this work from here.");
       all = await rerouteTx(tx, ctx, all, stage, input.target);
     }
     // The person chosen for the next step is set first so the "new task" notification goes to them.

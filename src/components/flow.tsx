@@ -42,7 +42,7 @@ export function healthBadge(s: StageView, today = todayISO()): { tone: Tone; lab
 /** One short sentence: where the work is and who has it. */
 export function whereLine(item: WorkItem): string {
   if (item.cancelledAt) return "Cancelled";
-  if (item.completedAt) return finalLabel(item.context);
+  if (item.completedAt) return finalLabel(item.context, item.type);
   const c = item.current;
   if (!c) return "—";
   return `${STAGE_META[c.kind].label} · ${c.assignee?.name ?? "Unassigned"}`;
@@ -141,7 +141,7 @@ export function FlowStepper({ item }: { item: WorkItem }) {
       <li className="min-w-0">
         <NodeIcon state={done ? "final-done" : "final-waiting"} />
         <div className="mt-2.5">
-          <div className={clsx("text-[12px] font-semibold uppercase tracking-[0.06em]", done ? "text-ok" : "text-faint")}>{finalLabel(item.context)}</div>
+          <div className={clsx("text-[12px] font-semibold uppercase tracking-[0.06em]", done ? "text-ok" : "text-faint")}>{finalLabel(item.context, item.type)}</div>
           <div className="mt-1 text-[12px] text-muted">{done ? formatDateTime(item.completedAt) : item.context === "plan" && item.postingDate ? `Planned ${formatDay(item.postingDate)}` : "Not yet"}</div>
         </div>
       </li>
@@ -187,7 +187,7 @@ export function FlowMini({ item, className }: { item: WorkItem; className?: stri
         );
       })}
       <span className={clsx("h-[2px] w-2.5", done ? "bg-ok" : "bg-line-strong")} />
-      <span title={finalLabel(item.context)} className={clsx("flex size-[22px] items-center justify-center rounded-full", done ? "bg-ok text-white" : "border border-dashed border-line-strong text-faint")}>
+      <span title={finalLabel(item.context, item.type)} className={clsx("flex size-[22px] items-center justify-center rounded-full", done ? "bg-ok text-white" : "border border-dashed border-line-strong text-faint")}>
         <Flag className="size-3" strokeWidth={2.4} />
       </span>
     </div>
@@ -200,7 +200,7 @@ export function FlowMini({ item, className }: { item: WorkItem; className?: stri
 
 export function ItemStatus({ item }: { item: WorkItem }) {
   if (item.cancelledAt) return <Badge tone="neutral">Cancelled</Badge>;
-  if (item.completedAt) return <Badge tone="ok" icon={item.context === "plan" ? Send : Check}>{finalLabel(item.context)}</Badge>;
+  if (item.completedAt) return <Badge tone="ok" icon={item.context === "plan" ? Send : Check}>{finalLabel(item.context, item.type)}</Badge>;
   const c = item.current;
   if (!c) return null;
   // Posting today / tomorrow is the loudest thing on a row: nothing should slip.

@@ -5,14 +5,16 @@ import { TaskCard } from "@/components/handoff";
 import { TaskRow } from "@/components/tasks";
 import { Avatar, Badge, BrandDot, BrandMark, ProgressChip, SectionTitle, StageChip, TimeSpent, TypeIcon } from "@/components/ui";
 import { can, isManager } from "@/domain/permissions";
-import { STAGE_META, isNewTask } from "@/domain/workflow";
+import { STAGE_META } from "@/domain/workflow";
 import { addDays, formatDateTime, formatDay, formatDuration, formatRelative, monthName, monthRange, todayISO, weekRange } from "@/lib/dates";
 import { myDay } from "@/server/fun";
 import { personPerMonth } from "@/server/stats";
 import { requireUser } from "@/server/auth";
 import { getActivePeople, getAllBrands, getOpenItems } from "@/server/cached";
 import { getActivePlatforms, getMyMessages, getPersonCompletions, getPersonWork, myBrandIds, reviewsFor, tasksFor, type WorkItem } from "@/server/queries";
-import { getTasksFor, getTasksGivenBy } from "@/server/tasks";
+import { getAllGivenTasks, getTasksFor, getTasksGivenBy, getTasksToApprove } from "@/server/tasks";
+import { GiveTaskButton } from "@/components/tasks";
+import { GivenTab } from "./given";
 import { attachmentsFor } from "@/server/attachments";
 import { getWorkspace } from "@/server/settings";
 import { mySpaceTasks } from "@/server/spaces";
@@ -41,19 +43,26 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const sp = await searchParams;
   const today = todayISO();
   const manager = isManager(user);
-  const [{ next }, recent, open, people, messages, myTasks, given, brands, platforms, spaceTasks, myShoots] = await Promise.all([
+  const canGive = can.giveTasks(user);
+  const tab = sp.tab === "given" ? "given" : "mine";
+  const everyone = manager && sp.who === "all";
+  const [{ next }, recent, open, people, messages, myTasks, given, brands, platforms, spaceTasks, myShoots, taskApprovals] = await Promise.all([
     getPersonWork(user.id, today),
     getPersonCompletions(user.id, addDays(today, -13), today),
     getOpenItems(),
     getActivePeople(),
     getMyMessages(user.id),
     getTasksFor(user.id, today),
-    manager ? getTasksGivenBy(user.id, today) : Promise.resolve([]),
+    everyone ? getAllGivenTasks(today) : getTasksGivenBy(user.id, today),
     getAllBrands(),
     getActivePlatforms(),
     BRAND.modules.spaces ? mySpaceTasks(user) : Promise.resolve([]),
     BRAND.modules.content ? shootsFor(user.id, 6).catch(() => [] as ShootEntry[]) : Promise.resolve([] as ShootEntry[]),
+    getTasksToApprove(user),
   ]);
+  // Brand work I gave (extra tasks): where each one is now. Managers can see everyone's.
+  const givenItems = open.filter((i) => i.extra && (everyone || i.extra.by?.id === user.id));
+  const givenOpen = given.filter((t) => !t.doneAt).length + givenItems.length;
   const pick = people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[] }));
   const rights = { deadline: can.setDeadline(user), assign: can.assign(user), review: can.review(user) };
 
@@ -64,20 +73,24 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const inPeriod = (d: string | null | undefined) => !until || (!!d && d <= until);
 
   // Sent for approval = no longer on you (it's with the reviewer); shown apart with the time it took.
-  const mine = tasksFor(open, user);
+  // "Other" work waiting for approval: its approver, Account Management when nobody is set, and any manager.
+  const approvalSteps = open.filter((i) => i.current?.kind === "approval" && (i.current.assignee?.id === user.id || manager || (!i.current.assignee && (user.teams as string[]).includes("account"))));
+  const mine = tasksFor(open, user).filter((i) => i.current?.kind !== "approval");
   const sent = mine.filter((i) => i.current?.progress === "waiting_approval" && i.current.assignee?.id === user.id);
   const allItems = mine
     .filter((i) => !sent.includes(i))
     .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || (dayOf(a) ?? "9").localeCompare(dayOf(b) ?? "9") || (b.current?.activatedAt?.getTime() ?? 0) - (a.current?.activatedAt?.getTime() ?? 0));
   const reviews = reviewsFor(open, user).filter((i) => !mine.includes(i));
   const openTasks = myTasks.filter((t) => !t.doneAt);
-  // Manager to-dos: new ones first (newest on top), then by deadline; finished ones last.
-  const taskOrder = (t: (typeof myTasks)[number]) => (t.doneAt ? 2 : isNewTask(t) ? 0 : 1);
+  // To-dos: urgent first, then by deadline, then oldest first; finished ones at the bottom. Changing a status never moves
+  // a task; the person can drag them into their own order.
   myTasks.sort(
     (a, b) =>
-      taskOrder(a) - taskOrder(b) ||
-      (a.doneAt || b.doneAt ? 0 : priorityRank(a.priority) - priorityRank(b.priority)) ||
-      (taskOrder(a) === 0 ? b.createdAt.getTime() - a.createdAt.getTime() : (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9")),
+      Number(!!a.doneAt) - Number(!!b.doneAt) ||
+      (a.doneAt && b.doneAt ? b.doneAt.getTime() - a.doneAt.getTime() : 0) ||
+      priorityRank(a.priority) - priorityRank(b.priority) ||
+      (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9") ||
+      a.createdAt.getTime() - b.createdAt.getTime(),
   );
 
   // One group per brand: my brands first (where I'm the usual person), then the others, then one-off projects.
@@ -104,14 +117,19 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
   const ordered = [...groups.values()].sort((a, b) => Number(b.mine) - Number(a.mine) || Number(a.key === "projects") - Number(b.key === "projects") || a.label.localeCompare(b.label));
   const mineGroups = ordered.filter((g) => g.mine);
   const otherGroups = ordered.filter((g) => !g.mine);
-  const files = await attachmentsFor({ itemIds: [...items, ...reviews].map((i) => i.id), taskIds: [...myTasks, ...given].map((t) => t.id) });
-  const tasksShown = myTasks.filter((t) => t.doneAt || inPeriod(t.dueDate));
+  const files = await attachmentsFor({ itemIds: [...items, ...reviews, ...approvalSteps].map((i) => i.id), taskIds: [...myTasks, ...given, ...taskApprovals].map((t) => t.id) });
+  const tasksShownAuto = myTasks.filter((t) => t.doneAt || inPeriod(t.dueDate));
+  // My own order for the open ones (drag); finished ones always stay at the bottom.
+  const taskOrderMap = await getOrder(user.id, tasksShownAuto.filter((t) => !t.doneAt).map((t) => `task:${t.id}`));
+  const placedTasks = applyOrder(tasksShownAuto.filter((t) => !t.doneAt), (t) => `task:${t.id}`, taskOrderMap);
+  const tasksShown = [...placedTasks.list, ...tasksShownAuto.filter((t) => t.doneAt)];
+  const approvalsCount = reviews.length + approvalSteps.length + taskApprovals.length;
   const lateCount = allItems.filter((i) => i.current?.health === "overdue").length + openTasks.filter((t) => t.dueDate && t.dueDate < today).length + spaceTasks.filter((t) => t.dueDate && t.dueDate < today).length;
   const hotCount = allItems.filter((i) => i.hot).length;
   const [months, day] = await Promise.all([personPerMonth(user.id, Number(today.slice(0, 4)), Number(today.slice(5, 7)), 2), myDay(user.id)]);
   const [lastMonth, thisMonth] = months;
   // Everything on this person right now: their steps, versions waiting for their approval, and managers' to-dos.
-  const total = allItems.length + reviews.length + openTasks.length + spaceTasks.length;
+  const total = allItems.length + approvalsCount + openTasks.length + spaceTasks.length;
   const q = (patch: Record<string, string>) => {
     const p = new URLSearchParams();
     const merged = { when: period, ...patch };
@@ -172,6 +190,30 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
         </div>
       </header>
 
+      {(canGive || given.length > 0) && (
+        <nav className="flex items-center gap-1 rounded-2xl border border-line bg-surface p-1 shadow-card" aria-label="Tasks">
+          <Link href="/my-work" aria-current={tab === "mine" ? "page" : undefined} className={tabCls(tab === "mine")}>
+            <Inbox className="size-4" /> My tasks <span className={tabCount(tab === "mine")}>{total}</span>
+          </Link>
+          <Link href="/my-work?tab=given" aria-current={tab === "given" ? "page" : undefined} className={tabCls(tab === "given")}>
+            <ClipboardCheck className="size-4" /> Tasks I gave <span className={tabCount(tab === "given")}>{givenOpen}</span>
+          </Link>
+        </nav>
+      )}
+
+      {tab === "given" ? (
+        <GivenTab
+          tasks={given}
+          items={givenItems}
+          everyone={everyone}
+          manager={manager}
+          today={today}
+          meId={user.id}
+          files={Object.fromEntries([...files.entries()])}
+          giveButton={canGive ? <GiveTaskButton people={people.map((p) => ({ id: p.id, name: p.name, teams: p.teams as string[], manager: p.isManager || p.isAdmin }))} brands={BRAND.modules.content ? brands.filter((b) => b.isActive).map((b) => ({ id: b.id, name: b.name })) : []} meId={user.id} variant="button" /> : null}
+        />
+      ) : (
+      <>
       <nav className="flex flex-wrap items-center gap-2" aria-label="When">
         {PERIODS.map((p) => (
           <Link key={p.key} href={q({ when: p.key })} className={chip(period === p.key)}>
@@ -277,40 +319,68 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
         </section>
       )}
 
-      {reviews.length > 0 && (
-        <section>
+      {approvalsCount > 0 && (
+        <section id="approve" className="scroll-mt-24">
           <SectionTitle right={<span className="text-[13px] text-muted">Approve it and it moves on by itself</span>}>
             <span className="inline-flex items-center gap-2">
               <ThumbsUp className="size-4 text-ok" /> Waiting for your approval
-              <span className="rounded-full bg-ok px-2 py-0.5 text-[12px] text-white">{reviews.length}</span>
+              <span className="rounded-full bg-ok px-2 py-0.5 text-[12px] text-white">{approvalsCount}</span>
             </span>
           </SectionTitle>
           <div className="space-y-3">
             {reviews.map((i) => (
               <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} mode="review" attachments={files.get(i.id)} manager={manager} />
             ))}
+            {approvalSteps.map((i) => (
+              <TaskCard key={i.id} item={i} meId={user.id} people={pick} rights={rights} today={today} attachments={files.get(i.id)} manager={manager} />
+            ))}
+            {taskApprovals.length > 0 && (
+              <div className="card divide-y divide-line overflow-hidden">
+                {taskApprovals.map((t) => (
+                  <TaskRow key={t.id} t={t} today={today} mode="given" canDelete={false} files={files.get(t.id)} meId={user.id} manager={manager} showGiver />
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
 
       {tasksShown.length > 0 && (
         <section id="tasks" className="scroll-mt-24">
-          <SectionTitle right={<span className="text-[13px] text-muted">{openTasks.length} open</span>}>
+          <SectionTitle right={<span className="text-[13px] text-muted">{openTasks.length} open · urgent first · drag to reorder</span>}>
             <span className="inline-flex items-center gap-2">
-              <ClipboardCheck className="size-4 text-electric" /> Tasks from managers
+              <ClipboardCheck className="size-4 text-electric" /> Tasks given to you
             </span>
           </SectionTitle>
-          <div className="card divide-y divide-line">
-            {tasksShown.map((t) => (
-              <TaskRow key={t.id} t={t} today={today} mode="mine" canDelete={manager} files={files.get(t.id)} meId={user.id} manager={manager} />
-            ))}
+          <div className="pl-5 sm:pl-6">
+            <Reorderable
+              custom={placedTasks.custom}
+              resetLabel="Reset to the automatic order (urgent first)"
+              rows={placedTasks.list.map((t) => ({
+                key: `task:${t.id}`,
+                node: (
+                  <div className="card overflow-hidden">
+                    <TaskRow t={t} today={today} mode="mine" canDelete={manager} files={files.get(t.id)} meId={user.id} manager={manager} />
+                  </div>
+                ),
+              }))}
+            />
+            {tasksShown.some((t) => t.doneAt) && (
+              <div className="card mt-3 divide-y divide-line overflow-hidden">
+                {tasksShown
+                  .filter((t) => t.doneAt)
+                  .map((t) => (
+                    <TaskRow key={t.id} t={t} today={today} mode="mine" canDelete={manager} files={files.get(t.id)} meId={user.id} manager={manager} />
+                  ))}
+              </div>
+            )}
           </div>
         </section>
       )}
 
       <MySpaceTasks tasks={spaceTasks.filter((t) => inPeriod(t.dueDate))} />
 
-      {items.length === 0 && reviews.length === 0 && tasksShown.length === 0 && !spaceTasks.some((t) => inPeriod(t.dueDate)) && (
+      {items.length === 0 && approvalsCount === 0 && tasksShown.length === 0 && !spaceTasks.some((t) => inPeriod(t.dueDate)) && (
         <div className="card flex flex-col items-center px-6 py-12 text-center">
           <Coffee className="mb-3 size-8 text-electric" />
           <div className="font-display text-[16px] font-bold">{period ? "Nothing due in this period" : "You’re all caught up"}</div>
@@ -386,17 +456,6 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
         </section>
       )}
 
-      {manager && given.length > 0 && (
-        <section id="given" className="scroll-mt-24">
-          <SectionTitle right={<span className="text-[13px] text-muted">{given.filter((t) => !t.doneAt).length} still open</span>}>Tasks I gave</SectionTitle>
-          <div className="card divide-y divide-line">
-            {given.map((t) => (
-              <TaskRow key={t.id} t={t} today={today} mode="given" canDelete files={files.get(t.id)} meId={user.id} manager={manager} />
-            ))}
-          </div>
-        </section>
-      )}
-
       {next.length > 0 && (
         <details className="group">
           <summary className="mb-3 flex cursor-pointer list-none items-center justify-between gap-3">
@@ -451,6 +510,8 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my-work"
           <p className="text-[13px] text-muted">Nothing finished in the last two weeks.</p>
         )}
       </section>
+      </>
+      )}
     </div>
   );
 }
@@ -487,6 +548,13 @@ function BrandGroup({ g, render, custom }: { g: { key: string; label: string; co
       </Fold>
     </div>
   );
+}
+
+function tabCls(on: boolean) {
+  return clsx("flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-[14px] font-semibold transition-colors", on ? "bg-strong text-white" : "text-muted hover:bg-hover hover:text-ink");
+}
+function tabCount(on: boolean) {
+  return clsx("rounded-full px-1.5 text-[11.5px] font-semibold tabular-nums leading-[18px]", on ? "bg-white/20" : "bg-sunken text-muted");
 }
 
 function chip(on: boolean) {

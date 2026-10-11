@@ -217,6 +217,10 @@ docs/                    ← SECURITY.md, DEPLOY-HOSTINGER.md
 - **comments** — threads (one level), `mentionUserId` (waits for their reply), `resolvedAt`, `deletedAt`.
 - **tasks** — manager-given tasks: assignee, due, `recurrence` (none/daily/weekly/monthly), `seriesId`, `status`
   (todo/in_progress/scheduled/waiting — the person picks it; `scheduledDate` for scheduled; done = `doneAt`), `deletedAt`.
+  `approverId` (null = ticking done is enough): the person's tick sets `submittedAt` (Waiting approval, the approver is
+  notified); the approver, whoever gave it or any manager approves (`doneAt`, `approvedById`). Nobody approves their own
+  work (`mayApproveTask`). Send back (`sendBackTask`, note required): the person → to whoever gave it (status waiting);
+  the giver / approver / a manager → to the person (open again). `returnNote/returnedById/returnedAt` = the last one.
 - **chat_messages** — Team chat, `mentions[]`, `deletedAt`.
 - **notifications** — per person; `kind`, `title`, `body`, `itemId` or `href`, `readAt`.
 - **permission_overrides** — per person + key (from `PERMISSIONS`): allow true/false. No row = the default rule.
@@ -245,6 +249,10 @@ Routes by type (`routeFor`):
 - Static / Carousel: **content → design → social**
 - Story: **content → social**
 - One-off project: same, but the last step is **delivery** (no social) → **Delivered**.
+- **Other** (type `other`: a brief, a document, a script…): the steps chosen when it's given (any of content / shooting /
+  editing / design, in that order) then **approval** → **Approved**. Default route `content → approval`. The approval step
+  belongs to its approver (picked in Give a task; default Account Management), Account Management or any manager
+  (`doStage`); Approve completes it, Send back reopens an earlier step. `finalStep(context, type)` / `finalLabel(context, type)`.
 
 Hand-off (`handOff`): the person finishes their step and it goes to the next one. Steps can be skipped: content may
 choose shooting, media (skip shooting), design or social/delivery; a shoot may go to media, design or social
@@ -299,9 +307,16 @@ person with the deadline, and then works like any item (links, versions, approva
 brands list, the Overview and the Dashboard count the plan WITHOUT extras and show extras on their own ("+N extra").
 A task without a brand stays a simple to-do (tasks.ts, can repeat).
 
+**My tasks has two tabs**: My tasks (default) and **Tasks I gave** (`?tab=given`, `my-work/given.tsx`): every to-do and
+every extra brand item the person gave, where it is and who has it; managers switch to Everyone's (`&who=all`, with who
+gave each one). "Waiting for your approval" holds versions, approval steps of Other work and to-dos sent for approval.
+To-dos order: urgent first, then deadline, then oldest; finished at the bottom; a status change never moves one; drag
+(or ↑ ↓ on phones) puts them in the person's own order (`personal_order`, `task:<id>`). Every work card always shows
+Attach file / Add link and Send back (on a first step of given work it goes back to whoever gave it, as a comment that
+waits for their reply).
 **Order in My tasks**: one group per brand — "My brands" first (brands where the person is a default person for any step,
 `myBrandIds`), then the other brands, then one-off projects; inside a brand, by day (posting date, else the step's deadline)
-with a small day heading. Manager to-dos: new first, then by deadline. Every card shows when it arrived (and from whom),
+with a small day heading. Every card shows when it arrived (and from whom),
 its status, its clock and its deadline, and has Send back.
 Phones/tablets get a bottom tab bar (My tasks, Overview, Chat, Brands, More) in `shell.tsx`; toasts sit above it.
 Every page remembers its scroll position (`scroll-memory.tsx`, sessionStorage, 3 h). Every date field is `DateInput`
