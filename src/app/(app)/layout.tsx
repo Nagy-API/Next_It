@@ -82,6 +82,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             createSpaces: can.createSpaces(user),
             manageBrands: can.manageBrands(user),
             exportPlans: can.exportPlan(user),
+            social: can.scheduleSocial(user) || can.configureSocial(user),
             modules: ws.modules,
           }}
           greeting={greetingNow()}

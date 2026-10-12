@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
   check,
@@ -1126,3 +1127,139 @@ export const privateNotes = pgTable(
   (t) => [index("private_notes_user_idx").on(t.userId)],
 );
 export type PrivateNote = typeof privateNotes.$inferSelect;
+
+/* ------------------------------------------------------------------ */
+/* Social media schedule: channels, media library, posts and numbers     */
+/* ------------------------------------------------------------------ */
+
+/** A connected channel: a Facebook Page or an Instagram professional account (through its Page). */
+export const socialAccounts = pgTable(
+  "social_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** facebook | instagram */
+    platform: text("platform").notNull(),
+    brandId: uuid("brand_id").references(() => brands.id),
+    /** The Page ID (facebook) or the Instagram account ID (instagram). */
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    username: text("username"),
+    /** The Page access token, encrypted (see secretKey in src/server/social.ts). Never sent to the browser. */
+    tokenEnc: text("token_enc").notNull(),
+    /** ok | error */
+    status: text("status").notNull().default("ok"),
+    lastError: text("last_error"),
+    checkedAt: ts("checked_at"),
+    connectedById: uuid("connected_by_id").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [uniqueIndex("social_accounts_external_idx").on(t.platform, t.externalId)],
+);
+
+/** The media library: photos and videos kept exactly as uploaded (no resizing, no re-encoding). */
+export const socialMedia = pgTable(
+  "social_media",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    /** image | video */
+    kind: text("kind").notNull(),
+    mime: text("mime").notNull(),
+    size: bigint("size", { mode: "number" }).notNull(),
+    /** Bytes received so far (uploads arrive in pieces). */
+    received: bigint("received", { mode: "number" }).notNull().default(0),
+    /** uploading | ready */
+    status: text("status").notNull().default("uploading"),
+    width: integer("width"),
+    height: integer("height"),
+    /** A small JPEG preview (data URL, made in the browser). It stays after the file itself is removed from the server. */
+    thumb: text("thumb"),
+    /** File name on disk (random; in the files folder, under social/). */
+    storageKey: text("storage_key").notNull(),
+    /** Random key in the link Facebook / Instagram download the file from. */
+    publicKey: text("public_key").notNull(),
+    brandId: uuid("brand_id").references(() => brands.id),
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("social_media_created_idx").on(t.createdAt)],
+);
+
+export const socialPosts = pgTable(
+  "social_posts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").references(() => brands.id),
+    /** post | reel | story */
+    kind: text("kind").notNull().default("post"),
+    caption: text("caption").notNull().default(""),
+    /** Media from the library, in order. */
+    mediaIds: uuid("media_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    /** Per-post settings, e.g. { shareToFeed: true }. */
+    options: jsonb("options").notNull().default({}),
+    /** When it goes out. Empty on a draft. */
+    scheduledAt: ts("scheduled_at"),
+    /** draft | scheduled | publishing | published | partial | failed */
+    status: text("status").notNull().default("draft"),
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    updatedById: uuid("updated_by_id").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
+    deletedAt: ts("deleted_at"),
+  },
+  (t) => [index("social_posts_when_idx").on(t.scheduledAt), index("social_posts_status_idx").on(t.status)],
+);
+
+/** One channel a post goes to: its own publishing state, live link and latest numbers. */
+export const socialPostTargets = pgTable(
+  "social_post_targets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => socialPosts.id),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => socialAccounts.id),
+    /** pending | processing | published | failed */
+    status: text("status").notNull().default("pending"),
+    /** Where publishing is (container IDs while Instagram processes a video…). */
+    state: jsonb("state").notNull().default({}),
+    /** Set while a publishing run holds this row, so two runs never post it twice. */
+    claimedAt: ts("claimed_at"),
+    externalId: text("external_id"),
+    permalink: text("permalink"),
+    error: text("error"),
+    publishedAt: ts("published_at"),
+    /** Latest numbers (reach, views, likes…), see SocialMetrics in src/domain/social.ts. */
+    metrics: jsonb("metrics"),
+    metricsAt: ts("metrics_at"),
+    metricsError: text("metrics_error"),
+  },
+  (t) => [uniqueIndex("social_targets_post_account_idx").on(t.postId, t.accountId), index("social_targets_status_idx").on(t.status)],
+);
+
+/** The numbers over time (one row per refresh), for the chart inside a post. */
+export const socialMetricSnapshots = pgTable(
+  "social_metric_snapshots",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    targetId: uuid("target_id")
+      .notNull()
+      .references(() => socialPostTargets.id),
+    at: ts("at").notNull().defaultNow(),
+    data: jsonb("data").notNull(),
+  },
+  (t) => [index("social_snapshots_target_idx").on(t.targetId, t.at)],
+);
+
+export type SocialAccount = typeof socialAccounts.$inferSelect;
+export type SocialMedia = typeof socialMedia.$inferSelect;
+export type SocialPost = typeof socialPosts.$inferSelect;
+export type SocialPostTarget = typeof socialPostTargets.$inferSelect;

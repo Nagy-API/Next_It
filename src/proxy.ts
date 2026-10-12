@@ -46,8 +46,8 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      // Uploads skip the proxy so files up to 25 MB aren't buffered twice (the route checks the session itself).
-      source: "/((?!_next/static|_next/image|brand/|api/files|icon.png|apple-icon.png|favicon.ico|robots.txt).*)",
+      // Uploads skip the proxy so files aren't buffered twice (the routes check the session themselves).
+      source: "/((?!_next/static|_next/image|brand/|api/files|api/social|icon.png|apple-icon.png|favicon.ico|robots.txt).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },

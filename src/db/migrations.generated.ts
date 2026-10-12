@@ -411,5 +411,34 @@ export const MIGRATIONS: { sql: string[]; bps: boolean; folderMillis: number; ha
     "bps": true,
     "folderMillis": 1791728316631,
     "hash": "27abdf2b084907e55856ce115cd5001ac08851a804bfe92a6eb943dd294d321f"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"social_accounts\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"platform\" text NOT NULL,\n\t\"brand_id\" uuid,\n\t\"external_id\" text NOT NULL,\n\t\"name\" text NOT NULL,\n\t\"username\" text,\n\t\"token_enc\" text NOT NULL,\n\t\"status\" text DEFAULT 'ok' NOT NULL,\n\t\"last_error\" text,\n\t\"checked_at\" timestamp with time zone,\n\t\"connected_by_id\" uuid,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"social_media\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"name\" text NOT NULL,\n\t\"kind\" text NOT NULL,\n\t\"mime\" text NOT NULL,\n\t\"size\" bigint NOT NULL,\n\t\"received\" bigint DEFAULT 0 NOT NULL,\n\t\"status\" text DEFAULT 'uploading' NOT NULL,\n\t\"width\" integer,\n\t\"height\" integer,\n\t\"thumb\" text,\n\t\"storage_key\" text NOT NULL,\n\t\"public_key\" text NOT NULL,\n\t\"brand_id\" uuid,\n\t\"created_by_id\" uuid NOT NULL,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"social_metric_snapshots\" (\n\t\"id\" bigserial PRIMARY KEY NOT NULL,\n\t\"target_id\" uuid NOT NULL,\n\t\"at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"data\" jsonb NOT NULL\n);\n",
+      "\nCREATE TABLE \"social_post_targets\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"post_id\" uuid NOT NULL,\n\t\"account_id\" uuid NOT NULL,\n\t\"status\" text DEFAULT 'pending' NOT NULL,\n\t\"state\" jsonb DEFAULT '{}'::jsonb NOT NULL,\n\t\"claimed_at\" timestamp with time zone,\n\t\"external_id\" text,\n\t\"permalink\" text,\n\t\"error\" text,\n\t\"published_at\" timestamp with time zone,\n\t\"metrics\" jsonb,\n\t\"metrics_at\" timestamp with time zone,\n\t\"metrics_error\" text\n);\n",
+      "\nCREATE TABLE \"social_posts\" (\n\t\"id\" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,\n\t\"brand_id\" uuid,\n\t\"kind\" text DEFAULT 'post' NOT NULL,\n\t\"caption\" text DEFAULT '' NOT NULL,\n\t\"media_ids\" uuid[] DEFAULT '{}'::uuid[] NOT NULL,\n\t\"options\" jsonb DEFAULT '{}'::jsonb NOT NULL,\n\t\"scheduled_at\" timestamp with time zone,\n\t\"status\" text DEFAULT 'draft' NOT NULL,\n\t\"created_by_id\" uuid NOT NULL,\n\t\"updated_by_id\" uuid,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"updated_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "\nALTER TABLE \"social_accounts\" ADD CONSTRAINT \"social_accounts_brand_id_brands_id_fk\" FOREIGN KEY (\"brand_id\") REFERENCES \"public\".\"brands\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"social_accounts\" ADD CONSTRAINT \"social_accounts_connected_by_id_users_id_fk\" FOREIGN KEY (\"connected_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"social_media\" ADD CONSTRAINT \"social_media_brand_id_brands_id_fk\" FOREIGN KEY (\"brand_id\") REFERENCES \"public\".\"brands\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"social_media\" ADD CONSTRAINT \"social_media_created_by_id_users_id_fk\" FOREIGN KEY (\"created_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"social_metric_snapshots\" ADD CONSTRAINT \"social_metric_snapshots_target_id_social_post_targets_id_fk\" FOREIGN KEY (\"target_id\") REFERENCES \"public\".\"social_post_targets\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"social_post_targets\" ADD CONSTRAINT \"social_post_targets_post_id_social_posts_id_fk\" FOREIGN KEY (\"post_id\") REFERENCES \"public\".\"social_posts\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"social_post_targets\" ADD CONSTRAINT \"social_post_targets_account_id_social_accounts_id_fk\" FOREIGN KEY (\"account_id\") REFERENCES \"public\".\"social_accounts\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"social_posts\" ADD CONSTRAINT \"social_posts_brand_id_brands_id_fk\" FOREIGN KEY (\"brand_id\") REFERENCES \"public\".\"brands\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"social_posts\" ADD CONSTRAINT \"social_posts_created_by_id_users_id_fk\" FOREIGN KEY (\"created_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nALTER TABLE \"social_posts\" ADD CONSTRAINT \"social_posts_updated_by_id_users_id_fk\" FOREIGN KEY (\"updated_by_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE no action ON UPDATE no action;",
+      "\nCREATE UNIQUE INDEX \"social_accounts_external_idx\" ON \"social_accounts\" USING btree (\"platform\",\"external_id\");",
+      "\nCREATE INDEX \"social_media_created_idx\" ON \"social_media\" USING btree (\"created_at\");",
+      "\nCREATE INDEX \"social_snapshots_target_idx\" ON \"social_metric_snapshots\" USING btree (\"target_id\",\"at\");",
+      "\nCREATE UNIQUE INDEX \"social_targets_post_account_idx\" ON \"social_post_targets\" USING btree (\"post_id\",\"account_id\");",
+      "\nCREATE INDEX \"social_targets_status_idx\" ON \"social_post_targets\" USING btree (\"status\");",
+      "\nCREATE INDEX \"social_posts_when_idx\" ON \"social_posts\" USING btree (\"scheduled_at\");",
+      "\nCREATE INDEX \"social_posts_status_idx\" ON \"social_posts\" USING btree (\"status\");"
+    ],
+    "bps": true,
+    "folderMillis": 1791750432052,
+    "hash": "1f2d6297cc7dcf9d0fc9242651875f7796a5034314155388e5250f80f00c433e"
   }
 ];

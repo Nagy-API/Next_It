@@ -509,3 +509,37 @@ passes `cleanContent`). Add a space template: `EXTRA_SPACE_TEMPLATES` (domain/sp
 - `revalidatePath("/", "layout")` after writes is done by `run()`.
 - UI text is English (the team asked for it). Egyptian-Arabic is only used when talking to the owner.
 - Popovers and modals render in a portal (client.tsx) so containers never clip them — keep it that way.
+
+## 15. Social media schedule (/social)
+
+Plan, publish and measure Facebook Page and Instagram posts. Tabs: Calendar (week by hour / month, drag to move,
+click to edit), Media (what is on the server now), Analytics, Configuration (admins). The brand switcher at the top
+right (cookie `social_brand`, read by `src/app/(app)/social/brand.ts`) decides whose schedule every tab shows.
+
+- **Files**: rules `src/domain/social.ts` (limits, `checkPost`, metric names) · `src/server/social.ts` (config,
+  channels, media, posts, `cleanupMedia`) · `src/server/social-meta.ts` (Graph API calls only, no database) ·
+  `src/server/social-queue.ts` (every minute: `publishDue`, `refreshMetrics`; every 15 min: `cleanupMedia`) ·
+  `src/app/social-actions.ts` · `src/app/api/social/upload` (chunked upload) and `api/social/file/[id]` · pages
+  `src/app/(app)/social/*` · UI `src/components/social/*`.
+- **Tables**: `social_accounts` (a Page or an Instagram account, encrypted Page token, brand), `social_media`
+  (file on disk + a small `thumb` kept in the database), `social_posts` (kind post/reel/story, `media_ids`,
+  `scheduled_at`, status draft/scheduled/publishing/published/partial/failed), `social_post_targets` (one per
+  channel: state, live link, error, latest `metrics`), `social_metric_snapshots` (numbers over time).
+  Configuration lives in `workspace_settings` key `social`.
+- **Permissions**: `social.schedule` (managers + social team), `social.configure` (admins).
+- **Brand first**: a post always belongs to one brand, that brand must have a connected account, and the post goes
+  to that brand's own channels only (`savePost` enforces it; the composer's `BrandSelect` greys out the others with
+  "Connect with Facebook first"). Calendar and Analytics are blurred behind `ConnectGate` while the brand on screen
+  has no connected account.
+- **Publishing**: Meta downloads each file from `<public address>/api/social/file/<id>?k=<key>` — the ONLY file
+  link that works without signing in, and only with that file's long random key (given to Meta alone). A channel
+  that fails is never retried by itself (it could post twice): the error is kept, the social team and the author
+  get a `social_failed` notification, and the person presses Try again.
+- **Disk**: files are stored untouched in `<files folder>/social`. `cleanupMedia` removes a file 24 h after its post
+  is published everywhere (`KEEP_AFTER_PUBLISH_MS`), 14 days after a failure nobody fixed, 30 days when it was never
+  used. The post, its numbers, its live link and the thumbnail stay. Never delete a file a scheduled post still needs.
+- **Secrets**: the app secret and tokens are AES-256-GCM encrypted (`SOCIAL_SECRET_KEY`, else a key file in
+  `<files folder>/social/.key`, outside the database). Never send a token to the browser or log a Graph URL.
+- **Add a platform**: its calls in a `social-<platform>.ts` like social-meta.ts (`publishStep`, `fetchMetrics`),
+  a value in `SOCIAL_PLATFORMS`, its limits in `checkPost`, its connect form in Configuration.
+- **Tests**: `tests/social.test.ts` (rules + Meta played by a stub) and `tests/social-queue.test.ts` (database).

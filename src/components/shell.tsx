@@ -7,6 +7,7 @@ import clsx from "clsx";
 import {
   BarChart3,
   Briefcase,
+  CalendarClock,
   Camera,
   ChevronRight,
   Download,
@@ -68,6 +69,7 @@ export type NavFlags = {
   createSpaces: boolean;
   manageBrands: boolean;
   exportPlans: boolean;
+  social: boolean;
   modules: { content: boolean; projects: boolean; spaces: boolean; quick: boolean; chat: boolean };
 };
 type Watermark = { src: string; opacity: number } | null;
@@ -207,6 +209,7 @@ export function Shell({
             <NavItem href="/overview" icon={Home} label="Overview" active={pathname.startsWith("/overview") || pathname.startsWith("/work")} />
             {nav.modules.content && <NavItem href="/shoots" icon={Camera} label="Shoot schedule" active={pathname.startsWith("/shoots")} count={shootsToday} hint="shoots today" />}
             {nav.modules.content && nav.modules.quick && <NavItem href="/quick" icon={ListChecks} label="Quick update" active={pathname.startsWith("/quick")} />}
+            {nav.social && <NavItem href="/social" icon={CalendarClock} label="Social media schedule" active={pathname.startsWith("/social")} />}
             <button
               type="button"
               onClick={openNotebook}

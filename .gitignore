@@ -51,3 +51,5 @@ next-env.d.ts
 
 # portable Node.js downloaded by start-nexora.bat
 /.node/
+/local-data*
+*.zip

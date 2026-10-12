@@ -25,6 +25,7 @@ const ICON: Record<string, typeof Bell> = {
   task: ClipboardCheck,
   mention: AtSign,
   chat: MessageSquare,
+  social_failed: AlertTriangle,
 };
 
 const noteHref = (n: Note) => n.href ?? (n.itemId ? `/items/${n.itemId}` : "/my-work");
@@ -194,7 +195,7 @@ export function NotificationBell() {
                     }}
                     className="flex min-w-0 flex-1 gap-3 py-3 pl-4"
                   >
-                    <span className={clsx("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", n.kind === "sent_back" ? "bg-back-soft text-back" : n.kind === "finished" || n.kind === "approved" ? "bg-ok-soft text-ok" : n.kind === "mention" || n.kind === "task" ? "bg-[#fff1c2] text-[#8a5a00]" : "bg-electric-soft text-electric")}>
+                    <span className={clsx("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", n.kind === "social_failed" ? "bg-bad-soft text-bad" : n.kind === "sent_back" ? "bg-back-soft text-back" : n.kind === "finished" || n.kind === "approved" ? "bg-ok-soft text-ok" : n.kind === "mention" || n.kind === "task" ? "bg-[#fff1c2] text-[#8a5a00]" : "bg-electric-soft text-electric")}>
                       <Icon className="size-3.5" />
                     </span>
                     <span className="min-w-0 flex-1">

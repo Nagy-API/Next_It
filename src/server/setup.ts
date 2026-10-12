@@ -2,6 +2,7 @@ import { databaseMode, db, openDatabase, startAutomaticBackups } from "@/db";
 import { MIGRATIONS } from "@/db/migrations.generated";
 import { seed } from "./seed";
 import { startAutoPause } from "./auto-pause";
+import { startSocialQueue } from "./social-queue";
 
 type Migrator = { dialect: { migrate(m: typeof MIGRATIONS, session: unknown, config: { migrationsFolder: string }): Promise<void> }; session: unknown };
 
@@ -27,4 +28,5 @@ export async function prepareDatabase() {
   await seed();
   startAutomaticBackups();
   startAutoPause();
+  startSocialQueue();
 }

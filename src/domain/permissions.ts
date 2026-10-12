@@ -65,6 +65,9 @@ export const PERMISSIONS = {
   "shoot.plan": { group: "Content", label: "Plan shoots", hint: "Day, time, place, people, rentals", rule: (w) => isManager(w) || has(w, "media") || has(w, "content") },
   "publish": { group: "Content", label: "Publish", hint: "Platform status, dates and live links", rule: (w) => isManager(w) || has(w, "social") },
   "projects.manage": { group: "Content", label: "Manage one-off projects", hint: "Clients and projects", rule: (w) => isManager(w) || has(w, "content") },
+  // Social media schedule
+  "social.schedule": { group: "Social", label: "Use the Social media schedule", hint: "Media, calendar, posting to Facebook / Instagram, numbers", rule: (w) => isManager(w) || has(w, "social") },
+  "social.configure": { group: "Social", label: "Connect social accounts", hint: "Configuration: the Meta app, tokens and channels", rule: admin },
 } satisfies Record<string, PermissionDef>;
 
 export type PermissionKey = keyof typeof PERMISSIONS;
@@ -183,6 +186,14 @@ export const can = {
   },
   downloadBackup(w: Who) {
     return allowed(w, "backup.download");
+  },
+  /** Media library, calendar, composing and the numbers of the Social media schedule. */
+  scheduleSocial(w: Who) {
+    return allowed(w, "social.schedule");
+  },
+  /** The Configuration tab: the Meta app, tokens, connecting and removing channels. */
+  configureSocial(w: Who) {
+    return allowed(w, "social.configure");
   },
   /** Anything in Settings beyond "My account". */
   seeSettings(w: Who) {

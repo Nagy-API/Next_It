@@ -8,7 +8,7 @@ import { notifications, users, type StageKind, type Team } from "@/db/schema";
 import { STAGE_META } from "@/domain/workflow";
 import type { Actor } from "./activity";
 
-export type NotificationKind = "new_task" | "sent_back" | "comment" | "reply" | "assigned" | "deadline" | "finished" | "review" | "approved" | "task" | "chat" | "mention";
+export type NotificationKind = "new_task" | "sent_back" | "comment" | "reply" | "assigned" | "deadline" | "finished" | "review" | "approved" | "task" | "chat" | "mention" | "social_failed";
 
 /** Whose task list a step shows up in when nobody is assigned. */
 export const STAGE_TEAM: Record<StageKind, Team> = { content: "content", shooting: "media", media: "media", design: "design", social: "social", delivery: "account", approval: "account" };
