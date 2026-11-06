@@ -47,7 +47,7 @@ Login uses Argon2id password hashing, temporary first-login password replacement
 
 **[Issue #27](https://github.com/Nagy-API/Next_It/issues/27).**
 
-This **PUBLIC** repo's original README and `src/server/seed.ts` carry a fixed bootstrap password fallback and identify seeded users. A published default may be abused **if** a current account still uses it. The source enforces a password change on first login, but an unchanged seeded account can still be relevant before that change. We have **no evidence** the password is valid for the live system and did **not** attempt any login.
+The owner's update on **6 November 2026** confirms that existing team account passwords have been changed from their initial values. This was not independently verified by reviewing account records. The fixed bootstrap fallback remains in source for new environments, so [Issue #27](https://github.com/Nagy-API/Next_It/issues/27) stays open. No live login attempt or password inspection took place.
 
 **Response:** Privately assess existing account state; rotate any affected first-password accounts and revoke sessions if warranted. Change bootstrap code in a separate reviewed code PR to require a unique per-environment secret or secure one-time provisioning, with regression tests. Removing password text from README alone does **not** revoke a leaked credential, scrub Git history or fix the code fallback.
 
