@@ -72,7 +72,7 @@ This **PUBLIC** repo's original README and `src/server/seed.ts` carry a fixed bo
 - **Social queue:** background queue ticks while a suitable long-running Node server is alive. The source is not evidence that it survived every Hostinger restart or completed real Meta jobs.
 - **Single-process PGlite:** code attempts locking but shared folder availability and Node lifecycle matter; do not advertise HA / multi-node capacity or SLA.
 - **Test code:** Vitest and Playwright suites exist; they were not run during this review. Do not report an invented pass count.
-- **Authorship:** team size for **NEXORA Ops** and precise individual module ownership have not been stated in this conversation. Do not assume REDAHAB or NEXORA Website's two-developer team applies.
+- **Authorship:** Owner confirms **two developers** built NEXORA Ops. Individual module ownership and contribution percentages remain unassigned.
 - **Portfolio rights:** confirm company permission for screenshots/brands and sanitize any genuine internal employee tasks, names, private attachments, client documents, tokens, credentials, business performance figures.
 
 ## Source issue/deployment policy
@@ -86,6 +86,6 @@ This **PUBLIC** repo's original README and `src/server/seed.ts` carry a fixed bo
 
 **What to emphasize:** operational workflow engine with cross-team handoffs, per-step time/deadlines, revision approvals, configurable admin permissions, custom workflow builder/Docs/Sheets/Whiteboards and Meta publishing source integration; real-world software engineering of persistent sessions, Drizzle SQL models, queues, notifications, backups and Excel exports.
 
-**Do not claim:** live Meta publication/metrics, audited security, external Canva connection, cloud-native distributed DB, guaranteed uptime, specific performance uplifts or revenue numbers, team size or solo authorship without proof.
+**Do not claim:** live Meta publication/metrics, audited security, external Canva connection, cloud-native distributed DB, guaranteed uptime, specific performance uplifts, revenue or solo authorship. The two-developer team is owner-confirmed.
 
 **Next:** Preserve source case-study records in the private `Nagy-API/ai-portfolio-workspace`, collect approved synthetic screenshots later, and coordinate security Issue #27 with an authorized operator before any public technical endorsement.
