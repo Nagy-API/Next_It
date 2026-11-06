@@ -1,3 +1,5 @@
+> **Source control review note (2026-11-06):** This is a description of security mechanisms, **not a current penetration-test or fresh dependency audit certificate**. The public repo historically advertised a fixed seeded login password and source still has a fixed fallback; see [Security Issue #27](https://github.com/Nagy-API/Next_It/issues/27). Never reprint or try that password; current production account state was not tested. Any past “npm audit clean” status must be rerun under an approved test/release process before making a current security claim.
+
 # Security & privacy — how NEXORA Ops is protected
 
 Plain-language version for staff: `/privacy` in the app. This file is the technical reference.
