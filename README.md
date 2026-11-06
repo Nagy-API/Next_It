@@ -4,6 +4,7 @@
 **Actual source repository:** https://github.com/Nagy-API/Next_It (**PUBLIC**)  
 **Hosting:** Hostinger Node/Next.js, GitHub-connected auto-deployment on `main` (**owner-confirmed**; live build configuration not independently inspected)  
 **Software:** Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4, Drizzle ORM, PostgreSQL-compatible PGlite/Postgres, ExcelJS, Vitest and Playwright.  
+**Development:** **Two developers** (owner-confirmed); individual responsibilities not yet assigned.  
 **Source baseline for this review:** `ef5756678c7c95b506972288d3e724f98576ef24` (6 November 2026).
 
 > **Deployment caution:** Merging a documentation-only change into the production-connected `main` branch may trigger a Hostinger rebuild. This docs review is maintained as a Draft PR until an explicit release decision. No production login, database connection, account/password reset, social publishing, upload, migration, backup restore or live user-data inspection was performed.
@@ -138,7 +139,7 @@ Hostinger guide `docs/DEPLOY-HOSTINGER.md` describes **PGlite as the intended no
 
 Source controls include Argon2id password hashes, first-password replacement, login attempt lockouts, hashed random session tokens in HttpOnly cookies, server-side RBAC, configurable per-person permission overrides, origin-protected Server Actions, nonce-based CSP, clickjacking protections and append-only audit history. Local backups live outside the deployment tree by default.
 
-**Important open item:** [Security Issue #27](https://github.com/Nagy-API/Next_It/issues/27) — hardcoded/public bootstrap credential fallback. The current historical git/source content is public; merely editing a Markdown file is not full remediation. Review live account readiness and rotate affected credentials under authorized company controls. **No credentials were used in this audit.**
+**Important open item:** [Security Issue #27](https://github.com/Nagy-API/Next_It/issues/27) — hardcoded/public bootstrap credential fallback. **Owner confirms the team's original passwords have been changed**, but this was not independently verified via live administration. The unchanged seed-code fallback could still affect newly provisioned accounts/environments, and Git history remains public. Separate source remediation is required; a documentation edit does not fix the code. **No credentials were used in this audit.**
 
 Other cautions: Do not publish private attachments, raw activity data, staff phone numbers, campaign plans or unapproved company screenshots. Account, social-token and backup/restore actions are production operations requiring authorization. No independent penetration test, fresh `npm audit`, actual production password check or login audit was run here.
 
@@ -185,8 +186,8 @@ The source's original local/Compose demo login examples are intentionally **not 
 
 - **OWNER-CONFIRMED:** public live domain and GitHub-connected Hostinger auto-deployment.
 - **SOURCE-VERIFIED:** the modules, routes and code mechanisms above at pinned source revision.
-- **NOT VERIFIED:** live accounts/password status, current production DB mode, current content/data count, Meta connection/publishing analytics, backup restoration, runtime performance, deployed permissions, E2E pass rate and company-cleared screenshots.
-- **TEAM CREDIT:** project contributor count and individual assignment were **not specified for NEXORA Ops**; do not infer the two-person REDAHAB team applies here.
+- **NOT INDEPENDENTLY VERIFIED:** the owner's report that existing team passwords were changed, current production DB mode, content/data count, Meta publishing analytics, backup restoration, runtime performance, deployed permissions, E2E pass rate and company-cleared screenshots.
+- **TEAM CREDIT:** Owner confirms **two developers** worked on NEXORA Ops. Individual responsibilities and percentages are not yet established; do not claim solo authorship.
 - **OPEN REVIEW:** [Security Issue #27](https://github.com/Nagy-API/Next_It/issues/27) and [Docs Issue #28](https://github.com/Nagy-API/Next_It/issues/28). Source deployment/main merge remains outside this documentation-only task.
 - **PORTFOLIO:** Capture company-safe screenshots of the workflow/dashboard with synthetic work items, obtain publishing approval, and use the knowledge base's case study without inventing operational metrics.
 
