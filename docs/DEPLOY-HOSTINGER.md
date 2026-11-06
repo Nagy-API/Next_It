@@ -1,3 +1,5 @@
+> **Historical setup guide (2026-11-06 status note):** This guide was written before initial deployment and uses an old repository name. The actual GitHub repository is `Nagy-API/Next_It`; the owner now confirms `https://ops.nexoraaagency.com/` is live on Hostinger with GitHub-linked auto-deploy. **Do not re-run seeding, migrations, restore, reset passwords, change environment variables or redeploy** against an existing production installation from this historical guide without approved release and backup procedures. Source inventory and boundaries: [README](../README.md) / [Portfolio source audit](PORTFOLIO_SOURCE_REVIEW.md).
+
 # Deploying NEXORA Ops on Hostinger at `ops.nexoraaagency.com`
 
 The system runs as a **Node.js web app** on NEXORA's existing Hostinger Business plan, on a **subdomain** of the
